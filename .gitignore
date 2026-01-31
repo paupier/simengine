@@ -39,6 +39,7 @@ env/
 htmlcov/
 .tox/
 
+
 # Results and logs
 results/**/*.csv
 results/**/*.png
