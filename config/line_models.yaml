@@ -1,0 +1,58 @@
+# Manufacturing Line Model Definitions
+
+# Scenario A: Balanced Line
+balanced_line:
+  machines:
+    - name: M1
+      cycle_time: 1.0        # seconds
+      failure_rate: 0.0      # failures per hour
+      repair_time: 10.0      # seconds
+
+    - name: M2
+      cycle_time: 1.0
+      failure_rate: 0.0
+      repair_time: 10.0
+
+  buffers:
+    - name: B1
+      capacity: 10
+      upstream: M1
+      downstream: M2
+
+# Scenario B: Bottleneck at M1
+bottleneck_line:
+  machines:
+    - name: M1
+      cycle_time: 2.0        # Bottleneck
+      failure_rate: 0.0
+      repair_time: 10.0
+
+    - name: M2
+      cycle_time: 1.0
+      failure_rate: 0.0
+      repair_time: 10.0
+
+  buffers:
+    - name: B1
+      capacity: 10
+      upstream: M1
+      downstream: M2
+
+# Scenario C: With Failures
+failure_line:
+  machines:
+    - name: M1
+      cycle_time: 1.0
+      failure_rate: 1.2      # ~1 failure per 50s
+      repair_time: 10.0
+
+    - name: M2
+      cycle_time: 1.0
+      failure_rate: 0.0
+      repair_time: 10.0
+
+  buffers:
+    - name: B1
+      capacity: 10
+      upstream: M1
+      downstream: M2

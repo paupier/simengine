@@ -1,0 +1,20 @@
+# Simantha OPC UA Server Configuration
+
+opcua:
+  endpoint: "opc.tcp://0.0.0.0:4840/simantha/"
+  namespace: "http://simantha.nist.gov/"
+  server_name: "Simantha Manufacturing Simulation"
+  security_policy: None  # Options: None, Basic256Sha256 (Phase 7+)
+
+simulation:
+  real_time_factor: 0.1  # 0.1s real time = 1s simulation time
+  horizon: 1000          # Total simulation duration (seconds)
+  step_size: 1.0         # Simulation step size (seconds)
+
+  # Line configuration file
+  line_model: "config/line_models.yaml"
+
+logging:
+  level: INFO  # DEBUG, INFO, WARNING, ERROR
+  file: "results/server.log"
+  console: true
