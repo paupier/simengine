@@ -20,12 +20,20 @@ A Python-based OPC UA server that exposes [Simantha](https://github.com/usnistgo
 
 | Phase | Status | Completion |
 |-------|--------|------------|
-| Phase 1: Simantha Baseline | 🔴 Not Started | 0% |
+| Phase 1: Simantha Baseline | 🟡 In Progress | 80% |
 | Phase 2: OPC UA Read-Only | 🔴 Not Started | 0% |
 | Phase 3: Bidirectional Control | 🔴 Not Started | 0% |
 | Phase 4: Alarms & Logging | 🔴 Not Started | 0% |
 | Phase 5: Advanced Analytics | 🔴 Not Started | 0% |
 | Phase 6: NodeSet Export | 🔴 Not Started | 0% |
+
+### Current Progress
+
+- ✅ Python 3.11 venv and dependencies installed
+- ✅ Baseline 2‑machine, 1‑buffer Simantha model implemented (`src/simantha_baseline.py`)
+- ✅ Phase 1 smoke test added (`tests/test_scenarios.py`)
+- ⏳ Next: OPC UA read‑only server (`src/opcua_server.py`) and UA Expert connectivity
+
 
 ## 🚀 Quick Start
 
