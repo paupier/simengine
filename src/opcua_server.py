@@ -17,7 +17,7 @@ def build_simantha_system():
     m2.define_routing(upstream=[b1], downstream=[sink])
 
     system = System(objects=[source, m1, b1, m2, sink])
-    return system, sink, b1, m1, m2
+    return system, source, sink, b1, m1, m2
 
 
 def build_opcua_server():
@@ -37,9 +37,14 @@ def build_opcua_server():
     var_simtime = system_node.add_variable(idx, "SimTime", 0.0)
     var_throughput = system_node.add_variable(idx, "Throughput", 0)
 
-    # Line-level WIP
-    line_node = line1.add_object(idx, "LineKPIs")
-    var_total_wip = line_node.add_variable(idx, "TotalWIP", 0)
+    # Line-level KPIs
+    line_kpi_node = line1.add_object(idx, "LineKPIs")
+    var_total_wip = line_kpi_node.add_variable(idx, "TotalWIP", 0)
+
+    # System controls (inputs into Simantha)
+    controls_node = system_node.add_object(idx, "Controls")
+    var_pause_line = controls_node.add_variable(idx, "PauseLine", False)
+    var_interarrival = controls_node.add_variable(idx, "InterarrivalTime", 0.0)
 
     # Station 1 (M1)
     station1_node = line1.add_object(idx, "Station1")
@@ -52,11 +57,13 @@ def build_opcua_server():
     var_b1_level = buffer1_node.add_variable(idx, "CurrentLevel", 0)
     var_b1_capacity = buffer1_node.add_variable(idx, "Capacity", 10)
 
-
+    # Make all variables writable so client can change controls (and metrics if needed)
     for v in (
         var_simtime,
         var_throughput,
         var_total_wip,
+        var_pause_line,
+        var_interarrival,
         var_m1_state,
         var_m1_partcount,
         var_m1_util,
@@ -66,9 +73,14 @@ def build_opcua_server():
         v.set_writable()
 
     variables = {
+        # KPIs
         "simtime": var_simtime,
         "throughput": var_throughput,
         "total_wip": var_total_wip,
+        # Controls
+        "pause_line": var_pause_line,
+        "interarrival_time": var_interarrival,
+        # Station / buffer
         "m1_state": var_m1_state,
         "m1_partcount": var_m1_partcount,
         "m1_utilisation": var_m1_util,
@@ -80,7 +92,7 @@ def build_opcua_server():
 
 
 def main():
-    system, sink, b1, m1, m2 = build_simantha_system()
+    system, source, sink, b1, m1, m2 = build_simantha_system()
 
     server, vars_, idx = build_opcua_server()
 
@@ -94,10 +106,20 @@ def main():
 
     try:
         while True:
-            sim_time += sim_step
-            system.simulate(simulation_time=sim_time)
+            # --- Read controls from OPC UA ---
+            pause_line = bool(vars_["pause_line"].get_value())
+            interarrival = float(vars_["interarrival_time"].get_value())
 
-            # Simple placeholder metrics
+            # Push interarrival time into Simantha source
+            # 0.0 means "never starved" per Simantha docs; >0 slows arrivals.[web:181]
+            source.interarrival_time = interarrival
+
+            if not pause_line:
+                # Advance simulation only when not paused
+                sim_time += sim_step
+                system.simulate(simulation_time=sim_time)
+
+            # --- Compute simple metrics (still placeholders) ---
             current_sim_time = sim_time
             current_throughput = int(sim_time)  # placeholder for parts out
             m1_partcount = current_throughput
@@ -109,13 +131,17 @@ def main():
 
             b1_capacity = b1.capacity
 
-            # Very rough utilisation: assume M1 is busy whenever sim is running
-            m1_utilisation = 1.0 if sim_time > 0 else 0.0
-            m1_state = "RUNNING" if m1_utilisation > 0 else "IDLE"
+            # Very rough utilisation: running whenever not paused and sim_time > 0
+            if pause_line or sim_time <= 0:
+                m1_utilisation = 0.0
+                m1_state = "PAUSED" if pause_line else "IDLE"
+            else:
+                m1_utilisation = 1.0
+                m1_state = "RUNNING"
 
-            # Total WIP: here just equal to buffer level for now
             total_wip = b1_level
 
+            # --- Write KPIs back to OPC UA ---
             vars_["simtime"].set_value(current_sim_time)
             vars_["throughput"].set_value(current_throughput)
             vars_["total_wip"].set_value(total_wip)
