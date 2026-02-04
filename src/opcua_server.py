@@ -119,17 +119,22 @@ def main():
                 sim_time += sim_step
                 system.simulate(simulation_time=sim_time)
 
-            # --- Compute simple metrics (still placeholders) ---
+            # --- Compute simple metrics using Simantha ---
             current_sim_time = sim_time
-            current_throughput = int(sim_time)  # placeholder for parts out
-            m1_partcount = current_throughput
 
+            # Throughput from sink
+            parts_produced = sink.level  # finished parts in sink[web:16][web:17]
+            current_throughput = parts_produced
+            m1_partcount = parts_produced
+
+            # Buffer WIP from B1
             try:
-                b1_level = len(b1.queue)
+                b1_level = b1.level  # or len(b1.contents)[web:17]
             except AttributeError:
                 b1_level = 0
 
             b1_capacity = b1.capacity
+
 
             # Very rough utilisation: running whenever not paused and sim_time > 0
             if pause_line or sim_time <= 0:
