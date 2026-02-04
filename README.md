@@ -68,3 +68,85 @@ This repo is organized around six implementation phases for integrating Simantha
 ```bash
 git clone https://github.com/YOUR-USERNAME/simantha-opcua.git
 cd simantha-opcua
+
+---
+
+
+##📁 Repository Structure
+
+simantha-opcua/
+  ├─ src/
+  │   ├─ simantha_baseline.py        # Phase 1: baseline Simantha line model
+  │   ├─ opcua_server.py             # Phase 2–3: OPC UA server + system controls
+  │   ├─ simantha_integration.py     # Phase 3+: integration helpers (planned)
+  │   ├─ parameter_validator.py      # Phase 3: write validation (planned)
+  │   ├─ alarm_manager.py            # Phase 4: alarm system (planned)
+  │   └─ oee_calculator.py           # Phase 5: OEE metrics (planned)
+  │
+  ├─ tests/
+  │   ├─ test_scenarios.py           # Phase 1 tests: baseline scenarios
+  │   ├─ test_write_scenarios.py     # Phase 3 tests: OPC UA write paths (planned)
+  │   └─ test_advanced_metrics.py    # Phase 5 tests: health/OEE metrics (planned)
+  │
+  ├─ config/
+  │   ├─ config.yaml                 # Server configuration (endpoint, timings, logging)
+  │   └─ line_models.yaml            # Machine/buffer definitions, line variants (planned)
+  │
+  ├─ results/
+  │   ├─ phase1/                     # CSV outputs for baseline simulations
+  │   ├─ phase2/                     # UA Expert screenshots / traces
+  │   └─ phase3+/                    # Later phase artefacts (health/OEE, alarms)
+  │
+  ├─ docs/
+  │   ├─ PRD.md                      # Multi‑phase Product Requirements document
+  │   └─ architecture.md             # Extended architecture notes / diagrams (optional)
+  │
+  ├─ .github/
+  │   └─ workflows/
+  │       └─ tests.yml               # CI: run tests on push/PR (planned)
+  │
+  ├─ requirements.txt                # Python dependencies (Simantha, python-opcua, etc.)
+  ├─ LICENSE
+  └─ README.md
+
+
+## 🏗️ Architecture
+
+flowchart LR
+  client[UA Expert / SCADA Client]
+  proto[OPC UA Protocol]
+  server[OPC UA Server (python-opcua)]
+  layer[Integration Layer (Python)]
+  sim[Simantha Simulation Core]
+
+  client --- proto --- server --- layer --- sim
+  server --> addr[Address space & read/write handlers]
+  layer --> mapping[State mapping & parameter validation]
+  sim --> objs[Machines, Buffers, Source, Sink]
+
+
+## OPC UA Address Space (current)
+
+Objects
+  └─ Line1
+      ├─ System
+      │   ├─ SimTime              # double: simulated time (s)
+      │   ├─ Throughput           # int: placeholder parts‑out counter
+      │   └─ Controls
+      │       ├─ PauseLine        # bool: pause/resume the sim loop
+      │       └─ InterarrivalTime # double: Source.interarrival_time (s)
+      │
+      ├─ LineKPIs
+      │   └─ TotalWIP             # int: simple WIP approximation (e.g. buffer level)
+      │
+      ├─ Station1
+      │   ├─ State                # string: RUNNING / PAUSED / IDLE (to be tightened)
+      │   ├─ PartCount            # int: parts processed (placeholder, Phase 4+ to refine)
+      │   └─ Utilisation          # double: coarse utilisation estimate
+      │
+      └─ Buffer1
+          ├─ CurrentLevel         # int: items in buffer
+          └─ Capacity             # int: buffer capacity
+
+
+
