@@ -1,23 +1,59 @@
 import time
 
 from opcua import Server
-from simantha import Source, Machine, Buffer, Sink, System
+from simantha import Source, Machine, Buffer, Sink, System, Maintainer
 
 
-def build_simantha_system():
+# Machine health degradation matrix (2-state: healthy → failed)
+# State 0: healthy, State 1: failed (absorbing until maintenance)
+DEGRADATION_MATRIX = [
+    [0.99, 0.01],  # from healthy: 99% stay healthy, 1% degrade per step
+    [0.0, 1.0],    # from failed: stay failed until maintainer repairs
+]
+
+
+def build_simantha_system(enable_degradation=True):
+    """
+    Build a 2-machine serial line with optional health degradation on M1.
+
+    Args:
+        enable_degradation: If True, M1 will degrade over time and require maintenance
+
+    Returns:
+        tuple: (system, source, sink, b1, m1, m2, maintainer)
+    """
     source = Source()
-    m1 = Machine(name="M1", cycle_time=1)
+
+    # M1 with optional degradation modeling
+    if enable_degradation:
+        m1 = Machine(
+            name="M1",
+            cycle_time=1,
+            degradation_matrix=DEGRADATION_MATRIX,
+            cbm_threshold=1,  # request maintenance when state=1 (failed)
+        )
+        maintainer = Maintainer(capacity=1)
+    else:
+        m1 = Machine(name="M1", cycle_time=1)
+        maintainer = None
+
     b1 = Buffer(name="B1", capacity=10)
     m2 = Machine(name="M2", cycle_time=1)
     sink = Sink(collect_parts=True)
 
+    # Routing
     source.define_routing(downstream=[m1])
     m1.define_routing(upstream=[source], downstream=[b1])
     b1.define_routing(upstream=[m1], downstream=[m2])
     m2.define_routing(upstream=[b1], downstream=[sink])
 
-    system = System(objects=[source, m1, b1, m2, sink])
-    return system, source, sink, b1, m1, m2
+    # System with optional maintainer
+    if maintainer is not None:
+        system = System(objects=[source, m1, b1, m2, sink], maintainer=maintainer)
+    else:
+        system = System(objects=[source, m1, b1, m2, sink])
+
+    return system, source, sink, b1, m1, m2, maintainer
 
 
 def build_opcua_server():
@@ -41,95 +77,111 @@ def build_opcua_server():
     line_kpi_node = line1.add_object(idx, "LineKPIs")
     var_total_wip = line_kpi_node.add_variable(idx, "TotalWIP", 0)
 
-    # System controls (inputs into Simantha)
+    # System controls (writable inputs to control simulation)
     controls_node = system_node.add_object(idx, "Controls")
-
-    # Existing global controls
     var_pause_line = controls_node.add_variable(idx, "PauseLine", False)
     var_interarrival = controls_node.add_variable(idx, "InterarrivalTime", 0.0)
 
-    # New station-level pause controls
-    var_pause_line1 = controls_node.add_variable(idx, "PauseLine1", False)
-    var_pause_line2 = controls_node.add_variable(idx, "PauseLine2", False)
-
-    # New per-machine cycle time controls
-    var_m1_cycle = controls_node.add_variable(idx, "M1_CycleTime", 1.0)
-    var_m2_cycle = controls_node.add_variable(idx, "M2_CycleTime", 1.0)
-
-    # Station 1 (M1)
+    # Station 1 (M1) with health/maintenance tracking
     station1_node = line1.add_object(idx, "Station1")
     var_m1_state = station1_node.add_variable(idx, "State", "IDLE")
     var_m1_partcount = station1_node.add_variable(idx, "PartCount", 0)
     var_m1_util = station1_node.add_variable(idx, "Utilisation", 0.0)
+    var_m1_health = station1_node.add_variable(idx, "HealthState", 0)  # 0=healthy, 1=failed
+    var_m1_health_pct = station1_node.add_variable(idx, "HealthPercent", 100.0)  # 100=healthy, 0=failed
 
     # Buffer between Station1 and Station2
     buffer1_node = line1.add_object(idx, "Buffer1")
     var_b1_level = buffer1_node.add_variable(idx, "CurrentLevel", 0)
     var_b1_capacity = buffer1_node.add_variable(idx, "Capacity", 10)
 
-    # New Station 2 (M2)
+    # Station 2 (M2)
     station2_node = line1.add_object(idx, "Station2")
     var_m2_state = station2_node.add_variable(idx, "State", "IDLE")
     var_m2_partcount = station2_node.add_variable(idx, "PartCount", 0)
     var_m2_util = station2_node.add_variable(idx, "Utilisation", 0.0)
 
-    # Make all variables writable so client can change controls (and metrics if needed)
-    for v in (
-        var_simtime,
-        var_throughput,
-        var_total_wip,
-        var_pause_line,
-        var_interarrival,
-        var_pause_line1,
-        var_pause_line2,
-        var_m1_cycle,
-        var_m2_cycle,
-        var_m1_state,
-        var_m1_partcount,
-        var_m1_util,
-        var_b1_level,
-        var_b1_capacity,
-        var_m2_state,
-        var_m2_partcount,
-        var_m2_util,
-    ):
+    # Maintenance/Degradation (only applicable if degradation enabled)
+    maintenance_node = line1.add_object(idx, "Maintenance")
+    var_maint_active = maintenance_node.add_variable(idx, "MaintenanceActive", False)
+    var_maint_queue = maintenance_node.add_variable(idx, "QueueLength", 0)
+    var_total_repairs = maintenance_node.add_variable(idx, "TotalRepairs", 0)
+
+    # Separate read-only (outputs/KPIs) from writable (inputs/controls)
+
+    # READ-ONLY: Simulation outputs and KPIs (clients can only monitor)
+    # Note: List for documentation; OPC UA variables are read-only by default
+    readonly_vars = [
+        var_simtime,        # System/SimTime
+        var_throughput,     # System/Throughput
+        var_total_wip,      # LineKPIs/TotalWIP
+        var_m1_state,       # Station1/State
+        var_m1_partcount,   # Station1/PartCount
+        var_m1_util,        # Station1/Utilisation
+        var_m1_health,      # Station1/HealthState
+        var_m1_health_pct,  # Station1/HealthPercent
+        var_b1_level,       # Buffer1/CurrentLevel
+        var_b1_capacity,    # Buffer1/Capacity
+        var_m2_state,       # Station2/State
+        var_m2_partcount,   # Station2/PartCount
+        var_m2_util,        # Station2/Utilisation
+        var_maint_active,   # Maintenance/MaintenanceActive
+        var_maint_queue,    # Maintenance/QueueLength
+        var_total_repairs,  # Maintenance/TotalRepairs
+    ]
+    # Read-only variables are not explicitly set (default is read-only in OPC UA)
+
+    # WRITABLE: Control inputs (clients can change these to control the simulation)
+    writable_vars = [
+        var_pause_line,     # System/Controls/PauseLine
+        var_interarrival,   # System/Controls/InterarrivalTime
+    ]
+    for v in writable_vars:
         v.set_writable()
 
     variables = {
-        # KPIs
+        # System KPIs (read-only)
         "simtime": var_simtime,
         "throughput": var_throughput,
         "total_wip": var_total_wip,
-        # Controls
+        # System Controls (writable)
         "pause_line": var_pause_line,
         "interarrival_time": var_interarrival,
-        "pause_line1": var_pause_line1,
-        "pause_line2": var_pause_line2,
-        "m1_cycle": var_m1_cycle,
-        "m2_cycle": var_m2_cycle,
-        # Station / buffer
+        # Station 1 (M1) - read-only
         "m1_state": var_m1_state,
         "m1_partcount": var_m1_partcount,
         "m1_utilisation": var_m1_util,
+        "m1_health": var_m1_health,
+        "m1_health_pct": var_m1_health_pct,
+        # Buffer 1 - read-only
         "b1_level": var_b1_level,
         "b1_capacity": var_b1_capacity,
-        # Station 2
+        # Station 2 (M2) - read-only
         "m2_state": var_m2_state,
         "m2_partcount": var_m2_partcount,
         "m2_utilisation": var_m2_util,
+        # Maintenance - read-only
+        "maint_active": var_maint_active,
+        "maint_queue": var_maint_queue,
+        "total_repairs": var_total_repairs,
     }
 
     return server, variables, idx
 
 
 def main():
-    system, source, sink, b1, m1, m2 = build_simantha_system()
+    # Build system with degradation enabled (set to False for simple mode)
+    system, source, sink, b1, m1, m2, maintainer = build_simantha_system(enable_degradation=True)
 
     server, vars_, idx = build_opcua_server()
 
     sim_time = 0.0
     sim_step = 1.0
     real_step = 1.0
+
+    # Manual part counters (only increase, never decrease)
+    prev_sink_level = 0
+    total_parts_produced = 0
 
     server.start()
     print("OPC UA server started at opc.tcp://localhost:4840/simantha/")
@@ -139,25 +191,11 @@ def main():
         while True:
             # --- Read controls from OPC UA ---
             pause_line = bool(vars_["pause_line"].get_value())
-            pause_line1 = bool(vars_["pause_line1"].get_value())
-            pause_line2 = bool(vars_["pause_line2"].get_value())
             interarrival = float(vars_["interarrival_time"].get_value())
-            m1_cycle = float(vars_["m1_cycle"].get_value())
-            m2_cycle = float(vars_["m2_cycle"].get_value())
 
-            # Basic safety clamps
-            if interarrival < 0.0:
-                interarrival = 0.0
-            if m1_cycle <= 0.0:
-                m1_cycle = 1.0
-            if m2_cycle <= 0.0:
-                m2_cycle = 1.0
-
-            # Push into Simantha
-            # 0.0 means "never starved"; >0 slows arrivals.[web:16][web:17]
+            # Push interarrival time into Simantha source
+            # 0.0 means "never starved" per Simantha docs; >0 slows arrivals.
             source.interarrival_time = interarrival
-            m1.cycle_time = m1_cycle
-            m2.cycle_time = m2_cycle
 
             # --- Stepping: same pattern as before ---
             if not pause_line:
@@ -168,13 +206,24 @@ def main():
             # --- Compute metrics using Simantha ---
             current_sim_time = sim_time
 
-            # Throughput from sink
-            parts_produced = sink.level  # finished parts in sink[web:16][web:17]
-            current_throughput = parts_produced
+            # Throughput: track parts produced with monotonic counter
+            # (sink.level can decrease during maintenance, so we track increases only)
+            current_sink_level = sink.level
+            if current_sink_level > prev_sink_level:
+                # Parts increased - add delta to total
+                delta_parts = current_sink_level - prev_sink_level
+                total_parts_produced += delta_parts
+                prev_sink_level = current_sink_level
+            elif current_sink_level < prev_sink_level:
+                # Sink level decreased (maintenance reset?) - resync but don't lose count
+                # Keep total_parts_produced as-is, just update prev_sink_level
+                prev_sink_level = current_sink_level
 
-            # Simple station part counts (series line: both see same outflow)
-            m1_partcount = parts_produced
-            m2_partcount = parts_produced
+            current_throughput = total_parts_produced
+
+            # Station part counts (same for series line)
+            m1_partcount = total_parts_produced
+            m2_partcount = total_parts_produced
 
             # Buffer WIP from B1
             try:
@@ -185,27 +234,53 @@ def main():
             b1_capacity = b1.capacity
             total_wip = b1_level
 
-            # Utilisation and state, using global + station pauses
-            if pause_line or sim_time <= 0:
+            # Machine health (if degradation enabled)
+            try:
+                m1_health_state = m1.health  # 0=healthy, 1=failed
+                # Convert to percentage (0=failed, 100=healthy)
+                m1_health_percent = 100.0 * (1 - m1_health_state)
+            except AttributeError:
+                # No degradation model
+                m1_health_state = 0
+                m1_health_percent = 100.0
+
+            # Maintenance status (if maintainer exists)
+            if maintainer is not None:
+                try:
+                    # Check if maintainer is currently repairing
+                    maint_active = len(maintainer.in_progress) > 0
+                    # Queue length (machines waiting for maintenance)
+                    maint_queue_length = len(maintainer.queue)
+                    # Total repairs completed (rough estimate from maintainer stats)
+                    total_repairs = maintainer.total_throughput if hasattr(maintainer, 'total_throughput') else 0
+                except AttributeError:
+                    maint_active = False
+                    maint_queue_length = 0
+                    total_repairs = 0
+            else:
+                maint_active = False
+                maint_queue_length = 0
+                total_repairs = 0
+
+            # Utilisation and state (global pause + health status)
+            if pause_line:
+                # Global pause: entire line paused
                 m1_utilisation = 0.0
                 m2_utilisation = 0.0
-                m1_state = "PAUSED" if pause_line else "IDLE"
-                m2_state = "PAUSED" if pause_line else "IDLE"
+                m1_state = "PAUSED"
+                m2_state = "PAUSED"
             else:
-                # Line not globally paused; apply station pauses
-                if pause_line1:
+                # M1 state considers health status
+                if m1_health_state == 1:  # Failed
                     m1_utilisation = 0.0
-                    m1_state = "PAUSED"
-                else:
+                    m1_state = "FAILED" if not maint_active else "UNDER_REPAIR"
+                else:  # Healthy
                     m1_utilisation = 1.0
                     m1_state = "RUNNING"
 
-                if pause_line2:
-                    m2_utilisation = 0.0
-                    m2_state = "PAUSED"
-                else:
-                    m2_utilisation = 1.0
-                    m2_state = "RUNNING"
+                # M2 state (no degradation modeling on M2)
+                m2_utilisation = 1.0
+                m2_state = "RUNNING"
 
             # --- Write KPIs back to OPC UA ---
             vars_["simtime"].set_value(current_sim_time)
@@ -215,6 +290,8 @@ def main():
             vars_["m1_partcount"].set_value(m1_partcount)
             vars_["m1_state"].set_value(m1_state)
             vars_["m1_utilisation"].set_value(m1_utilisation)
+            vars_["m1_health"].set_value(m1_health_state)
+            vars_["m1_health_pct"].set_value(m1_health_percent)
 
             vars_["b1_level"].set_value(b1_level)
             vars_["b1_capacity"].set_value(b1_capacity)
@@ -222,6 +299,10 @@ def main():
             vars_["m2_partcount"].set_value(m2_partcount)
             vars_["m2_state"].set_value(m2_state)
             vars_["m2_utilisation"].set_value(m2_utilisation)
+
+            vars_["maint_active"].set_value(maint_active)
+            vars_["maint_queue"].set_value(maint_queue_length)
+            vars_["total_repairs"].set_value(total_repairs)
 
             time.sleep(real_step)
 

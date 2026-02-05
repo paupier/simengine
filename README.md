@@ -4,53 +4,48 @@
 [![License: Public Domain](https://img.shields.io/badge/License-Public%20Domain-green.svg)](https://github.com/usnistgov/simantha/blob/master/LICENSE)
 [![OPC UA](https://img.shields.io/badge/OPC%20UA-Compliant-orange.svg)](https://opcfoundation.org/)
 
-A Python-based OPC UA server that exposes [Simantha](https://github.com/usnistgov/simantha) discrete‑event manufacturing simulations to external clients for real‑time monitoring and control.[web:179][web:275]
+A real-time **digital twin** of a manufacturing production line using [Simantha](https://github.com/usnistgov/simantha) discrete-event simulation exposed via OPC UA for monitoring and control.
 
 ---
 
-## 📋 Project Phases & Status
+## 📋 Project Status
 
-**Current Phase:** Phase 3 – Basic system controls  
-**Last Updated:** 2026‑02‑04
+**Current Phase:** Phase 4 Complete – Machine Health & Degradation
+**Last Updated:** 2026-02-05
 
-| Phase | Status | Completion |
-|-------|--------|-----------|
-| Phase 1: Simantha Baseline | ✅ Complete | 100% |
-| Phase 2: OPC UA Read‑Only | ✅ Complete | 100% |
-| Phase 3: Bidirectional Control | ✅ Complete (basic controls) | 100% |
-| Phase 4: Alarms & Logging | ⏳ Planned | 0% |
-| Phase 5: Advanced Analytics / OEE | ⏳ Planned | 0% |
-| Phase 6: NodeSet Export / Packaging | ⏳ Planned | 0% |
+### Phase Completion Status
 
-This repo is organized around six implementation phases for integrating Simantha with an OPC UA server.
+| Phase | Status | Features |
+|-------|--------|----------|
+| **Phase 1:** Simantha Baseline | ✅ **Complete** | 2-machine serial line with 3 scenarios (balanced, bottleneck, failures) |
+| **Phase 2:** OPC UA Read-Only | ✅ **Complete** | Real-time KPI monitoring via OPC UA |
+| **Phase 3:** Bidirectional Control | ✅ **Complete** | Global pause, arrival rate control |
+| **Phase 4:** Health & Degradation | ✅ **Complete** | Machine health tracking, maintenance modeling, failure events |
+| **Phase 5:** Enhanced State Logic | 🎯 **Next** | BLOCKED/STARVED detection, event-driven metrics |
+| **Phase 6:** OEE Calculation | ⏳ Planned | Availability × Performance × Quality metrics |
+| **Phase 7:** Multi-Buffer Lines | ⏳ Planned | 3+ machines, complex topologies |
+| **Phase 8:** Quality Modeling | ⏳ Planned | Defect tracking, scrap, rework |
 
-1. **Phase 1 – Baseline Simantha model ✅**  
-   - Simple 2‑machine, 1‑buffer line built with Simantha.  
-   - Model runs standalone via a Python script (no OPC UA).
+---
 
-2. **Phase 2 – Read‑only OPC UA metrics ✅**  
-   - Python OPC UA server wraps the Simantha line.  
-   - Exposes basic KPIs as OPC UA variables (SimTime, Throughput, TotalWIP, Station1 state/part count, Buffer1 level/capacity).  
-   - Verified with UA Expert; live values update correctly over `opc.tcp://localhost:4840/simantha/`.[web:217][web:223]
+## 🎯 What This Project Does
 
-3. **Phase 3 – Basic system controls ✅**  
-   - Added a `Controls` node under `Line1/System` to act as inputs into Simantha:  
-     - `PauseLine` (bool) pauses/resumes the simulation loop.  
-     - `InterarrivalTime` (double) is wired to the Simantha `Source.interarrival_time` parameter.[web:181]  
-   - OPC UA clients can change these tags and see the simulation respond (e.g. pausing the line).
+This project creates a **realistic manufacturing digital twin** that:
 
-4. **Phase 4 – Machine health & downtime ⏳ (planned)**  
-   - Introduce Simantha degradation/maintenance on selected machines.  
-   - Expose health/downtime tags (e.g. `HealthState`, simple downtime counters) via OPC UA.[web:179][web:232]
+- **Simulates** a 2-machine serial production line (Source → M1 → Buffer → M2 → Sink)
+- **Exposes** real-time KPIs via industry-standard OPC UA protocol
+- **Models** realistic variability through machine health degradation and maintenance
+- **Responds** to external control inputs (pause/resume, arrival rate adjustment)
+- **Demonstrates** buffer dynamics, bottlenecks, and failure impacts on throughput
 
-5. **Phase 5 – OEE metrics ⏳ (planned)**  
-   - Build Availability, Performance, Quality, and OEE metrics on top of Phase 4 data.  
-   - Publish OEE‑related variables per station and at line level.
+### Real-World Behavior Modeled
 
-6. **Phase 6 – Packaging & engine options ⏳ (planned)**  
-   - Clean packaging/config, logging tidy‑up, and developer ergonomics.  
-   - Optionally experiment with alternative simulation engines (e.g. SimPy) while preserving the same OPC UA contract.[web:217][web:223]
-
+✅ **Health Degradation** - Machines degrade over time (1% chance per simulation step)
+✅ **Failure Events** - M1 can fail, triggering maintenance requests
+✅ **Maintenance Intervention** - Maintainer repairs failed machines
+✅ **Buffer Dynamics** - WIP accumulates/drains based on machine states
+✅ **Throughput Variability** - Production rate fluctuates during failures
+✅ **State Tracking** - RUNNING, PAUSED, FAILED, UNDER_REPAIR states exposed
 
 ---
 
@@ -58,96 +53,307 @@ This repo is organized around six implementation phases for integrating Simantha
 
 ### Prerequisites
 
-- Python 3.8 or higher  
-- pip package manager  
-- UA Expert (for testing) – [download](https://www.unified-automation.com/products/development-tools/uaexpert.html)
+- **Python 3.8+** with pip
+- **OPC UA Client** for testing (e.g., [UA Expert](https://www.unified-automation.com/products/development-tools/uaexpert.html))
 
 ### Installation
 
-1. **Clone the repository**
-
 ```bash
+# Clone the repository
 git clone https://github.com/YOUR-USERNAME/simantha-opcua.git
 cd simantha-opcua
 
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### Run the OPC UA Server
+
+```bash
+python src/opcua_server.py
+```
+
+**Expected output:**
+```
+OPC UA server started at opc.tcp://localhost:4840/simantha/
+Press Ctrl+C to stop.
+```
+
+### Connect with UA Expert
+
+1. Open UA Expert
+2. Add Server: `opc.tcp://localhost:4840/simantha/`
+3. Connect and browse to `Objects → Line1`
+4. Drag variables to Data Access View to monitor live values
+
+**What to watch:**
+- `Station1/HealthPercent` drops from 100 → 0 when M1 fails
+- `Maintenance/MaintenanceActive` becomes True during repairs
+- `Buffer1/CurrentLevel` drains when M1 is down
+- `System/Throughput` pauses during failures, resumes after repair
+
 ---
-
-
-##📁 Repository Structure
-
-simantha-opcua/
-  ├─ src/
-  │   ├─ simantha_baseline.py        # Phase 1: baseline Simantha line model
-  │   ├─ opcua_server.py             # Phase 2–3: OPC UA server + system controls
-  │   ├─ simantha_integration.py     # Phase 3+: integration helpers (planned)
-  │   ├─ parameter_validator.py      # Phase 3: write validation (planned)
-  │   ├─ alarm_manager.py            # Phase 4: alarm system (planned)
-  │   └─ oee_calculator.py           # Phase 5: OEE metrics (planned)
-  │
-  ├─ tests/
-  │   ├─ test_scenarios.py           # Phase 1 tests: baseline scenarios
-  │   ├─ test_write_scenarios.py     # Phase 3 tests: OPC UA write paths (planned)
-  │   └─ test_advanced_metrics.py    # Phase 5 tests: health/OEE metrics (planned)
-  │
-  ├─ config/
-  │   ├─ config.yaml                 # Server configuration (endpoint, timings, logging)
-  │   └─ line_models.yaml            # Machine/buffer definitions, line variants (planned)
-  │
-  ├─ results/
-  │   ├─ phase1/                     # CSV outputs for baseline simulations
-  │   ├─ phase2/                     # UA Expert screenshots / traces
-  │   └─ phase3+/                    # Later phase artefacts (health/OEE, alarms)
-  │
-  ├─ docs/
-  │   ├─ PRD.md                      # Multi‑phase Product Requirements document
-  │   └─ architecture.md             # Extended architecture notes / diagrams (optional)
-  │
-  ├─ .github/
-  │   └─ workflows/
-  │       └─ tests.yml               # CI: run tests on push/PR (planned)
-  │
-  ├─ requirements.txt                # Python dependencies (Simantha, python-opcua, etc.)
-  ├─ LICENSE
-  └─ README.md
-
 
 ## 🏗️ Architecture
 
-flowchart LR
-  client[UA Expert / SCADA Client]
-  proto[OPC UA Protocol]
-  server[OPC UA Server (python-opcua)]
-  layer[Integration Layer (Python)]
-  sim[Simantha Simulation Core]
+```
+┌─────────────────┐
+│  OPC UA Client  │  (UA Expert, SCADA, MES)
+│   (Monitor &    │
+│    Control)     │
+└────────┬────────┘
+         │ OPC UA Protocol (opc.tcp://)
+         ▼
+┌─────────────────┐
+│  OPC UA Server  │  (python-opcua)
+│  Address Space  │  - Read-only: KPIs, states, health
+│  & Handlers     │  - Writable: PauseLine, InterarrivalTime
+└────────┬────────┘
+         │ Python API
+         ▼
+┌─────────────────┐
+│    Simantha     │  Discrete-Event Simulation
+│   Simulation    │  - Source → M1 → Buffer → M2 → Sink
+│     Engine      │  - Health degradation modeling
+│                 │  - Maintenance intervention
+└─────────────────┘
+```
 
-  client --- proto --- server --- layer --- sim
-  server --> addr[Address space & read/write handlers]
-  layer --> mapping[State mapping & parameter validation]
-  sim --> objs[Machines, Buffers, Source, Sink]
+---
 
+## 📊 OPC UA Address Space
 
-## OPC UA Address Space (current)
+### Current Structure (Phase 4)
 
-Objects
-  └─ Line1
-      ├─ System
-      │   ├─ SimTime              # double: simulated time (s)
-      │   ├─ Throughput           # int: placeholder parts‑out counter
-      │   └─ Controls
-      │       ├─ PauseLine        # bool: pause/resume the sim loop
-      │       └─ InterarrivalTime # double: Source.interarrival_time (s)
+```
+Objects/
+  └─ Line1/
+      ├─ System/
+      │    ├─ SimTime (double, READ-ONLY)           # Simulation time in seconds
+      │    ├─ Throughput (int, READ-ONLY)           # Total parts produced (monotonic)
+      │    └─ Controls/
+      │         ├─ PauseLine (bool, WRITABLE)       # Pause entire line
+      │         └─ InterarrivalTime (double, WRITABLE)  # Part arrival rate (0=fast, >0=delay)
       │
-      ├─ LineKPIs
-      │   └─ TotalWIP             # int: simple WIP approximation (e.g. buffer level)
+      ├─ LineKPIs/
+      │    └─ TotalWIP (int, READ-ONLY)             # Work-in-process (buffer level)
       │
-      ├─ Station1
-      │   ├─ State                # string: RUNNING / PAUSED / IDLE (to be tightened)
-      │   ├─ PartCount            # int: parts processed (placeholder, Phase 4+ to refine)
-      │   └─ Utilisation          # double: coarse utilisation estimate
+      ├─ Station1/ (M1)
+      │    ├─ State (string, READ-ONLY)             # RUNNING, PAUSED, FAILED, UNDER_REPAIR
+      │    ├─ PartCount (int, READ-ONLY)            # Parts processed (monotonic)
+      │    ├─ Utilisation (double, READ-ONLY)       # 0.0 = idle, 1.0 = running
+      │    ├─ HealthState (int, READ-ONLY)          # 0=healthy, 1=failed
+      │    └─ HealthPercent (double, READ-ONLY)     # 100=healthy, 0=failed
       │
-      └─ Buffer1
-          ├─ CurrentLevel         # int: items in buffer
-          └─ Capacity             # int: buffer capacity
+      ├─ Buffer1/
+      │    ├─ CurrentLevel (int, READ-ONLY)         # Current WIP count
+      │    └─ Capacity (int, READ-ONLY)             # Max buffer capacity (10)
+      │
+      ├─ Station2/ (M2)
+      │    ├─ State (string, READ-ONLY)             # RUNNING, PAUSED
+      │    ├─ PartCount (int, READ-ONLY)            # Parts processed
+      │    └─ Utilisation (double, READ-ONLY)       # 0.0 or 1.0
+      │
+      └─ Maintenance/
+           ├─ MaintenanceActive (bool, READ-ONLY)   # True when repairing
+           ├─ QueueLength (int, READ-ONLY)          # Machines waiting for repair
+           └─ TotalRepairs (int, READ-ONLY)         # Completed repairs count
+```
 
+### Variable Access Rights
 
+**Read-Only (Monitoring):**
+All KPIs, states, health metrics, buffer levels, maintenance status
 
+**Writable (Control):**
+- `System/Controls/PauseLine` - Pause/resume entire line
+- `System/Controls/InterarrivalTime` - Adjust part arrival rate
+
+---
+
+## 🧪 Testing & Scenarios
+
+### Run Baseline Scenarios (Batch Mode)
+
+```bash
+python src/simantha_baseline.py
+```
+
+**Generates CSV results in `results/phase4/`:**
+- `scenario_A_balanced.csv` - M1=1s, M2=1s (balanced line)
+- `scenario_B_bottleneck_M1.csv` - M1=2s, M2=1s (M1 bottleneck)
+- `scenario_C_failures_M1.csv` - M1 degrades/fails, maintainer repairs
+
+### Verify Real-Time OPC UA Server
+
+1. **Start server:** `python src/opcua_server.py`
+2. **Connect UA Expert** to `opc.tcp://localhost:4840/simantha/`
+3. **Test controls:**
+   - Set `PauseLine = True` → Simulation freezes
+   - Set `InterarrivalTime = 5.0` → Parts arrive every 5 seconds (slower)
+4. **Observe failures:**
+   - Watch `Station1/HealthPercent` drop to 0 when M1 fails
+   - See `Maintenance/MaintenanceActive = True` during repair
+   - Buffer drains while M1 is down
+
+---
+
+## 🔬 Key Technical Lessons
+
+### Critical: DO NOT Modify `machine.cycle_time` at Runtime
+
+**Issue:** Setting `machine.cycle_time` after simulation starts causes "Failed event: time 0" errors.
+
+**Root Cause:** Simantha reschedules events when cycle_time changes, creating invalid time-0 events.
+
+**Solution:** Set cycle_time only in Machine constructor. Use **health degradation** for runtime variability instead.
+
+### Realistic Manufacturing Variability
+
+Real machines don't have their "ideal" cycle time change dynamically. Instead, **effective throughput** varies due to:
+
+- ✅ Health degradation (wear, fouling, calibration drift)
+- ✅ Unplanned downtime (failures, jams)
+- ✅ Quality issues (rework, scrap) - *Phase 8*
+- ✅ Speed losses (running below design speed)
+
+This naturally creates bottlenecks, buffer utilization, and WIP fluctuations.
+
+### Safe Runtime Modifications
+
+✅ **CAN modify:**
+- `source.interarrival_time` - Arrival rate control (works safely)
+
+❌ **CANNOT modify:**
+- `machine.cycle_time` - Causes time-0 errors
+- Routing after simulation starts - Breaks event queue
+
+### Golden Stepping Pattern
+
+```python
+sim_time = 0.0
+while True:
+    # Read controls, modify source.interarrival_time if needed
+    if not paused:
+        sim_time += sim_step  # ALWAYS increment before simulate()
+        system.simulate(simulation_time=sim_time)  # First call at time=1.0
+```
+
+**Never call `system.simulate(simulation_time=0)` or with time ≤ 0**
+
+### Monotonic Counter Pattern
+
+**Issue:** `sink.level` can decrease during maintenance events, causing part counts to jump around.
+
+**Solution:** Implement manual counter that only increases:
+
+```python
+if current_sink_level > prev_sink_level:
+    delta_parts = current_sink_level - prev_sink_level
+    total_parts_produced += delta_parts  # Only increases!
+```
+
+---
+
+## 📁 Repository Structure
+
+```
+simantha-opcua/
+├─ src/
+│   ├─ simantha_baseline.py     # Phase 1: Baseline scenarios (batch mode)
+│   └─ opcua_server.py           # Phase 2-4: Real-time OPC UA server
+│
+├─ results/
+│   └─ phase4/                   # CSV outputs from baseline scenarios
+│
+├─ tests/                        # Unit tests (to be added)
+│
+├─ docs/                         # Additional documentation
+│
+├─ requirements.txt              # Python dependencies
+├─ LICENSE
+└─ README.md
+```
+
+---
+
+## 🐛 Troubleshooting
+
+### "Failed event: time 0, location M1, action get_part"
+
+**Cause:** Modifying `machine.cycle_time` after simulation started, or calling `simulate(0)`.
+
+**Fix:** Remove all runtime `cycle_time` modifications. Use health degradation instead.
+
+### Part counts jumping around (e.g., 144 → 122 → 150)
+
+**Cause:** `sink.level` decreases during maintenance events.
+
+**Fix:** Implemented monotonic counter (already fixed in current version).
+
+### Simulation freezes/doesn't advance
+
+**Cause:** `PauseLine = True` in OPC UA, or time not incrementing in loop.
+
+**Fix:** Set `PauseLine = False` via OPC UA client, or check loop logic.
+
+---
+
+## 🗺️ Roadmap
+
+### Phase 5: Enhanced State Logic
+- BLOCKED/STARVED detection (machine waiting for buffer space/parts)
+- Event-driven metrics from Simantha internal state
+- Per-station downtime tracking (BlockedTime, StarvedTime, DownTime)
+
+### Phase 6: OEE Calculation
+- Availability = Operating Time / Planned Production Time
+- Performance = Actual Output / Theoretical Max Output
+- Quality = Good Parts / Total Parts
+- Per-station and line-level OEE
+
+### Phase 7: Multi-Buffer & Extended Topologies
+- 3+ machine lines with multiple buffers
+- Parallel lines, assembly/disassembly stations
+- Configurable line topologies via YAML
+
+### Phase 8: Quality & Reject Modeling
+- Part defect tracking (good/defective attribute)
+- Scrap/rework routing
+- Quality gates and inspection stations
+- First Pass Yield metrics
+
+### Phase 9: Advanced Failure Modes
+- MTTF/MTTR distributions (replace simple degradation matrix)
+- Multiple failure types per machine (mechanical, electrical, tooling)
+- Preventive vs. predictive maintenance strategies
+
+### Phase 10: Historical Data & Analytics
+- Time-series database integration (InfluxDB/TimescaleDB)
+- Grafana dashboards for trend analysis
+- Alarm/notification system
+- CSV export for offline analysis
+
+---
+
+## 📚 References
+
+- **Simantha:** https://github.com/usnistgov/simantha
+- **OPC UA Specification:** https://opcfoundation.org/
+- **python-opcua:** https://github.com/FreeOpcUa/python-opcua
+
+---
+
+## 📄 License
+
+Public Domain (following Simantha's license)
+
+---
+
+## 🙏 Acknowledgments
+
+Built on the [Simantha](https://github.com/usnistgov/simantha) discrete-event simulation library by NIST.
