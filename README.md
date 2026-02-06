@@ -22,8 +22,8 @@ A real-time **digital twin** of a manufacturing production line using [Simantha]
 | **Phase 3:** Bidirectional Control | ✅ **Complete** | Global pause, arrival rate control |
 | **Phase 4:** Health & Degradation | ✅ **Complete** | Machine health tracking, maintenance modeling, failure events |
 | **Phase 5:** Enhanced State Logic | ✅ **Complete** | 6-state machine (IDLE/PROCESSING/BLOCKED/STARVED/FAILED/UNDER_REPAIR/PAUSED), real utilization, time tracking |
-| **Phase 6:** OEE Calculation | 🎯 **Next** | Availability × Performance × Quality metrics |
-| **Phase 7:** Multi-Buffer Lines | ⏳ Planned | 3+ machines, complex topologies |
+| **Phase 6:** OEE Calculation | ✅ **Complete** | Per-station and line-level OEE (Availability × Performance × Quality) |
+| **Phase 7:** Multi-Buffer Lines | 🎯 **Next** | 3+ machines, complex topologies |
 | **Phase 8:** Quality Modeling | ⏳ Planned | Defect tracking, scrap, rework |
 
 ---
@@ -142,7 +142,12 @@ Objects/
       │         └─ InterarrivalTime (double, WRITABLE)  # Part arrival rate (0=fast, >0=delay)
       │
       ├─ LineKPIs/
-      │    └─ TotalWIP (int, READ-ONLY)             # Work-in-process (buffer level)
+      │    ├─ TotalWIP (int, READ-ONLY)             # Work-in-process (buffer level)
+      │    └─ LineOEE/                              # Phase 6: Line-level OEE metrics
+      │         ├─ Availability (double, READ-ONLY) # Min of all stations (bottleneck)
+      │         ├─ Performance (double, READ-ONLY)  # Min of all stations (bottleneck)
+      │         ├─ Quality (double, READ-ONLY)      # Min of all stations (1.0 in Phase 6)
+      │         └─ OEE (double, READ-ONLY)          # Availability × Performance × Quality
       │
       ├─ Station1/ (M1)
       │    ├─ State (string, READ-ONLY)             # IDLE, PROCESSING, BLOCKED, STARVED, PAUSED, FAILED, UNDER_REPAIR
@@ -154,7 +159,15 @@ Objects/
       │    ├─ StarvedTime (double, READ-ONLY)       # Time spent waiting for upstream
       │    ├─ DownTime (double, READ-ONLY)          # Time spent failed or under repair
       │    ├─ ProcessingTime (double, READ-ONLY)    # Time spent actively processing parts
-      │    └─ IdleTime (double, READ-ONLY)          # Time spent idle (waiting for work)
+      │    ├─ IdleTime (double, READ-ONLY)          # Time spent idle (waiting for work)
+      │    └─ OEE/                                  # Phase 6: OEE metrics
+      │         ├─ Availability (double, READ-ONLY) # (TotalTime - DownTime) / TotalTime
+      │         ├─ Performance (double, READ-ONLY)  # ActualOutput / TheoreticalOutput
+      │         ├─ Quality (double, READ-ONLY)      # GoodParts / TotalParts (1.0 in Phase 6)
+      │         ├─ OEE (double, READ-ONLY)          # Availability × Performance × Quality
+      │         ├─ GoodPartCount (int, READ-ONLY)   # Parts without defects (Phase 8 prep)
+      │         ├─ DefectivePartCount (int, READ-ONLY) # Defective parts (Phase 8 prep)
+      │         └─ TheoreticalOutput (double, READ-ONLY) # Diagnostic: max possible output
       │
       ├─ Buffer1/
       │    ├─ CurrentLevel (int, READ-ONLY)         # Current WIP count
@@ -168,7 +181,15 @@ Objects/
       │    ├─ StarvedTime (double, READ-ONLY)       # Time spent waiting for upstream
       │    ├─ DownTime (double, READ-ONLY)          # Time spent down (M2 has no degradation, so always 0)
       │    ├─ ProcessingTime (double, READ-ONLY)    # Time spent actively processing parts
-      │    └─ IdleTime (double, READ-ONLY)          # Time spent idle (waiting for work)
+      │    ├─ IdleTime (double, READ-ONLY)          # Time spent idle (waiting for work)
+      │    └─ OEE/                                  # Phase 6: OEE metrics
+      │         ├─ Availability (double, READ-ONLY) # (TotalTime - DownTime) / TotalTime
+      │         ├─ Performance (double, READ-ONLY)  # ActualOutput / TheoreticalOutput
+      │         ├─ Quality (double, READ-ONLY)      # GoodParts / TotalParts (1.0 in Phase 6)
+      │         ├─ OEE (double, READ-ONLY)          # Availability × Performance × Quality
+      │         ├─ GoodPartCount (int, READ-ONLY)   # Parts without defects (Phase 8 prep)
+      │         ├─ DefectivePartCount (int, READ-ONLY) # Defective parts (Phase 8 prep)
+      │         └─ TheoreticalOutput (double, READ-ONLY) # Diagnostic: max possible output
       │
       └─ Maintenance/
            ├─ MaintenanceActive (bool, READ-ONLY)   # True when repairing
@@ -322,11 +343,28 @@ simantha-opcua/
 - Event-driven metrics from Simantha internal state
 - Per-station downtime tracking (BlockedTime, StarvedTime, DownTime)
 
-### Phase 6: OEE Calculation
-- Availability = Operating Time / Planned Production Time
-- Performance = Actual Output / Theoretical Max Output
-- Quality = Good Parts / Total Parts
-- Per-station and line-level OEE
+### Phase 6: OEE Calculation ✅
+
+**Status:** Complete (2026-02-06)
+
+Implements industry-standard OEE (Overall Equipment Effectiveness) metrics:
+
+- **Availability** = (TotalTime - DownTime) / TotalTime (machine uptime)
+- **Performance** = ActualOutput / TheoreticalOutput (processing speed efficiency)
+- **Quality** = GoodParts / TotalParts (Phase 6: 100%, Phase 8: real defect tracking)
+- **OEE** = Availability × Performance × Quality
+
+**Exposed via OPC UA:**
+
+- **Per-Station OEE**: `Station1/OEE/` and `Station2/OEE/` (diagnostics - which machine limits performance?)
+- **Line-Level OEE**: `LineKPIs/LineOEE/` (business metric - overall line effectiveness)
+- **Bottleneck Logic**: Line OEE uses min() of station metrics (weakest link determines line performance)
+
+**Variables per station:**
+
+- Availability, Performance, Quality, OEE (all range 0.0-1.0)
+- GoodPartCount, DefectivePartCount (Phase 8 prep)
+- TheoreticalOutput (diagnostic)
 
 ### Phase 7: Multi-Buffer & Extended Topologies
 - 3+ machine lines with multiple buffers

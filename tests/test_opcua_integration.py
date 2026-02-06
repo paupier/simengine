@@ -411,5 +411,183 @@ class TestEnhancedStateMachine:
             f"Should observe multiple states over time, saw: {states_observed}"
 
 
+class TestOEEMetrics:
+    """Test Phase 6: OEE (Overall Equipment Effectiveness) Calculation"""
+
+    def test_oee_variables_exist(self, opcua_client):
+        """Verify all OEE variables are accessible"""
+        root = opcua_client.get_objects_node()
+        line1 = root.get_child(["2:Line1"])
+
+        # Station 1 OEE
+        station1 = line1.get_child(["2:Station1"])
+        oee1 = station1.get_child(["2:OEE"])
+
+        availability = oee1.get_child(["2:Availability"])
+        performance = oee1.get_child(["2:Performance"])
+        quality = oee1.get_child(["2:Quality"])
+        oee = oee1.get_child(["2:OEE"])
+        good_parts = oee1.get_child(["2:GoodPartCount"])
+        defective_parts = oee1.get_child(["2:DefectivePartCount"])
+        theoretical = oee1.get_child(["2:TheoreticalOutput"])
+
+        assert availability is not None
+        assert performance is not None
+        assert quality is not None
+        assert oee is not None
+        assert good_parts is not None
+        assert defective_parts is not None
+        assert theoretical is not None
+
+        # Station 2 OEE
+        station2 = line1.get_child(["2:Station2"])
+        oee2 = station2.get_child(["2:OEE"])
+
+        assert oee2.get_child(["2:Availability"]) is not None
+        assert oee2.get_child(["2:Performance"]) is not None
+        assert oee2.get_child(["2:Quality"]) is not None
+        assert oee2.get_child(["2:OEE"]) is not None
+
+        # Line OEE
+        line_kpis = line1.get_child(["2:LineKPIs"])
+        line_oee_node = line_kpis.get_child(["2:LineOEE"])
+
+        assert line_oee_node.get_child(["2:Availability"]) is not None
+        assert line_oee_node.get_child(["2:Performance"]) is not None
+        assert line_oee_node.get_child(["2:Quality"]) is not None
+        assert line_oee_node.get_child(["2:OEE"]) is not None
+
+    def test_oee_bounds(self, opcua_client):
+        """Verify OEE components are in [0.0, 1.0]"""
+        root = opcua_client.get_objects_node()
+        line1 = root.get_child(["2:Line1"])
+
+        # Station 1
+        station1 = line1.get_child(["2:Station1"])
+        oee1 = station1.get_child(["2:OEE"])
+
+        assert 0.0 <= oee1.get_child(["2:Availability"]).get_value() <= 1.0
+        assert 0.0 <= oee1.get_child(["2:Performance"]).get_value() <= 1.0
+        assert 0.0 <= oee1.get_child(["2:Quality"]).get_value() <= 1.0
+        assert 0.0 <= oee1.get_child(["2:OEE"]).get_value() <= 1.0
+
+        # Station 2
+        station2 = line1.get_child(["2:Station2"])
+        oee2 = station2.get_child(["2:OEE"])
+
+        assert 0.0 <= oee2.get_child(["2:Availability"]).get_value() <= 1.0
+        assert 0.0 <= oee2.get_child(["2:Performance"]).get_value() <= 1.0
+        assert 0.0 <= oee2.get_child(["2:Quality"]).get_value() <= 1.0
+        assert 0.0 <= oee2.get_child(["2:OEE"]).get_value() <= 1.0
+
+        # Line OEE
+        line_kpis = line1.get_child(["2:LineKPIs"])
+        line_oee_node = line_kpis.get_child(["2:LineOEE"])
+
+        assert 0.0 <= line_oee_node.get_child(["2:Availability"]).get_value() <= 1.0
+        assert 0.0 <= line_oee_node.get_child(["2:Performance"]).get_value() <= 1.0
+        assert 0.0 <= line_oee_node.get_child(["2:Quality"]).get_value() <= 1.0
+        assert 0.0 <= line_oee_node.get_child(["2:OEE"]).get_value() <= 1.0
+
+    def test_oee_formula(self, opcua_client):
+        """Verify OEE = Availability × Performance × Quality"""
+        root = opcua_client.get_objects_node()
+        line1 = root.get_child(["2:Line1"])
+
+        # Station 1
+        station1 = line1.get_child(["2:Station1"])
+        oee1 = station1.get_child(["2:OEE"])
+
+        avail = oee1.get_child(["2:Availability"]).get_value()
+        perf = oee1.get_child(["2:Performance"]).get_value()
+        qual = oee1.get_child(["2:Quality"]).get_value()
+        oee = oee1.get_child(["2:OEE"]).get_value()
+
+        expected_oee = avail * perf * qual
+        assert abs(oee - expected_oee) < 0.001, \
+            f"M1 OEE {oee} should equal Avail×Perf×Qual {expected_oee}"
+
+        # Station 2
+        station2 = line1.get_child(["2:Station2"])
+        oee2 = station2.get_child(["2:OEE"])
+
+        avail2 = oee2.get_child(["2:Availability"]).get_value()
+        perf2 = oee2.get_child(["2:Performance"]).get_value()
+        qual2 = oee2.get_child(["2:Quality"]).get_value()
+        oee2_val = oee2.get_child(["2:OEE"]).get_value()
+
+        expected_oee2 = avail2 * perf2 * qual2
+        assert abs(oee2_val - expected_oee2) < 0.001, \
+            f"M2 OEE {oee2_val} should equal Avail×Perf×Qual {expected_oee2}"
+
+        # Line OEE
+        line_kpis = line1.get_child(["2:LineKPIs"])
+        line_oee_node = line_kpis.get_child(["2:LineOEE"])
+
+        line_avail = line_oee_node.get_child(["2:Availability"]).get_value()
+        line_perf = line_oee_node.get_child(["2:Performance"]).get_value()
+        line_qual = line_oee_node.get_child(["2:Quality"]).get_value()
+        line_oee = line_oee_node.get_child(["2:OEE"]).get_value()
+
+        expected_line_oee = line_avail * line_perf * line_qual
+        assert abs(line_oee - expected_line_oee) < 0.001, \
+            f"Line OEE {line_oee} should equal Avail×Perf×Qual {expected_line_oee}"
+
+    def test_quality_phase6_placeholder(self, opcua_client):
+        """Verify Quality is 1.0 (100%) in Phase 6 (no defects yet)"""
+        root = opcua_client.get_objects_node()
+        line1 = root.get_child(["2:Line1"])
+
+        station1 = line1.get_child(["2:Station1"])
+        oee1 = station1.get_child(["2:OEE"])
+
+        # Wait for some parts to be produced
+        time.sleep(5)
+
+        good_parts = oee1.get_child(["2:GoodPartCount"]).get_value()
+        defective_parts = oee1.get_child(["2:DefectivePartCount"]).get_value()
+        quality = oee1.get_child(["2:Quality"]).get_value()
+
+        # Phase 6: All parts are good (no defect tracking yet)
+        assert defective_parts == 0, "Phase 6 should have no defective parts"
+        if good_parts > 0:
+            assert quality == 1.0, "Quality should be 100% when parts are produced"
+
+    def test_line_oee_bottleneck(self, opcua_client):
+        """Verify Line OEE uses min (bottleneck) logic"""
+        root = opcua_client.get_objects_node()
+        line1 = root.get_child(["2:Line1"])
+
+        # Wait for steady state
+        time.sleep(10)
+
+        station1 = line1.get_child(["2:Station1"])
+        station2 = line1.get_child(["2:Station2"])
+
+        oee1 = station1.get_child(["2:OEE"])
+        oee2 = station2.get_child(["2:OEE"])
+
+        m1_avail = oee1.get_child(["2:Availability"]).get_value()
+        m2_avail = oee2.get_child(["2:Availability"]).get_value()
+
+        m1_perf = oee1.get_child(["2:Performance"]).get_value()
+        m2_perf = oee2.get_child(["2:Performance"]).get_value()
+
+        line_kpis = line1.get_child(["2:LineKPIs"])
+        line_oee_node = line_kpis.get_child(["2:LineOEE"])
+
+        line_avail = line_oee_node.get_child(["2:Availability"]).get_value()
+        line_perf = line_oee_node.get_child(["2:Performance"]).get_value()
+
+        # Line metrics should be min of station metrics (bottleneck)
+        expected_line_avail = min(m1_avail, m2_avail)
+        expected_line_perf = min(m1_perf, m2_perf)
+
+        assert abs(line_avail - expected_line_avail) < 0.001, \
+            f"Line Availability {line_avail} should be min of station availabilities {expected_line_avail}"
+        assert abs(line_perf - expected_line_perf) < 0.001, \
+            f"Line Performance {line_perf} should be min of station performances {expected_line_perf}"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

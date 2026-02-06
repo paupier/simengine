@@ -77,6 +77,13 @@ def build_opcua_server():
     line_kpi_node = line1.add_object(idx, "LineKPIs")
     var_total_wip = line_kpi_node.add_variable(idx, "TotalWIP", 0)
 
+    # Line-level OEE (Phase 6)
+    line_oee_node = line_kpi_node.add_object(idx, "LineOEE")
+    var_line_availability = line_oee_node.add_variable(idx, "Availability", 0.0)
+    var_line_performance = line_oee_node.add_variable(idx, "Performance", 0.0)
+    var_line_quality = line_oee_node.add_variable(idx, "Quality", 1.0)
+    var_line_oee = line_oee_node.add_variable(idx, "OEE", 0.0)
+
     # System controls (writable inputs to control simulation)
     controls_node = system_node.add_object(idx, "Controls")
     var_pause_line = controls_node.add_variable(idx, "PauseLine", False)
@@ -96,6 +103,16 @@ def build_opcua_server():
     var_m1_processing_time = station1_node.add_variable(idx, "ProcessingTime", 0.0)
     var_m1_idle_time = station1_node.add_variable(idx, "IdleTime", 0.0)
 
+    # OEE Metrics (Phase 6)
+    oee1_node = station1_node.add_object(idx, "OEE")
+    var_m1_availability = oee1_node.add_variable(idx, "Availability", 0.0)
+    var_m1_performance = oee1_node.add_variable(idx, "Performance", 0.0)
+    var_m1_quality = oee1_node.add_variable(idx, "Quality", 1.0)
+    var_m1_oee = oee1_node.add_variable(idx, "OEE", 0.0)
+    var_m1_good_parts = oee1_node.add_variable(idx, "GoodPartCount", 0)
+    var_m1_defective_parts = oee1_node.add_variable(idx, "DefectivePartCount", 0)
+    var_m1_theoretical = oee1_node.add_variable(idx, "TheoreticalOutput", 0.0)
+
     # Buffer between Station1 and Station2
     buffer1_node = line1.add_object(idx, "Buffer1")
     var_b1_level = buffer1_node.add_variable(idx, "CurrentLevel", 0)
@@ -113,6 +130,16 @@ def build_opcua_server():
     var_m2_processing_time = station2_node.add_variable(idx, "ProcessingTime", 0.0)
     var_m2_idle_time = station2_node.add_variable(idx, "IdleTime", 0.0)
 
+    # OEE Metrics (Phase 6)
+    oee2_node = station2_node.add_object(idx, "OEE")
+    var_m2_availability = oee2_node.add_variable(idx, "Availability", 0.0)
+    var_m2_performance = oee2_node.add_variable(idx, "Performance", 0.0)
+    var_m2_quality = oee2_node.add_variable(idx, "Quality", 1.0)
+    var_m2_oee = oee2_node.add_variable(idx, "OEE", 0.0)
+    var_m2_good_parts = oee2_node.add_variable(idx, "GoodPartCount", 0)
+    var_m2_defective_parts = oee2_node.add_variable(idx, "DefectivePartCount", 0)
+    var_m2_theoretical = oee2_node.add_variable(idx, "TheoreticalOutput", 0.0)
+
     # Maintenance/Degradation (only applicable if degradation enabled)
     maintenance_node = line1.add_object(idx, "Maintenance")
     var_maint_active = maintenance_node.add_variable(idx, "MaintenanceActive", False)
@@ -127,6 +154,10 @@ def build_opcua_server():
         var_simtime,        # System/SimTime
         var_throughput,     # System/Throughput
         var_total_wip,      # LineKPIs/TotalWIP
+        var_line_availability,  # LineKPIs/LineOEE/Availability
+        var_line_performance,   # LineKPIs/LineOEE/Performance
+        var_line_quality,       # LineKPIs/LineOEE/Quality
+        var_line_oee,           # LineKPIs/LineOEE/OEE
         var_m1_state,       # Station1/State
         var_m1_partcount,   # Station1/PartCount
         var_m1_util,        # Station1/Utilisation
@@ -137,6 +168,13 @@ def build_opcua_server():
         var_m1_down_time,       # Station1/DownTime
         var_m1_processing_time, # Station1/ProcessingTime
         var_m1_idle_time,       # Station1/IdleTime
+        var_m1_availability,    # Station1/OEE/Availability
+        var_m1_performance,     # Station1/OEE/Performance
+        var_m1_quality,         # Station1/OEE/Quality
+        var_m1_oee,             # Station1/OEE/OEE
+        var_m1_good_parts,      # Station1/OEE/GoodPartCount
+        var_m1_defective_parts, # Station1/OEE/DefectivePartCount
+        var_m1_theoretical,     # Station1/OEE/TheoreticalOutput
         var_b1_level,       # Buffer1/CurrentLevel
         var_b1_capacity,    # Buffer1/Capacity
         var_m2_state,       # Station2/State
@@ -147,6 +185,13 @@ def build_opcua_server():
         var_m2_down_time,       # Station2/DownTime
         var_m2_processing_time, # Station2/ProcessingTime
         var_m2_idle_time,       # Station2/IdleTime
+        var_m2_availability,    # Station2/OEE/Availability
+        var_m2_performance,     # Station2/OEE/Performance
+        var_m2_quality,         # Station2/OEE/Quality
+        var_m2_oee,             # Station2/OEE/OEE
+        var_m2_good_parts,      # Station2/OEE/GoodPartCount
+        var_m2_defective_parts, # Station2/OEE/DefectivePartCount
+        var_m2_theoretical,     # Station2/OEE/TheoreticalOutput
         var_maint_active,   # Maintenance/MaintenanceActive
         var_maint_queue,    # Maintenance/QueueLength
         var_total_repairs,  # Maintenance/TotalRepairs
@@ -166,6 +211,11 @@ def build_opcua_server():
         "simtime": var_simtime,
         "throughput": var_throughput,
         "total_wip": var_total_wip,
+        # Line OEE - read-only
+        "line_availability": var_line_availability,
+        "line_performance": var_line_performance,
+        "line_quality": var_line_quality,
+        "line_oee": var_line_oee,
         # System Controls (writable)
         "pause_line": var_pause_line,
         "interarrival_time": var_interarrival,
@@ -180,6 +230,14 @@ def build_opcua_server():
         "m1_down_time": var_m1_down_time,
         "m1_processing_time": var_m1_processing_time,
         "m1_idle_time": var_m1_idle_time,
+        # Station 1 OEE - read-only
+        "m1_availability": var_m1_availability,
+        "m1_performance": var_m1_performance,
+        "m1_quality": var_m1_quality,
+        "m1_oee": var_m1_oee,
+        "m1_good_parts": var_m1_good_parts,
+        "m1_defective_parts": var_m1_defective_parts,
+        "m1_theoretical": var_m1_theoretical,
         # Buffer 1 - read-only
         "b1_level": var_b1_level,
         "b1_capacity": var_b1_capacity,
@@ -192,6 +250,14 @@ def build_opcua_server():
         "m2_down_time": var_m2_down_time,
         "m2_processing_time": var_m2_processing_time,
         "m2_idle_time": var_m2_idle_time,
+        # Station 2 OEE - read-only
+        "m2_availability": var_m2_availability,
+        "m2_performance": var_m2_performance,
+        "m2_quality": var_m2_quality,
+        "m2_oee": var_m2_oee,
+        "m2_good_parts": var_m2_good_parts,
+        "m2_defective_parts": var_m2_defective_parts,
+        "m2_theoretical": var_m2_theoretical,
         # Maintenance - read-only
         "maint_active": var_maint_active,
         "maint_queue": var_maint_queue,
@@ -210,6 +276,10 @@ def main():
     sim_time = 0.0
     sim_step = 1.0
     real_step = 1.0
+
+    # Nominal cycle times (fixed values, not Distribution objects)
+    m1_nominal_cycle_time = 1.0  # seconds
+    m2_nominal_cycle_time = 1.0  # seconds
 
     # Manual part counters (only increase, never decrease)
     prev_sink_level = 0
@@ -376,10 +446,76 @@ def main():
             prev_m1_state = m1_state
             prev_m2_state = m2_state
 
+            # ========== OEE CALCULATION (Phase 6) ==========
+
+            # --- Station 1 (M1) OEE ---
+            # Availability = (TotalTime - DownTime) / TotalTime
+            if m1_total_time > 0:
+                m1_availability = max(0.0, min(1.0, (m1_total_time - m1_down_time) / m1_total_time))
+            else:
+                m1_availability = 0.0
+
+            # Performance = ActualOutput / TheoreticalOutput
+            # AvailableTime = time when not starved (material was available)
+            m1_available_time = m1_processing_time + m1_blocked_time + m1_idle_time
+            if m1_available_time > 0 and m1_nominal_cycle_time > 0:
+                m1_theoretical_output = m1_available_time / m1_nominal_cycle_time
+                m1_performance = max(0.0, min(1.0, m1_partcount / m1_theoretical_output))
+            else:
+                m1_theoretical_output = 0.0
+                m1_performance = 0.0
+
+            # Quality = GoodParts / TotalParts (Phase 6: assume 100%)
+            m1_good_parts = m1_partcount
+            m1_defective_parts = 0
+            if m1_partcount > 0:
+                m1_quality = 1.0  # Phase 8 will track defects
+            else:
+                m1_quality = 0.0  # No parts produced yet
+
+            # OEE = Availability × Performance × Quality
+            m1_oee = m1_availability * m1_performance * m1_quality
+
+            # --- Station 2 (M2) OEE ---
+            # (Same pattern, but M2 has no health degradation so down_time always 0)
+            if m2_total_time > 0:
+                m2_availability = max(0.0, min(1.0, (m2_total_time - m2_down_time) / m2_total_time))
+            else:
+                m2_availability = 0.0
+
+            m2_available_time = m2_processing_time + m2_blocked_time + m2_idle_time
+            if m2_available_time > 0 and m2_nominal_cycle_time > 0:
+                m2_theoretical_output = m2_available_time / m2_nominal_cycle_time
+                m2_performance = max(0.0, min(1.0, m2_partcount / m2_theoretical_output))
+            else:
+                m2_theoretical_output = 0.0
+                m2_performance = 0.0
+
+            m2_good_parts = m2_partcount
+            m2_defective_parts = 0
+            if m2_partcount > 0:
+                m2_quality = 1.0
+            else:
+                m2_quality = 0.0
+
+            m2_oee = m2_availability * m2_performance * m2_quality
+
+            # --- Line-Level OEE (Bottleneck-based) ---
+            line_availability = min(m1_availability, m2_availability)  # Weakest link
+            line_performance = min(m1_performance, m2_performance)     # Weakest link
+            line_quality = min(m1_quality, m2_quality)                # Worst quality
+            line_oee = line_availability * line_performance * line_quality
+
             # --- Write KPIs back to OPC UA ---
             vars_["simtime"].set_value(current_sim_time)
             vars_["throughput"].set_value(current_throughput)
             vars_["total_wip"].set_value(total_wip)
+
+            # Line-Level OEE
+            vars_["line_availability"].set_value(line_availability)
+            vars_["line_performance"].set_value(line_performance)
+            vars_["line_quality"].set_value(line_quality)
+            vars_["line_oee"].set_value(line_oee)
 
             vars_["m1_partcount"].set_value(m1_partcount)
             vars_["m1_state"].set_value(m1_state)
@@ -392,6 +528,15 @@ def main():
             vars_["m1_processing_time"].set_value(m1_processing_time)
             vars_["m1_idle_time"].set_value(m1_idle_time)
 
+            # Station 1 OEE
+            vars_["m1_availability"].set_value(m1_availability)
+            vars_["m1_performance"].set_value(m1_performance)
+            vars_["m1_quality"].set_value(m1_quality)
+            vars_["m1_oee"].set_value(m1_oee)
+            vars_["m1_good_parts"].set_value(m1_good_parts)
+            vars_["m1_defective_parts"].set_value(m1_defective_parts)
+            vars_["m1_theoretical"].set_value(m1_theoretical_output)
+
             vars_["b1_level"].set_value(b1_level)
             vars_["b1_capacity"].set_value(b1_capacity)
 
@@ -403,6 +548,15 @@ def main():
             vars_["m2_down_time"].set_value(m2_down_time)
             vars_["m2_processing_time"].set_value(m2_processing_time)
             vars_["m2_idle_time"].set_value(m2_idle_time)
+
+            # Station 2 OEE
+            vars_["m2_availability"].set_value(m2_availability)
+            vars_["m2_performance"].set_value(m2_performance)
+            vars_["m2_quality"].set_value(m2_quality)
+            vars_["m2_oee"].set_value(m2_oee)
+            vars_["m2_good_parts"].set_value(m2_good_parts)
+            vars_["m2_defective_parts"].set_value(m2_defective_parts)
+            vars_["m2_theoretical"].set_value(m2_theoretical_output)
 
             vars_["maint_active"].set_value(maint_active)
             vars_["maint_queue"].set_value(maint_queue_length)
