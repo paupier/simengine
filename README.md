@@ -10,8 +10,8 @@ A real-time **digital twin** of a manufacturing production line using [Simantha]
 
 ## 📋 Project Status
 
-**Current Phase:** Phase 4 Complete – Machine Health & Degradation
-**Last Updated:** 2026-02-05
+**Current Phase:** Phase 5 Complete – Enhanced State Logic & Time Tracking
+**Last Updated:** 2026-02-06
 
 ### Phase Completion Status
 
@@ -21,8 +21,8 @@ A real-time **digital twin** of a manufacturing production line using [Simantha]
 | **Phase 2:** OPC UA Read-Only | ✅ **Complete** | Real-time KPI monitoring via OPC UA |
 | **Phase 3:** Bidirectional Control | ✅ **Complete** | Global pause, arrival rate control |
 | **Phase 4:** Health & Degradation | ✅ **Complete** | Machine health tracking, maintenance modeling, failure events |
-| **Phase 5:** Enhanced State Logic | 🎯 **Next** | BLOCKED/STARVED detection, event-driven metrics |
-| **Phase 6:** OEE Calculation | ⏳ Planned | Availability × Performance × Quality metrics |
+| **Phase 5:** Enhanced State Logic | ✅ **Complete** | 6-state machine (IDLE/PROCESSING/BLOCKED/STARVED/FAILED/UNDER_REPAIR/PAUSED), real utilization, time tracking |
+| **Phase 6:** OEE Calculation | 🎯 **Next** | Availability × Performance × Quality metrics |
 | **Phase 7:** Multi-Buffer Lines | ⏳ Planned | 3+ machines, complex topologies |
 | **Phase 8:** Quality Modeling | ⏳ Planned | Defect tracking, scrap, rework |
 
@@ -45,7 +45,9 @@ This project creates a **realistic manufacturing digital twin** that:
 ✅ **Maintenance Intervention** - Maintainer repairs failed machines
 ✅ **Buffer Dynamics** - WIP accumulates/drains based on machine states
 ✅ **Throughput Variability** - Production rate fluctuates during failures
-✅ **State Tracking** - RUNNING, PAUSED, FAILED, UNDER_REPAIR states exposed
+✅ **Enhanced State Detection** - 6 states: IDLE, PROCESSING, BLOCKED, STARVED, PAUSED, FAILED, UNDER_REPAIR
+✅ **Time Tracking** - Cumulative time in each state (BlockedTime, StarvedTime, DownTime, ProcessingTime, IdleTime)
+✅ **Real Utilization** - Calculated as ProcessingTime / TotalTime (not binary 0/1)
 
 ---
 
@@ -127,7 +129,7 @@ Press Ctrl+C to stop.
 
 ## 📊 OPC UA Address Space
 
-### Current Structure (Phase 4)
+### Current Structure (Phase 5)
 
 ```
 Objects/
@@ -143,20 +145,30 @@ Objects/
       │    └─ TotalWIP (int, READ-ONLY)             # Work-in-process (buffer level)
       │
       ├─ Station1/ (M1)
-      │    ├─ State (string, READ-ONLY)             # RUNNING, PAUSED, FAILED, UNDER_REPAIR
+      │    ├─ State (string, READ-ONLY)             # IDLE, PROCESSING, BLOCKED, STARVED, PAUSED, FAILED, UNDER_REPAIR
       │    ├─ PartCount (int, READ-ONLY)            # Parts processed (monotonic)
-      │    ├─ Utilisation (double, READ-ONLY)       # 0.0 = idle, 1.0 = running
+      │    ├─ Utilisation (double, READ-ONLY)       # ProcessingTime / TotalTime (range: 0.0-1.0)
       │    ├─ HealthState (int, READ-ONLY)          # 0=healthy, 1=failed
-      │    └─ HealthPercent (double, READ-ONLY)     # 100=healthy, 0=failed
+      │    ├─ HealthPercent (double, READ-ONLY)     # 100=healthy, 0=failed
+      │    ├─ BlockedTime (double, READ-ONLY)       # Time spent waiting for downstream
+      │    ├─ StarvedTime (double, READ-ONLY)       # Time spent waiting for upstream
+      │    ├─ DownTime (double, READ-ONLY)          # Time spent failed or under repair
+      │    ├─ ProcessingTime (double, READ-ONLY)    # Time spent actively processing parts
+      │    └─ IdleTime (double, READ-ONLY)          # Time spent idle (waiting for work)
       │
       ├─ Buffer1/
       │    ├─ CurrentLevel (int, READ-ONLY)         # Current WIP count
       │    └─ Capacity (int, READ-ONLY)             # Max buffer capacity (10)
       │
       ├─ Station2/ (M2)
-      │    ├─ State (string, READ-ONLY)             # RUNNING, PAUSED
-      │    ├─ PartCount (int, READ-ONLY)            # Parts processed
-      │    └─ Utilisation (double, READ-ONLY)       # 0.0 or 1.0
+      │    ├─ State (string, READ-ONLY)             # IDLE, PROCESSING, BLOCKED, STARVED, PAUSED
+      │    ├─ PartCount (int, READ-ONLY)            # Parts processed (monotonic)
+      │    ├─ Utilisation (double, READ-ONLY)       # ProcessingTime / TotalTime (range: 0.0-1.0)
+      │    ├─ BlockedTime (double, READ-ONLY)       # Time spent waiting for downstream
+      │    ├─ StarvedTime (double, READ-ONLY)       # Time spent waiting for upstream
+      │    ├─ DownTime (double, READ-ONLY)          # Time spent down (M2 has no degradation, so always 0)
+      │    ├─ ProcessingTime (double, READ-ONLY)    # Time spent actively processing parts
+      │    └─ IdleTime (double, READ-ONLY)          # Time spent idle (waiting for work)
       │
       └─ Maintenance/
            ├─ MaintenanceActive (bool, READ-ONLY)   # True when repairing

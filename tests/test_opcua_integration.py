@@ -246,7 +246,7 @@ class TestStationStates:
         m1_state = opcua_client.get_node("ns=2;s=Line1.Station1.State")
         m2_state = opcua_client.get_node("ns=2;s=Line1.Station2.State")
 
-        valid_states = ["IDLE", "RUNNING", "PAUSED", "FAILED", "UNDER_REPAIR"]
+        valid_states = ["IDLE", "PROCESSING", "BLOCKED", "STARVED", "PAUSED", "FAILED", "UNDER_REPAIR"]
 
         for _ in range(5):
             state1 = m1_state.get_value()
@@ -274,6 +274,141 @@ class TestStationStates:
             assert 0.0 <= util2 <= 1.0, f"M2 utilisation {util2} out of range [0, 1]"
 
             time.sleep(1)
+
+
+class TestEnhancedStateMachine:
+    """Test Phase 5: Enhanced state logic and time tracking"""
+
+    def test_time_tracking_variables_exist(self, opcua_client):
+        """Verify all time tracking variables are accessible"""
+        root = opcua_client.get_objects_node()
+        line1 = root.get_child(["2:Line1"])
+        station1 = line1.get_child(["2:Station1"])
+        station2 = line1.get_child(["2:Station2"])
+
+        # Station1 time tracking
+        m1_blocked = station1.get_child(["2:BlockedTime"])
+        m1_starved = station1.get_child(["2:StarvedTime"])
+        m1_down = station1.get_child(["2:DownTime"])
+        m1_processing = station1.get_child(["2:ProcessingTime"])
+        m1_idle = station1.get_child(["2:IdleTime"])
+
+        # Station2 time tracking
+        m2_blocked = station2.get_child(["2:BlockedTime"])
+        m2_starved = station2.get_child(["2:StarvedTime"])
+        m2_down = station2.get_child(["2:DownTime"])
+        m2_processing = station2.get_child(["2:ProcessingTime"])
+        m2_idle = station2.get_child(["2:IdleTime"])
+
+        # All should be accessible and non-negative
+        assert m1_blocked.get_value() >= 0.0
+        assert m1_starved.get_value() >= 0.0
+        assert m1_down.get_value() >= 0.0
+        assert m1_processing.get_value() >= 0.0
+        assert m1_idle.get_value() >= 0.0
+
+        assert m2_blocked.get_value() >= 0.0
+        assert m2_starved.get_value() >= 0.0
+        assert m2_down.get_value() >= 0.0
+        assert m2_processing.get_value() >= 0.0
+        assert m2_idle.get_value() >= 0.0
+
+    def test_time_tracking_increases(self, opcua_client):
+        """Verify time tracking values increase over time"""
+        root = opcua_client.get_objects_node()
+        line1 = root.get_child(["2:Line1"])
+        station1 = line1.get_child(["2:Station1"])
+
+        # Get all time tracking variables
+        m1_blocked = station1.get_child(["2:BlockedTime"])
+        m1_starved = station1.get_child(["2:StarvedTime"])
+        m1_down = station1.get_child(["2:DownTime"])
+        m1_processing = station1.get_child(["2:ProcessingTime"])
+        m1_idle = station1.get_child(["2:IdleTime"])
+
+        # Record initial totals
+        initial_total = (m1_blocked.get_value() + m1_starved.get_value() +
+                        m1_down.get_value() + m1_processing.get_value() + m1_idle.get_value())
+
+        time.sleep(3)
+
+        # Check that total time increased
+        final_total = (m1_blocked.get_value() + m1_starved.get_value() +
+                      m1_down.get_value() + m1_processing.get_value() + m1_idle.get_value())
+
+        assert final_total > initial_total, "Total time should increase over time"
+
+    def test_time_accumulation_consistency(self, opcua_client):
+        """Verify sum of time tracking ≈ SimTime"""
+        root = opcua_client.get_objects_node()
+        line1 = root.get_child(["2:Line1"])
+        system = line1.get_child(["2:System"])
+        station1 = line1.get_child(["2:Station1"])
+
+        simtime = system.get_child(["2:SimTime"])
+        m1_blocked = station1.get_child(["2:BlockedTime"])
+        m1_starved = station1.get_child(["2:StarvedTime"])
+        m1_down = station1.get_child(["2:DownTime"])
+        m1_processing = station1.get_child(["2:ProcessingTime"])
+        m1_idle = station1.get_child(["2:IdleTime"])
+
+        # Wait a bit for simulation to run
+        time.sleep(5)
+
+        sim_time_value = simtime.get_value()
+        total_time = (m1_blocked.get_value() + m1_starved.get_value() +
+                     m1_down.get_value() + m1_processing.get_value() + m1_idle.get_value())
+
+        # Allow 5 second tolerance for timing differences
+        assert abs(total_time - sim_time_value) < 5.0, \
+            f"Total time {total_time}s should approximately equal SimTime {sim_time_value}s"
+
+    def test_utilization_is_real_calculation(self, opcua_client):
+        """Verify utilization is based on ProcessingTime / TotalTime (not binary)"""
+        root = opcua_client.get_objects_node()
+        line1 = root.get_child(["2:Line1"])
+        station1 = line1.get_child(["2:Station1"])
+
+        m1_util = station1.get_child(["2:Utilisation"])
+        m1_processing = station1.get_child(["2:ProcessingTime"])
+        m1_blocked = station1.get_child(["2:BlockedTime"])
+        m1_starved = station1.get_child(["2:StarvedTime"])
+        m1_down = station1.get_child(["2:DownTime"])
+        m1_idle = station1.get_child(["2:IdleTime"])
+
+        time.sleep(5)
+
+        util = m1_util.get_value()
+        processing_time = m1_processing.get_value()
+        total_time = (processing_time + m1_blocked.get_value() + m1_starved.get_value() +
+                     m1_down.get_value() + m1_idle.get_value())
+
+        expected_util = processing_time / total_time if total_time > 0 else 0.0
+
+        # Should match calculation (allow small floating point tolerance)
+        assert abs(util - expected_util) < 0.01, \
+            f"Utilization {util} should equal ProcessingTime/TotalTime {expected_util}"
+
+    def test_enhanced_states_observable(self, opcua_client):
+        """Verify that enhanced states (PROCESSING, IDLE, etc.) are observable"""
+        root = opcua_client.get_objects_node()
+        line1 = root.get_child(["2:Line1"])
+        station1 = line1.get_child(["2:Station1"])
+        station2 = line1.get_child(["2:Station2"])
+
+        m1_state = station1.get_child(["2:State"])
+        m2_state = station2.get_child(["2:State"])
+
+        # Sample states over time
+        states_observed = set()
+        for _ in range(10):
+            states_observed.add(m1_state.get_value())
+            states_observed.add(m2_state.get_value())
+            time.sleep(1)
+
+        # Should see at least 2 different states (e.g., PROCESSING and IDLE or PROCESSING and STARVED)
+        assert len(states_observed) >= 2, \
+            f"Should observe multiple states over time, saw: {states_observed}"
 
 
 if __name__ == "__main__":

@@ -89,6 +89,12 @@ def build_opcua_server():
     var_m1_util = station1_node.add_variable(idx, "Utilisation", 0.0)
     var_m1_health = station1_node.add_variable(idx, "HealthState", 0)  # 0=healthy, 1=failed
     var_m1_health_pct = station1_node.add_variable(idx, "HealthPercent", 100.0)  # 100=healthy, 0=failed
+    # Time tracking variables
+    var_m1_blocked_time = station1_node.add_variable(idx, "BlockedTime", 0.0)
+    var_m1_starved_time = station1_node.add_variable(idx, "StarvedTime", 0.0)
+    var_m1_down_time = station1_node.add_variable(idx, "DownTime", 0.0)
+    var_m1_processing_time = station1_node.add_variable(idx, "ProcessingTime", 0.0)
+    var_m1_idle_time = station1_node.add_variable(idx, "IdleTime", 0.0)
 
     # Buffer between Station1 and Station2
     buffer1_node = line1.add_object(idx, "Buffer1")
@@ -100,6 +106,12 @@ def build_opcua_server():
     var_m2_state = station2_node.add_variable(idx, "State", "IDLE")
     var_m2_partcount = station2_node.add_variable(idx, "PartCount", 0)
     var_m2_util = station2_node.add_variable(idx, "Utilisation", 0.0)
+    # Time tracking variables
+    var_m2_blocked_time = station2_node.add_variable(idx, "BlockedTime", 0.0)
+    var_m2_starved_time = station2_node.add_variable(idx, "StarvedTime", 0.0)
+    var_m2_down_time = station2_node.add_variable(idx, "DownTime", 0.0)
+    var_m2_processing_time = station2_node.add_variable(idx, "ProcessingTime", 0.0)
+    var_m2_idle_time = station2_node.add_variable(idx, "IdleTime", 0.0)
 
     # Maintenance/Degradation (only applicable if degradation enabled)
     maintenance_node = line1.add_object(idx, "Maintenance")
@@ -120,11 +132,21 @@ def build_opcua_server():
         var_m1_util,        # Station1/Utilisation
         var_m1_health,      # Station1/HealthState
         var_m1_health_pct,  # Station1/HealthPercent
+        var_m1_blocked_time,    # Station1/BlockedTime
+        var_m1_starved_time,    # Station1/StarvedTime
+        var_m1_down_time,       # Station1/DownTime
+        var_m1_processing_time, # Station1/ProcessingTime
+        var_m1_idle_time,       # Station1/IdleTime
         var_b1_level,       # Buffer1/CurrentLevel
         var_b1_capacity,    # Buffer1/Capacity
         var_m2_state,       # Station2/State
         var_m2_partcount,   # Station2/PartCount
         var_m2_util,        # Station2/Utilisation
+        var_m2_blocked_time,    # Station2/BlockedTime
+        var_m2_starved_time,    # Station2/StarvedTime
+        var_m2_down_time,       # Station2/DownTime
+        var_m2_processing_time, # Station2/ProcessingTime
+        var_m2_idle_time,       # Station2/IdleTime
         var_maint_active,   # Maintenance/MaintenanceActive
         var_maint_queue,    # Maintenance/QueueLength
         var_total_repairs,  # Maintenance/TotalRepairs
@@ -153,6 +175,11 @@ def build_opcua_server():
         "m1_utilisation": var_m1_util,
         "m1_health": var_m1_health,
         "m1_health_pct": var_m1_health_pct,
+        "m1_blocked_time": var_m1_blocked_time,
+        "m1_starved_time": var_m1_starved_time,
+        "m1_down_time": var_m1_down_time,
+        "m1_processing_time": var_m1_processing_time,
+        "m1_idle_time": var_m1_idle_time,
         # Buffer 1 - read-only
         "b1_level": var_b1_level,
         "b1_capacity": var_b1_capacity,
@@ -160,6 +187,11 @@ def build_opcua_server():
         "m2_state": var_m2_state,
         "m2_partcount": var_m2_partcount,
         "m2_utilisation": var_m2_util,
+        "m2_blocked_time": var_m2_blocked_time,
+        "m2_starved_time": var_m2_starved_time,
+        "m2_down_time": var_m2_down_time,
+        "m2_processing_time": var_m2_processing_time,
+        "m2_idle_time": var_m2_idle_time,
         # Maintenance - read-only
         "maint_active": var_maint_active,
         "maint_queue": var_maint_queue,
@@ -182,6 +214,21 @@ def main():
     # Manual part counters (only increase, never decrease)
     prev_sink_level = 0
     total_parts_produced = 0
+
+    # Per-station time tracking counters
+    m1_blocked_time = 0.0
+    m1_starved_time = 0.0
+    m1_down_time = 0.0
+    m1_processing_time = 0.0
+    m1_idle_time = 0.0
+    prev_m1_state = "IDLE"
+
+    m2_blocked_time = 0.0
+    m2_starved_time = 0.0
+    m2_down_time = 0.0
+    m2_processing_time = 0.0
+    m2_idle_time = 0.0
+    prev_m2_state = "IDLE"
 
     server.start()
     print("OPC UA server started at opc.tcp://localhost:4840/simantha/")
@@ -262,25 +309,72 @@ def main():
                 maint_queue_length = 0
                 total_repairs = 0
 
-            # Utilisation and state (global pause + health status)
+            # Accumulate time based on previous state (before determining new state)
+            if not pause_line:
+                # Only accumulate when simulation is running
+                # M1 time accumulation
+                if prev_m1_state == "BLOCKED":
+                    m1_blocked_time += sim_step
+                elif prev_m1_state == "STARVED":
+                    m1_starved_time += sim_step
+                elif prev_m1_state == "FAILED" or prev_m1_state == "UNDER_REPAIR":
+                    m1_down_time += sim_step
+                elif prev_m1_state == "PROCESSING":
+                    m1_processing_time += sim_step
+                elif prev_m1_state == "IDLE":
+                    m1_idle_time += sim_step
+
+                # M2 time accumulation
+                if prev_m2_state == "BLOCKED":
+                    m2_blocked_time += sim_step
+                elif prev_m2_state == "STARVED":
+                    m2_starved_time += sim_step
+                elif prev_m2_state == "FAILED" or prev_m2_state == "UNDER_REPAIR":
+                    m2_down_time += sim_step
+                elif prev_m2_state == "PROCESSING":
+                    m2_processing_time += sim_step
+                elif prev_m2_state == "IDLE":
+                    m2_idle_time += sim_step
+
+            # Enhanced state detection using Simantha's built-in flags
             if pause_line:
                 # Global pause: entire line paused
-                m1_utilisation = 0.0
-                m2_utilisation = 0.0
                 m1_state = "PAUSED"
                 m2_state = "PAUSED"
             else:
-                # M1 state considers health status
+                # M1 state: check health first, then Simantha state flags
                 if m1_health_state == 1:  # Failed
-                    m1_utilisation = 0.0
                     m1_state = "FAILED" if not maint_active else "UNDER_REPAIR"
-                else:  # Healthy
-                    m1_utilisation = 1.0
-                    m1_state = "RUNNING"
+                elif m1.blocked:  # Waiting for downstream buffer space
+                    m1_state = "BLOCKED"
+                elif m1.starved:  # Waiting for upstream parts
+                    m1_state = "STARVED"
+                elif m1.has_part:  # Actively processing a part
+                    m1_state = "PROCESSING"
+                else:
+                    m1_state = "IDLE"  # Waiting for work
 
-                # M2 state (no degradation modeling on M2)
-                m2_utilisation = 1.0
-                m2_state = "RUNNING"
+                # M2 state: same logic but no health degradation
+                if m2.blocked:  # Waiting for downstream (sink never blocks, but check anyway)
+                    m2_state = "BLOCKED"
+                elif m2.starved:  # Waiting for upstream parts from buffer
+                    m2_state = "STARVED"
+                elif m2.has_part:  # Actively processing a part
+                    m2_state = "PROCESSING"
+                else:
+                    m2_state = "IDLE"  # Waiting for work
+
+            # Calculate real utilization based on time tracking
+            # Utilization = ProcessingTime / TotalTime (time actually making parts)
+            m1_total_time = m1_processing_time + m1_blocked_time + m1_starved_time + m1_down_time + m1_idle_time
+            m1_utilisation = m1_processing_time / m1_total_time if m1_total_time > 0 else 0.0
+
+            m2_total_time = m2_processing_time + m2_blocked_time + m2_starved_time + m2_down_time + m2_idle_time
+            m2_utilisation = m2_processing_time / m2_total_time if m2_total_time > 0 else 0.0
+
+            # Update previous state for next iteration
+            prev_m1_state = m1_state
+            prev_m2_state = m2_state
 
             # --- Write KPIs back to OPC UA ---
             vars_["simtime"].set_value(current_sim_time)
@@ -292,6 +386,11 @@ def main():
             vars_["m1_utilisation"].set_value(m1_utilisation)
             vars_["m1_health"].set_value(m1_health_state)
             vars_["m1_health_pct"].set_value(m1_health_percent)
+            vars_["m1_blocked_time"].set_value(m1_blocked_time)
+            vars_["m1_starved_time"].set_value(m1_starved_time)
+            vars_["m1_down_time"].set_value(m1_down_time)
+            vars_["m1_processing_time"].set_value(m1_processing_time)
+            vars_["m1_idle_time"].set_value(m1_idle_time)
 
             vars_["b1_level"].set_value(b1_level)
             vars_["b1_capacity"].set_value(b1_capacity)
@@ -299,6 +398,11 @@ def main():
             vars_["m2_partcount"].set_value(m2_partcount)
             vars_["m2_state"].set_value(m2_state)
             vars_["m2_utilisation"].set_value(m2_utilisation)
+            vars_["m2_blocked_time"].set_value(m2_blocked_time)
+            vars_["m2_starved_time"].set_value(m2_starved_time)
+            vars_["m2_down_time"].set_value(m2_down_time)
+            vars_["m2_processing_time"].set_value(m2_processing_time)
+            vars_["m2_idle_time"].set_value(m2_idle_time)
 
             vars_["maint_active"].set_value(maint_active)
             vars_["maint_queue"].set_value(maint_queue_length)
