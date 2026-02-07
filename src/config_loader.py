@@ -87,6 +87,9 @@ def validate_serial_topology(config: Dict[str, Any]) -> None:
         if "name" not in machine:
             raise ValueError(f"Machine at index {i} missing 'name' field")
 
+        # Validate quality parameters (Phase 8)
+        validate_machine_quality_config(machine)
+
     # Validate each buffer has required fields and correct routing
     for i, buffer in enumerate(buffers):
         if "name" not in buffer:
@@ -106,3 +109,28 @@ def validate_serial_topology(config: Dict[str, Any]) -> None:
             )
 
     print(f"[OK] Configuration validated: {len(machines)} machines, {len(buffers)} buffers")
+
+
+def validate_machine_quality_config(machine_cfg: dict) -> None:
+    """
+    Validate machine quality parameters.
+
+    Args:
+        machine_cfg: Machine configuration dictionary
+
+    Raises:
+        ValueError: If quality parameters are invalid
+    """
+    if "defect_rate" in machine_cfg:
+        rate = machine_cfg["defect_rate"]
+        if not (0.0 <= rate <= 1.0):
+            raise ValueError(
+                f"Machine '{machine_cfg['name']}': defect_rate must be 0.0-1.0, got {rate}"
+            )
+
+    if "health_multiplier" in machine_cfg:
+        mult = machine_cfg["health_multiplier"]
+        if mult < 0:
+            raise ValueError(
+                f"Machine '{machine_cfg['name']}': health_multiplier must be >= 0, got {mult}"
+            )

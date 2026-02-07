@@ -23,8 +23,8 @@ A real-time **digital twin** of a manufacturing production line using [Simantha]
 | **Phase 4:** Health & Degradation | ✅ **Complete** | Machine health tracking, maintenance modeling, failure events |
 | **Phase 5:** Enhanced State Logic | ✅ **Complete** | 6-state machine (IDLE/PROCESSING/BLOCKED/STARVED/FAILED/UNDER_REPAIR/PAUSED), real utilization, time tracking |
 | **Phase 6:** OEE Calculation | ✅ **Complete** | Per-station and line-level OEE (Availability × Performance × Quality) |
-| **Phase 7:** Multi-Buffer Lines | 🎯 **Next** | 3+ machines, complex topologies |
-| **Phase 8:** Quality Modeling | ⏳ Planned | Defect tracking, scrap, rework |
+| **Phase 7:** Multi-Buffer Lines | ✅ **Complete** | 3+ machines, config-driven topologies |
+| **Phase 8:** Quality Modeling | ✅ **Complete** | Health-correlated defect tracking, real Quality OEE |
 
 ---
 
@@ -409,11 +409,80 @@ Extends the system from hardcoded 2-machine lines to configuration-driven N-mach
 - Parallel lines, assembly/disassembly stations
 - Non-serial topologies (merge/split points)
 
-### Phase 8: Quality & Reject Modeling
-- Part defect tracking (good/defective attribute)
-- Scrap/rework routing
-- Quality gates and inspection stations
-- First Pass Yield metrics
+### Phase 8: Quality & Reject Modeling ✅
+
+**Status:** Complete (2026-02-07)
+
+Implements realistic quality tracking with health-correlated defect rates and individual part traceability.
+
+**Key Features:**
+
+- **Health-Correlated Defects**: Defect rate increases as machine health degrades
+- **Configurable Base Rates**: Set per-machine `defect_rate` in YAML (0.0-1.0)
+- **Real Quality Calculation**: Quality = GoodParts / TotalParts (no longer hardcoded 1.0)
+- **OEE Integration**: Quality metric now reflects actual manufacturing performance
+- **Backward Compatible**: Existing scenarios default to 0.0 defect rate (100% quality)
+- **Individual Part Tracking** (Phase 8b): Per-part attributes enable traceability and First Pass Yield analysis
+
+**Configuration:**
+
+```yaml
+machines:
+  - name: M1
+    defect_rate: 0.02          # 2% when healthy, 8% when failed
+    health_multiplier: 3.0     # Optional (default 3.0)
+    enable_degradation: true
+```
+
+**Defect Rate Formula:**
+
+- **Without degradation**: `defect_rate` (fixed)
+- **With degradation**: `defect_rate × (1 + multiplier × health_state)`
+
+**Example:**
+
+- M1 healthy (state=0): 2% defect rate
+- M1 failed (state=1): 2% × (1 + 3×1) = 8% defect rate
+
+**Usage:**
+
+```bash
+# Run quality scenario with reproducible random seed
+python src/opcua_server.py --scenario quality_line --seed 42
+
+# Press Ctrl+C to see quality analysis report
+```
+
+**OPC UA Variables (now functional):**
+
+- `Station1/OEE/Quality` - Good parts / Total parts (0.0-1.0)
+- `Station1/OEE/GoodPartCount` - Parts without defects
+- `Station1/OEE/DefectivePartCount` - Parts with defects
+
+**Phase 8b: Individual Part Tracking**
+
+- Each part has `is_defective`, `failed_at_machine`, `defect_type` attributes
+- End-of-simulation report shows First Pass Yield
+- Enables future scrap/rework routing (Phase 9+)
+- Press Ctrl+C to see quality analysis:
+
+  ```text
+  === Part Quality Analysis ===
+  Total Parts: 287
+  Good Parts: 267
+  Defective Parts: 20
+  First Pass Yield: 93.03%
+
+  Defects by Machine:
+    M1: 15 defects
+    M2: 5 defects
+  ```
+
+**Invariants Maintained:**
+
+- `good_parts + defective_parts == partcount` (always)
+- Counters are monotonic (never decrease)
+- Quality ∈ [0.0, 1.0]
 
 ### Phase 9: Advanced Failure Modes
 - MTTF/MTTR distributions (replace simple degradation matrix)

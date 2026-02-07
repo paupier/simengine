@@ -128,3 +128,30 @@ long_line:
 
   maintainer:
     enabled: false
+
+# Scenario F: Quality Line (Phase 8 - Quality Modeling)
+quality_line:
+  description: "2-machine line with health-correlated quality degradation"
+  machines:
+    - name: M1
+      cycle_time: 1.0
+      enable_degradation: true
+      degradation_matrix: [[0.99, 0.01], [0.0, 1.0]]
+      cbm_threshold: 1
+      defect_rate: 0.02          # Phase 8: 2% base defect rate (8% when failed)
+      health_multiplier: 3.0     # Phase 8: 3x defect rate multiplier
+
+    - name: M2
+      cycle_time: 1.0
+      enable_degradation: false
+      defect_rate: 0.01          # Phase 8: 1% fixed defect rate
+
+  buffers:
+    - name: B1
+      capacity: 10
+      upstream: M1
+      downstream: M2
+
+  maintainer:
+    enabled: true
+    capacity: 1

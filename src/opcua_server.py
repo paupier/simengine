@@ -134,7 +134,13 @@ def accumulate_time(metrics: dict, current_state: str, sim_step: float) -> None:
         metrics[time_key] += sim_step
 
 
-def calculate_oee(partcount: int, metrics: dict, cycle_time: float) -> dict:
+def calculate_oee(
+    partcount: int,
+    metrics: dict,
+    cycle_time: float,
+    good_parts: int = None,
+    defective_parts: int = None
+) -> dict:
     """
     Calculate OEE metrics (Availability, Performance, Quality, OEE).
 
@@ -142,6 +148,8 @@ def calculate_oee(partcount: int, metrics: dict, cycle_time: float) -> dict:
         partcount: Total parts produced by this machine
         metrics: Dictionary with time counters
         cycle_time: Nominal cycle time
+        good_parts: Parts without defects (Phase 8 - optional)
+        defective_parts: Parts with defects (Phase 8 - optional)
 
     Returns:
         dict: OEE metrics (availability, performance, quality, oee, good_parts, defective_parts, theoretical_output)
@@ -166,17 +174,134 @@ def calculate_oee(partcount: int, metrics: dict, cycle_time: float) -> dict:
         theoretical_output = 0.0
         performance = 0.0
 
-    # Quality = GoodParts / TotalParts (Phase 7: assume 100%)
-    quality = 1.0 if partcount > 0 else 0.0
+    # Quality = GoodParts / TotalParts (Phase 8: real tracking)
+    if good_parts is None:
+        # Fallback to Phase 7 behavior (backward compatibility)
+        good_parts = partcount
+        defective_parts = 0
+        quality = 1.0 if partcount > 0 else 0.0
+    else:
+        # Phase 8: Use actual defect data
+        if partcount > 0:
+            quality = max(0.0, min(1.0, good_parts / partcount))
+        else:
+            quality = 0.0
 
     return {
         "availability": availability,
         "performance": performance,
         "quality": quality,
         "oee": availability * performance * quality,
-        "good_parts": partcount,
-        "defective_parts": 0,
+        "good_parts": good_parts,
+        "defective_parts": defective_parts,
         "theoretical_output": theoretical_output,
+    }
+
+
+def calculate_defects(
+    prev_partcount: int,
+    current_partcount: int,
+    base_defect_rate: float,
+    health_state: int = 0,
+    health_multiplier: float = 3.0,
+    enable_health_correlation: bool = False
+) -> int:
+    """
+    Calculate number of defective parts produced in this time step.
+
+    Uses probabilistic defect generation with optional health correlation.
+
+    Args:
+        prev_partcount: Parts produced up to previous time step
+        current_partcount: Parts produced up to current time step
+        base_defect_rate: Baseline defect rate (0.0-1.0)
+        health_state: 0=healthy, 1=failed (only used if enable_health_correlation=True)
+        health_multiplier: Scales defect rate when machine degrades (default 3.0)
+        enable_health_correlation: Link defect rate to machine health
+
+    Returns:
+        int: Number of defective parts produced in this time step
+    """
+    import random
+
+    # How many new parts were produced?
+    new_parts = current_partcount - prev_partcount
+    if new_parts <= 0:
+        return 0
+
+    # Calculate effective defect rate
+    if enable_health_correlation:
+        effective_rate = base_defect_rate * (1 + health_multiplier * health_state)
+    else:
+        effective_rate = base_defect_rate
+
+    # Clamp to valid range
+    effective_rate = max(0.0, min(1.0, effective_rate))
+
+    # Probabilistic defect generation (per-part Bernoulli trial)
+    defects = 0
+    for _ in range(new_parts):
+        if random.random() < effective_rate:
+            defects += 1
+
+    return defects
+
+
+def mark_part_defective(part, machine_name: str, defect_type: str = "quality"):
+    """
+    Mark a part as defective with traceability information (Phase 8b).
+
+    Args:
+        part: Simantha Part object
+        machine_name: Name of machine that produced the defect
+        defect_type: Type of defect (default: "quality")
+    """
+    part.is_defective = True
+    part.failed_at_machine = machine_name
+    part.defect_type = defect_type
+
+
+def analyze_part_quality(sink) -> dict:
+    """
+    Analyze quality of individual parts in sink (Phase 8b).
+
+    Args:
+        sink: Simantha Sink object with collect_parts=True
+
+    Returns:
+        dict: Quality analysis metrics
+    """
+    if not hasattr(sink, 'contents') or len(sink.contents) == 0:
+        return {
+            "total_parts": 0,
+            "good_parts": 0,
+            "defective_parts": 0,
+            "first_pass_yield": 0.0,
+            "defect_by_machine": {}
+        }
+
+    total_parts = len(sink.contents)
+    defective_parts = []
+    defect_by_machine = {}
+
+    for part in sink.contents:
+        if hasattr(part, 'is_defective') and part.is_defective:
+            defective_parts.append(part)
+
+            # Track which machine produced the defect
+            if hasattr(part, 'failed_at_machine'):
+                machine = part.failed_at_machine
+                defect_by_machine[machine] = defect_by_machine.get(machine, 0) + 1
+
+    good_parts = total_parts - len(defective_parts)
+    first_pass_yield = good_parts / total_parts if total_parts > 0 else 0.0
+
+    return {
+        "total_parts": total_parts,
+        "good_parts": good_parts,
+        "defective_parts": len(defective_parts),
+        "first_pass_yield": first_pass_yield,
+        "defect_by_machine": defect_by_machine
     }
 
 
@@ -385,12 +510,20 @@ def build_opcua_server(config: dict):
 
 def main():
     import argparse
+    import random
 
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description="Simantha OPC UA Server")
     parser.add_argument("--scenario", default="balanced_line",
                        help="Scenario name from line_models.yaml (default: balanced_line)")
+    parser.add_argument("--seed", type=int, default=None,
+                       help="Random seed for reproducible defect generation (Phase 8)")
     args = parser.parse_args()
+
+    # Set random seed if provided (Phase 8)
+    if args.seed is not None:
+        random.seed(args.seed)
+        print(f"Using random seed: {args.seed}")
 
     # Load configuration
     config = load_line_config(args.scenario)
@@ -417,6 +550,10 @@ def main():
         machine_cfg = next(m for m in config["machines"] if m["name"] == machine_name)
         cycle_time = machine_cfg.get("cycle_time", 1.0)
 
+        # Phase 8: Quality parameters
+        base_defect_rate = machine_cfg.get("defect_rate", 0.0)
+        health_multiplier = machine_cfg.get("health_multiplier", 3.0)
+
         machine_metrics[machine_name] = {
             "partcount": 0,
             "blocked_time": 0.0,
@@ -426,6 +563,12 @@ def main():
             "idle_time": 0.0,
             "prev_state": "IDLE",
             "cycle_time": cycle_time,
+
+            # Phase 8: Quality tracking
+            "good_parts": 0,
+            "defective_parts": 0,
+            "base_defect_rate": base_defect_rate,
+            "health_multiplier": health_multiplier,
         }
 
     server.start()
@@ -482,6 +625,9 @@ def main():
             for machine_name, machine_obj in machines.items():
                 metrics = machine_metrics[machine_name]
 
+                # Store previous partcount for defect calculation (Phase 8)
+                prev_partcount = metrics["partcount"]
+
                 # Accumulate time based on previous state
                 if not pause_line:
                     accumulate_time(metrics, metrics["prev_state"], sim_step)
@@ -507,8 +653,35 @@ def main():
                 # Part count (all machines in series produce same total)
                 metrics["partcount"] = total_parts_produced
 
-                # Calculate OEE
-                oee_result = calculate_oee(metrics["partcount"], metrics, metrics["cycle_time"])
+                # Phase 8: Calculate defects produced this step
+                new_defects = calculate_defects(
+                    prev_partcount=prev_partcount,
+                    current_partcount=metrics["partcount"],
+                    base_defect_rate=metrics["base_defect_rate"],
+                    health_state=health_state,
+                    health_multiplier=metrics["health_multiplier"],
+                    enable_health_correlation=enable_health
+                )
+                metrics["defective_parts"] += new_defects
+                metrics["good_parts"] = metrics["partcount"] - metrics["defective_parts"]
+
+                # Phase 8b: Mark individual parts as defective
+                if new_defects > 0 and hasattr(sink, 'contents') and len(sink.contents) > 0:
+                    # Mark the most recently produced parts as defective
+                    # We mark approximately the last new_defects parts
+                    for i in range(1, min(new_defects + 1, len(sink.contents) + 1)):
+                        part = sink.contents[-i]
+                        if not hasattr(part, 'is_defective') or not part.is_defective:
+                            mark_part_defective(part, machine_name, defect_type="quality")
+
+                # Calculate OEE (Phase 8: pass quality data)
+                oee_result = calculate_oee(
+                    metrics["partcount"],
+                    metrics,
+                    metrics["cycle_time"],
+                    good_parts=metrics["good_parts"],
+                    defective_parts=metrics["defective_parts"]
+                )
 
                 # Calculate utilization
                 total_time = sum([metrics[k] for k in ["processing_time", "blocked_time",
@@ -574,7 +747,24 @@ def main():
             time.sleep(real_step)
 
     except KeyboardInterrupt:
-        print("Stopping server...")
+        print("\n\nSimulation stopped by user")
+
+        # Phase 8b: Print part quality analysis
+        quality_analysis = analyze_part_quality(sink)
+        print(f"\n=== Part Quality Analysis ===")
+        print(f"Total Parts: {quality_analysis['total_parts']}")
+        print(f"Good Parts: {quality_analysis['good_parts']}")
+        print(f"Defective Parts: {quality_analysis['defective_parts']}")
+        print(f"First Pass Yield: {quality_analysis['first_pass_yield']:.2%}")
+
+        if quality_analysis['defect_by_machine']:
+            print(f"\nDefects by Machine:")
+            for machine, count in quality_analysis['defect_by_machine'].items():
+                print(f"  {machine}: {count} defects")
+        else:
+            print(f"\nNo defects detected (all parts passed quality checks)")
+
+        print("\nStopping server...")
     finally:
         server.stop()
         print("Server stopped.")
