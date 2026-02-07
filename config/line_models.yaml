@@ -155,3 +155,53 @@ quality_line:
   maintainer:
     enabled: true
     capacity: 1
+
+# Scenario G: Advanced Failure Modes (Phase 10 - Multiple Failure Types)
+advanced_failure_line:
+  description: "2-machine line with realistic MTTF/MTTR distributions and multiple failure types"
+  machines:
+    - name: M1
+      cycle_time: 1
+      enable_advanced_failures: true  # Phase 10: Advanced failure modeling
+
+      # Multiple failure modes with competing risks
+      failure_modes:
+        - name: mechanical
+          type: wearout              # Weibull distribution (increasing hazard rate)
+          mttf:
+            distribution: weibull
+            shape: 2.5               # Beta > 1 = increasing failure rate
+            scale: 500               # Characteristic life (time units)
+          mttr:
+            distribution: lognormal
+            mean: 15                 # Mean repair time
+            std: 5                   # Standard deviation
+
+        - name: electrical
+          type: random               # Exponential (constant hazard rate)
+          mttf:
+            distribution: exponential
+            mean: 1000               # MTTF in time units
+          mttr:
+            distribution: lognormal
+            mean: 10
+            std: 3
+
+      # Maintenance strategy
+      maintenance_strategy:
+        type: predictive           # corrective, preventive, or predictive
+        cbm_threshold: 1           # For predictive: health threshold to trigger maintenance
+
+    - name: M2
+      cycle_time: 1
+      enable_degradation: false  # No failures on M2 (for comparison)
+
+  buffers:
+    - name: B1
+      capacity: 10
+      upstream: M1
+      downstream: M2
+
+  maintainer:
+    enabled: true
+    capacity: 1
