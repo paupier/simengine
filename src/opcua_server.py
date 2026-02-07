@@ -86,8 +86,8 @@ def build_opcua_server():
 
     # System controls (writable inputs to control simulation)
     controls_node = system_node.add_object(idx, "Controls")
-    var_pause_line = controls_node.add_variable(idx, "PauseLine", False)
-    var_interarrival = controls_node.add_variable(idx, "InterarrivalTime", 0.0)
+    var_pause_line = controls_node.add_variable(idx, "cmdPauseLine", False)
+    var_interarrival = controls_node.add_variable(idx, "setInterarrivalTime", 0.0)
 
     # Station 1 (M1) with health/maintenance tracking
     station1_node = line1.add_object(idx, "Station1")
@@ -200,8 +200,8 @@ def build_opcua_server():
 
     # WRITABLE: Control inputs (clients can change these to control the simulation)
     writable_vars = [
-        var_pause_line,     # System/Controls/PauseLine
-        var_interarrival,   # System/Controls/InterarrivalTime
+        var_pause_line,     # System/Controls/cmdPauseLine
+        var_interarrival,   # System/Controls/setInterarrivalTime
     ]
     for v in writable_vars:
         v.set_writable()

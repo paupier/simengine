@@ -62,7 +62,7 @@ OPC UA Server Validation
 Verify all expected OPC UA nodes exist and are accessible.
 
 - System nodes (SimTime, Throughput)
-- Control nodes (PauseLine, InterarrivalTime)
+- Control nodes (cmdPauseLine, setInterarrivalTime)
 - Station nodes (State, PartCount, Utilisation, Health)
 - Buffer nodes (CurrentLevel, Capacity)
 - Maintenance nodes (MaintenanceActive, QueueLength, TotalRepairs)
@@ -78,8 +78,8 @@ Verify the simulation runs correctly.
 ### 3. **Control Input Tests** (`TestControlInputs`)
 Verify OPC UA controls work as expected.
 
-- PauseLine freezes simulation
-- InterarrivalTime affects production rate
+- cmdPauseLine freezes simulation
+- setInterarrivalTime affects production rate
 - Write operations succeed
 
 ### 4. **Health & Maintenance Tests** (`TestHealthAndMaintenance`)

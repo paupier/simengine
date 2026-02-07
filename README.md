@@ -113,7 +113,7 @@ Press Ctrl+C to stop.
 ┌─────────────────┐
 │  OPC UA Server  │  (python-opcua)
 │  Address Space  │  - Read-only: KPIs, states, health
-│  & Handlers     │  - Writable: PauseLine, InterarrivalTime
+│  & Handlers     │  - Writable: cmdPauseLine, setInterarrivalTime
 └────────┬────────┘
          │ Python API
          ▼
@@ -138,8 +138,8 @@ Objects/
       │    ├─ SimTime (double, READ-ONLY)           # Simulation time in seconds
       │    ├─ Throughput (int, READ-ONLY)           # Total parts produced (monotonic)
       │    └─ Controls/
-      │         ├─ PauseLine (bool, WRITABLE)       # Pause entire line
-      │         └─ InterarrivalTime (double, WRITABLE)  # Part arrival rate (0=fast, >0=delay)
+      │         ├─ cmdPauseLine (bool, WRITABLE)    # Pause entire line
+      │         └─ setInterarrivalTime (double, WRITABLE)  # Part arrival rate (0=fast, >0=delay)
       │
       ├─ LineKPIs/
       │    ├─ TotalWIP (int, READ-ONLY)             # Work-in-process (buffer level)
@@ -203,8 +203,8 @@ Objects/
 All KPIs, states, health metrics, buffer levels, maintenance status
 
 **Writable (Control):**
-- `System/Controls/PauseLine` - Pause/resume entire line
-- `System/Controls/InterarrivalTime` - Adjust part arrival rate
+- `System/Controls/cmdPauseLine` - Pause/resume entire line (binary command)
+- `System/Controls/setInterarrivalTime` - Adjust part arrival rate (setpoint)
 
 ---
 
@@ -226,8 +226,8 @@ python src/simantha_baseline.py
 1. **Start server:** `python src/opcua_server.py`
 2. **Connect UA Expert** to `opc.tcp://localhost:4840/simantha/`
 3. **Test controls:**
-   - Set `PauseLine = True` → Simulation freezes
-   - Set `InterarrivalTime = 5.0` → Parts arrive every 5 seconds (slower)
+   - Set `cmdPauseLine = True` → Simulation freezes
+   - Set `setInterarrivalTime = 5.0` → Parts arrive every 5 seconds (slower)
 4. **Observe failures:**
    - Watch `Station1/HealthPercent` drop to 0 when M1 fails
    - See `Maintenance/MaintenanceActive = True` during repair
@@ -330,9 +330,9 @@ simantha-opcua/
 
 ### Simulation freezes/doesn't advance
 
-**Cause:** `PauseLine = True` in OPC UA, or time not incrementing in loop.
+**Cause:** `cmdPauseLine = True` in OPC UA, or time not incrementing in loop.
 
-**Fix:** Set `PauseLine = False` via OPC UA client, or check loop logic.
+**Fix:** Set `cmdPauseLine = False` via OPC UA client, or check loop logic.
 
 ---
 

@@ -22,9 +22,9 @@ class TestOPCUAAddressSpace:
 
     def test_control_nodes_exist(self, opcua_client):
         """Verify Control nodes exist and are writable"""
-        pause = opcua_client.get_node("ns=2;s=Line1.System.Controls.PauseLine")
+        pause = opcua_client.get_node("ns=2;s=Line1.System.Controls.cmdPauseLine")
         interarrival = opcua_client.get_node(
-            "ns=2;s=Line1.System.Controls.InterarrivalTime"
+            "ns=2;s=Line1.System.Controls.setInterarrivalTime"
         )
 
         assert pause is not None
@@ -145,8 +145,8 @@ class TestControlInputs:
     """Test that OPC UA control inputs work correctly"""
 
     def test_pause_control_stops_simulation(self, opcua_client):
-        """Verify PauseLine control freezes simulation"""
-        pause = opcua_client.get_node("ns=2;s=Line1.System.Controls.PauseLine")
+        """Verify cmdPauseLine control freezes simulation"""
+        pause = opcua_client.get_node("ns=2;s=Line1.System.Controls.cmdPauseLine")
         simtime = opcua_client.get_node("ns=2;s=Line1.System.SimTime")
         m1_state = opcua_client.get_node("ns=2;s=Line1.Station1.State")
 
@@ -173,9 +173,9 @@ class TestControlInputs:
         time.sleep(1)
 
     def test_interarrival_time_control(self, opcua_client):
-        """Verify InterarrivalTime control affects throughput rate"""
+        """Verify setInterarrivalTime control affects throughput rate"""
         interarrival = opcua_client.get_node(
-            "ns=2;s=Line1.System.Controls.InterarrivalTime"
+            "ns=2;s=Line1.System.Controls.setInterarrivalTime"
         )
         throughput = opcua_client.get_node("ns=2;s=Line1.System.Throughput")
 

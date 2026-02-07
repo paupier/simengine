@@ -45,11 +45,11 @@ def validate_opcua_server():
         # Test Control variables
         print("\n[3/9] Testing Control variables...")
         controls = system.get_child(["2:Controls"])
-        pause = controls.get_child(["2:PauseLine"])
-        interarrival = controls.get_child(["2:InterarrivalTime"])
+        pause = controls.get_child(["2:cmdPauseLine"])
+        interarrival = controls.get_child(["2:setInterarrivalTime"])
 
-        print(f"  PauseLine: {pause.get_value()}")
-        print(f"  InterarrivalTime: {interarrival.get_value()} seconds")
+        print(f"  cmdPauseLine: {pause.get_value()}")
+        print(f"  setInterarrivalTime: {interarrival.get_value()} seconds")
         print("[OK] Control variables OK")
 
         # Test Station1 (M1)
@@ -221,12 +221,12 @@ def validate_opcua_server():
         # Test write capability
         print("\n[BONUS] Testing write capability...")
         original_pause = pause.get_value()
-        print(f"  Current PauseLine: {original_pause}")
-        print(f"  Toggling PauseLine...")
+        print(f"  Current cmdPauseLine: {original_pause}")
+        print(f"  Toggling cmdPauseLine...")
         pause.set_value(not original_pause)
         time.sleep(1)
         new_pause = pause.get_value()
-        print(f"  New PauseLine: {new_pause}")
+        print(f"  New cmdPauseLine: {new_pause}")
         pause.set_value(original_pause)  # Restore
         print("[OK] Write capability OK")
 
