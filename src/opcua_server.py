@@ -57,6 +57,10 @@ def create_station_node(parent_node, opcua_idx: int, station_name: str, enable_h
     vars_dict["defective_parts"] = oee_node.add_variable(opcua_idx, "DefectivePartCount", 0)
     vars_dict["theoretical"] = oee_node.add_variable(opcua_idx, "TheoreticalOutput", 0.0)
 
+    # Alarms sub-node (Phase 9)
+    alarm_vars = create_alarms_node(station_node, opcua_idx, alarm_type="station")
+    vars_dict.update({f"alarm_{k}": v for k, v in alarm_vars.items()})
+
     return vars_dict
 
 
@@ -78,6 +82,43 @@ def create_buffer_node(parent_node, opcua_idx: int, buffer_name: str, capacity: 
     vars_dict = {}
     vars_dict["level"] = buffer_node.add_variable(opcua_idx, "CurrentLevel", 0)
     vars_dict["capacity"] = buffer_node.add_variable(opcua_idx, "Capacity", capacity)
+
+    # Alarms sub-node (Phase 9)
+    alarm_vars = create_alarms_node(buffer_node, opcua_idx, alarm_type="buffer")
+    vars_dict.update({f"alarm_{k}": v for k, v in alarm_vars.items()})
+
+    return vars_dict
+
+
+def create_alarms_node(parent_node, opcua_idx: int, alarm_type: str = "station"):
+    """
+    Create Alarms sub-node for a station or buffer.
+
+    Args:
+        parent_node: Parent OPC UA node (station or buffer)
+        opcua_idx: OPC UA namespace index
+        alarm_type: "station" or "buffer"
+
+    Returns:
+        dict: Dictionary of alarm variable objects
+    """
+    from datetime import datetime
+
+    alarms_node = parent_node.add_object(opcua_idx, "Alarms")
+
+    vars_dict = {}
+    vars_dict["alarm_count"] = alarms_node.add_variable(opcua_idx, "ActiveAlarmCount", 0)
+    vars_dict["last_alarm_time"] = alarms_node.add_variable(opcua_idx, "LastAlarmTime", datetime.now())
+    vars_dict["last_alarm_message"] = alarms_node.add_variable(opcua_idx, "LastAlarmMessage", "")
+    vars_dict["last_alarm_severity"] = alarms_node.add_variable(opcua_idx, "LastAlarmSeverity", "")
+
+    if alarm_type == "station":
+        vars_dict["alarm_failure"] = alarms_node.add_variable(opcua_idx, "MachineFailureActive", False)
+        vars_dict["alarm_maintenance"] = alarms_node.add_variable(opcua_idx, "MaintenanceActive", False)
+        vars_dict["alarm_quality"] = alarms_node.add_variable(opcua_idx, "QualityAlertActive", False)
+    elif alarm_type == "buffer":
+        vars_dict["alarm_high"] = alarms_node.add_variable(opcua_idx, "HighLevelWarningActive", False)
+        vars_dict["alarm_low"] = alarms_node.add_variable(opcua_idx, "LowLevelWarningActive", False)
 
     return vars_dict
 
@@ -109,6 +150,174 @@ def detect_machine_state(machine, pause_line: bool, health_state: int = 0, maint
         return "PROCESSING"
     else:
         return "IDLE"
+
+
+def detect_machine_alarms(machine_name: str, current_state: str, metrics: dict, health_state: int,
+                          machine_maint_active: bool, new_defects: int, new_parts: int) -> list:
+    """
+    Detect machine alarm transitions (active/inactive).
+
+    Args:
+        machine_name: Name of the machine
+        current_state: Current state string (IDLE, PROCESSING, etc.)
+        metrics: machine_metrics dictionary for this machine
+        health_state: Health degradation state (0=healthy, 1=failed)
+        machine_maint_active: True if maintenance is active on this machine
+        new_defects: Number of new defects produced this step
+        new_parts: Number of new parts produced this step
+
+    Returns:
+        list: [(alarm_type, severity, message, is_active, var_key), ...]
+    """
+    alarms = []
+
+    # 1. Machine Failure Alarm (CRITICAL)
+    if current_state == "FAILED" and not metrics["alarm_machine_failed_active"]:
+        alarms.append((
+            "MachineFailure", "CRITICAL",
+            f"{machine_name} has failed - health degraded to critical state",
+            True, "alarm_failure"
+        ))
+        metrics["alarm_machine_failed_active"] = True
+    elif current_state != "FAILED" and metrics["alarm_machine_failed_active"]:
+        alarms.append((
+            "MachineFailure", "INFO",
+            f"{machine_name} recovered from failure",
+            False, "alarm_failure"
+        ))
+        metrics["alarm_machine_failed_active"] = False
+
+    # 2. Maintenance Event (INFO)
+    if machine_maint_active and not metrics["alarm_maintenance_active"]:
+        alarms.append((
+            "MaintenanceStart", "INFO",
+            f"Maintenance started on {machine_name}",
+            True, "alarm_maintenance"
+        ))
+        metrics["alarm_maintenance_active"] = True
+    elif not machine_maint_active and metrics["alarm_maintenance_active"]:
+        alarms.append((
+            "MaintenanceEnd", "INFO",
+            f"Maintenance completed on {machine_name}",
+            False, "alarm_maintenance"
+        ))
+        metrics["alarm_maintenance_active"] = False
+
+    # 3. Quality Alert (MEDIUM) - defect rate > 5%
+    if new_parts > 0:
+        defect_rate = new_defects / new_parts
+        QUALITY_THRESHOLD = 0.05  # 5%
+
+        if defect_rate > QUALITY_THRESHOLD and not metrics["alarm_quality_alert_active"]:
+            alarms.append((
+                "QualityAlert", "MEDIUM",
+                f"{machine_name} defect rate {defect_rate:.1%} exceeds threshold {QUALITY_THRESHOLD:.1%}",
+                True, "alarm_quality"
+            ))
+            metrics["alarm_quality_alert_active"] = True
+        elif defect_rate <= QUALITY_THRESHOLD and metrics["alarm_quality_alert_active"]:
+            alarms.append((
+                "QualityAlert", "INFO",
+                f"{machine_name} defect rate {defect_rate:.1%} returned to normal",
+                False, "alarm_quality"
+            ))
+            metrics["alarm_quality_alert_active"] = False
+
+    return alarms
+
+
+def detect_buffer_alarms(buffer_name: str, buffer_level: int, buffer_capacity: int,
+                         alarm_state: dict) -> list:
+    """
+    Detect buffer alarm transitions (high/low level warnings).
+
+    Args:
+        buffer_name: Name of the buffer
+        buffer_level: Current buffer level
+        buffer_capacity: Maximum buffer capacity
+        alarm_state: Dictionary to track alarm states (modified in-place)
+
+    Returns:
+        list: [(alarm_type, severity, message, is_active, var_key), ...]
+    """
+    alarms = []
+
+    # High level warning (>= 90% capacity)
+    if buffer_level >= 0.9 * buffer_capacity and not alarm_state.get("alarm_high_active", False):
+        alarms.append((
+            "BufferHigh", "LOW",
+            f"{buffer_name} level {buffer_level}/{buffer_capacity} (>90% full)",
+            True, "alarm_high"
+        ))
+        alarm_state["alarm_high_active"] = True
+    elif buffer_level < 0.9 * buffer_capacity and alarm_state.get("alarm_high_active", False):
+        alarms.append((
+            "BufferHigh", "INFO",
+            f"{buffer_name} level returned to normal",
+            False, "alarm_high"
+        ))
+        alarm_state["alarm_high_active"] = False
+
+    # Low level warning (<= 10% capacity, but not empty)
+    if 0 < buffer_level <= 0.1 * buffer_capacity and not alarm_state.get("alarm_low_active", False):
+        alarms.append((
+            "BufferLow", "LOW",
+            f"{buffer_name} level {buffer_level}/{buffer_capacity} (<10% full)",
+            True, "alarm_low"
+        ))
+        alarm_state["alarm_low_active"] = True
+    elif (buffer_level > 0.1 * buffer_capacity or buffer_level == 0) and alarm_state.get("alarm_low_active", False):
+        alarms.append((
+            "BufferLow", "INFO",
+            f"{buffer_name} level returned to normal",
+            False, "alarm_low"
+        ))
+        alarm_state["alarm_low_active"] = False
+
+    return alarms
+
+
+def update_alarm_variables(node_vars: dict, alarms: list):
+    """
+    Update OPC UA alarm variables based on detected alarms.
+
+    Args:
+        node_vars: Dictionary of OPC UA variable nodes (from opcua_vars)
+        alarms: List of (alarm_type, severity, message, is_active, var_key) tuples
+    """
+    from datetime import datetime
+
+    if not alarms:
+        return
+
+    # Update alarm count (count active alarms)
+    if "alarm_alarm_count" in node_vars:
+        current_count = node_vars["alarm_alarm_count"].get_value()
+        # Adjust count based on activations/deactivations
+        for alarm in alarms:
+            if alarm[3]:  # Activated (alarm[3] is is_active)
+                current_count += 1
+            else:  # Deactivated
+                current_count = max(0, current_count - 1)
+        node_vars["alarm_alarm_count"].set_value(current_count)
+
+    # Update latest alarm metadata (for most recent alarm)
+    latest_alarm = alarms[-1]  # Most recent
+    alarm_type, severity, message, is_active, var_key = latest_alarm
+
+    if "alarm_last_alarm_time" in node_vars:
+        node_vars["alarm_last_alarm_time"].set_value(datetime.now())
+    if "alarm_last_alarm_message" in node_vars:
+        node_vars["alarm_last_alarm_message"].set_value(message)
+    if "alarm_last_alarm_severity" in node_vars:
+        node_vars["alarm_last_alarm_severity"].set_value(severity)
+
+    # Update individual alarm flags
+    for alarm in alarms:
+        alarm_type, severity, message, is_active, var_key = alarm
+        full_key = f"alarm_{var_key}"
+        if full_key in node_vars:
+            node_vars[full_key].set_value(is_active)
 
 
 def accumulate_time(metrics: dict, current_state: str, sim_step: float) -> None:
@@ -445,6 +654,10 @@ def build_opcua_server(config: dict):
     var_line_quality = line_oee_node.add_variable(idx, "Quality", 1.0)
     var_line_oee = line_oee_node.add_variable(idx, "OEE", 0.0)
 
+    # Phase 9b: EventLog node (optional - for future event generation)
+    event_log_node = line1.add_object(idx, "EventLog")
+    var_total_events = event_log_node.add_variable(idx, "TotalEventsGenerated", 0)
+
     # System controls (writable inputs to control simulation)
     controls_node = system_node.add_object(idx, "Controls")
     var_pause_line = controls_node.add_variable(idx, "cmdPauseLine", False)
@@ -508,7 +721,7 @@ def build_opcua_server(config: dict):
     return server, opcua_vars, idx
 
 
-def main():
+def main(argv=None):
     import argparse
     import random
 
@@ -518,7 +731,7 @@ def main():
                        help="Scenario name from line_models.yaml (default: balanced_line)")
     parser.add_argument("--seed", type=int, default=None,
                        help="Random seed for reproducible defect generation (Phase 8)")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     # Set random seed if provided (Phase 8)
     if args.seed is not None:
@@ -569,6 +782,14 @@ def main():
             "defective_parts": 0,
             "base_defect_rate": base_defect_rate,
             "health_multiplier": health_multiplier,
+
+            # Phase 9: Alarm state tracking
+            "prev_health_state": 0,
+            "prev_maint_active": False,
+            "prev_defect_rate": 0.0,
+            "alarm_machine_failed_active": False,
+            "alarm_maintenance_active": False,
+            "alarm_quality_alert_active": False,
         }
 
     server.start()
@@ -674,6 +895,22 @@ def main():
                         if not hasattr(part, 'is_defective') or not part.is_defective:
                             mark_part_defective(part, machine_name, defect_type="quality")
 
+                # Phase 9: Alarm detection
+                new_parts = metrics["partcount"] - prev_partcount
+                machine_alarms = detect_machine_alarms(
+                    machine_name=machine_name,
+                    current_state=current_state,
+                    metrics=metrics,
+                    health_state=health_state,
+                    machine_maint_active=machine_maint_active,
+                    new_defects=new_defects,
+                    new_parts=new_parts
+                )
+
+                # Update alarm variables
+                if machine_alarms:
+                    update_alarm_variables(opcua_vars["machines"][machine_name], machine_alarms)
+
                 # Calculate OEE (Phase 8: pass quality data)
                 oee_result = calculate_oee(
                     metrics["partcount"],
@@ -718,6 +955,22 @@ def main():
             for buffer_name, buffer_obj in buffers.items():
                 buffer_vars = opcua_vars["buffers"][buffer_name]
                 buffer_vars["level"].set_value(buffer_obj.level)
+
+                # Phase 9: Buffer alarm detection
+                # Initialize buffer alarm state if needed
+                if not hasattr(buffer_obj, '_alarm_state'):
+                    buffer_obj._alarm_state = {}
+
+                buffer_alarms = detect_buffer_alarms(
+                    buffer_name=buffer_name,
+                    buffer_level=buffer_obj.level,
+                    buffer_capacity=buffer_obj.capacity,
+                    alarm_state=buffer_obj._alarm_state
+                )
+
+                # Update alarm variables
+                if buffer_alarms:
+                    update_alarm_variables(buffer_vars, buffer_alarms)
 
             # Line-level OEE (bottleneck logic - minimum of all stations)
             all_oee_results = [calculate_oee(machine_metrics[m]["partcount"],

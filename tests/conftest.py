@@ -18,8 +18,8 @@ def opcua_server():
     """
     from src.opcua_server import main
 
-    # Start server in background thread
-    server_thread = threading.Thread(target=main, daemon=True)
+    # Start server in background thread (pass empty args to avoid parsing pytest args)
+    server_thread = threading.Thread(target=lambda: main([]), daemon=True)
     server_thread.start()
 
     # Wait for server to initialize

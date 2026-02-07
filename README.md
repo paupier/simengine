@@ -484,12 +484,84 @@ python src/opcua_server.py --scenario quality_line --seed 42
 - Counters are monotonic (never decrease)
 - Quality ∈ [0.0, 1.0]
 
-### Phase 9: Advanced Failure Modes
+### Phase 9: OPC UA Alarms & Events ✅
+
+**Status:** Complete (2026-02-07)
+
+Implements industry-standard OPC UA alarms and events for proactive monitoring.
+
+**Key Features:**
+
+- **Machine Failure Alarms**: Trigger when health degrades to FAILED state
+- **Maintenance Events**: Notify when maintenance starts/completes
+- **Quality Alerts**: Warn when defect rate exceeds 5% threshold
+- **Buffer Warnings**: Alert when buffers are >90% full or <10% full
+- **Edge Detection**: Alarms only trigger on state transitions (no spam)
+- **Backward Compatible**: All Phase 8 tests pass unchanged
+
+**OPC UA Variables (per station):**
+
+- `Station1/Alarms/ActiveAlarmCount` - Number of active alarms (Int32, READ-ONLY)
+- `Station1/Alarms/LastAlarmTime` - Timestamp of most recent alarm (DateTime, READ-ONLY)
+- `Station1/Alarms/LastAlarmMessage` - Human-readable alarm message (String, READ-ONLY)
+- `Station1/Alarms/LastAlarmSeverity` - Alarm severity level (String, READ-ONLY)
+- `Station1/Alarms/MachineFailureActive` - Boolean flag for failure alarm (Boolean, READ-ONLY)
+- `Station1/Alarms/MaintenanceActive` - Boolean flag for maintenance (Boolean, READ-ONLY)
+- `Station1/Alarms/QualityAlertActive` - Boolean flag for quality alert (Boolean, READ-ONLY)
+
+**Buffer Alarms (per buffer):**
+
+- `Buffer1/Alarms/ActiveAlarmCount` - Number of active buffer alarms
+- `Buffer1/Alarms/HighLevelWarningActive` - Buffer >90% full (Boolean, READ-ONLY)
+- `Buffer1/Alarms/LowLevelWarningActive` - Buffer <10% full (Boolean, READ-ONLY)
+
+**Alarm Severity Levels:**
+
+- **CRITICAL** (1000): Machine failures
+- **MEDIUM** (500): Quality alerts
+- **LOW** (300): Buffer warnings
+- **INFO** (100): State changes, maintenance events
+
+**Usage:**
+
+```bash
+# Run with any scenario - alarms work automatically
+python src/opcua_server.py --scenario failure_line
+
+# Monitor alarms in UA Expert
+# Browse to: Line1/Station1/Alarms/
+# Watch: MachineFailureActive, LastAlarmMessage
+```
+
+**Testing:**
+
+```bash
+# Run alarm tests
+pytest tests/test_opcua_integration.py::TestAlarmsAndEvents -v
+
+# Expected: 4/4 tests passing
+```
+
+**Implementation Details:**
+
+- **Edge Detection**: Tracks previous alarm states to only trigger on transitions
+- **Anti-Spam**: Alarms activate once when entering bad state, clear once when exiting
+- **Metadata Tracking**: Stores timestamp, message, and severity for latest alarm
+- **Active Count**: Reflects current number of active alarms (not cumulative)
+
+**Future Enhancement (Phase 9b):**
+
+- True OPC UA event generation (push notifications to SCADA clients)
+- Event subscriptions for real-time monitoring
+- Event filtering and acknowledgment
+
+### Phase 10: Advanced Failure Modes
+
 - MTTF/MTTR distributions (replace simple degradation matrix)
 - Multiple failure types per machine (mechanical, electrical, tooling)
 - Preventive vs. predictive maintenance strategies
 
-### Phase 10: Historical Data & Analytics
+### Phase 11: Historical Data & Analytics
 - Time-series database integration (InfluxDB/TimescaleDB)
 - Grafana dashboards for trend analysis
 - Alarm/notification system

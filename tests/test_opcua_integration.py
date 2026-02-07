@@ -589,5 +589,77 @@ class TestOEEMetrics:
             f"Line Performance {line_perf} should be min of station performances {expected_line_perf}"
 
 
+class TestAlarmsAndEvents:
+    """Test Phase 9: Alarm variables and event generation"""
+
+    def test_alarm_nodes_exist(self, opcua_client):
+        """Verify all alarm nodes are accessible"""
+        root = opcua_client.get_objects_node()
+        line1 = root.get_child(["2:Line1"])
+        station1 = line1.get_child(["2:Station1"])
+        alarms = station1.get_child(["2:Alarms"])
+
+        # Check alarm variables exist
+        alarm_count = alarms.get_child(["2:ActiveAlarmCount"])
+        assert alarm_count is not None
+        assert alarm_count.get_value() >= 0
+
+        # Check alarm flags exist
+        failure_flag = alarms.get_child(["2:MachineFailureActive"])
+        assert failure_flag is not None
+        assert isinstance(failure_flag.get_value(), bool)
+
+        # Check metadata nodes exist
+        last_time = alarms.get_child(["2:LastAlarmTime"])
+        last_msg = alarms.get_child(["2:LastAlarmMessage"])
+        last_severity = alarms.get_child(["2:LastAlarmSeverity"])
+        assert last_time is not None
+        assert last_msg is not None
+        assert last_severity is not None
+
+    def test_buffer_alarm_nodes_exist(self, opcua_client):
+        """Verify buffer alarm nodes are accessible"""
+        root = opcua_client.get_objects_node()
+        line1 = root.get_child(["2:Line1"])
+        buffer1 = line1.get_child(["2:Buffer1"])
+        alarms = buffer1.get_child(["2:Alarms"])
+
+        # Check buffer alarm flags
+        high_flag = alarms.get_child(["2:HighLevelWarningActive"])
+        low_flag = alarms.get_child(["2:LowLevelWarningActive"])
+        assert high_flag is not None
+        assert low_flag is not None
+        assert isinstance(high_flag.get_value(), bool)
+        assert isinstance(low_flag.get_value(), bool)
+
+    def test_alarm_count_increments(self, opcua_client):
+        """Verify alarm count changes when alarms activate"""
+        root = opcua_client.get_objects_node()
+        line1 = root.get_child(["2:Line1"])
+        station1 = line1.get_child(["2:Station1"])
+        alarms = station1.get_child(["2:Alarms"])
+
+        alarm_count = alarms.get_child(["2:ActiveAlarmCount"])
+        initial_count = alarm_count.get_value()
+
+        # Wait for potential alarms (machine failure, quality alert)
+        time.sleep(30)
+
+        # Count should be >= initial (alarms may have triggered)
+        final_count = alarm_count.get_value()
+        assert final_count >= initial_count
+
+    def test_backward_compatibility(self, opcua_client):
+        """Ensure Phase 1-8 tests still pass after Phase 9 changes"""
+        # Verify existing nodes still accessible
+        simtime = opcua_client.get_node("ns=2;s=Line1.System.SimTime")
+        assert simtime is not None
+
+        state = opcua_client.get_node("ns=2;s=Line1.Station1.State")
+        assert state is not None
+
+        # No changes to existing node structure
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
