@@ -3,6 +3,8 @@ import time
 from opcua import Server
 from simantha import Source, Machine, Buffer, Sink, System, Maintainer
 from config_loader import load_line_config
+from advanced_machine import AdvancedMachine
+from failure_modes import FailureMode
 
 
 # Machine health degradation matrix (2-state: healthy → failed)
@@ -15,7 +17,8 @@ DEGRADATION_MATRIX = [
 
 # ========== HELPER FUNCTIONS (Phase 7) ==========
 
-def create_station_node(parent_node, opcua_idx: int, station_name: str, enable_health: bool = False):
+def create_station_node(parent_node, opcua_idx: int, station_name: str, enable_health: bool = False,
+                        enable_failure_modes: bool = False, failure_mode_names: list = None):
     """
     Create OPC UA variables for a single station.
 
@@ -24,6 +27,8 @@ def create_station_node(parent_node, opcua_idx: int, station_name: str, enable_h
         opcua_idx: OPC UA namespace index
         station_name: Station node name (e.g., "Station1", "Station2")
         enable_health: Whether to create health variables
+        enable_failure_modes: Whether to create FailureModes/MaintenanceStrategy subnodes (Phase 10)
+        failure_mode_names: List of failure mode names (e.g., ["mechanical", "electrical"])
 
     Returns:
         dict: Dictionary of variable objects
@@ -60,6 +65,26 @@ def create_station_node(parent_node, opcua_idx: int, station_name: str, enable_h
     # Alarms sub-node (Phase 9)
     alarm_vars = create_alarms_node(station_node, opcua_idx, alarm_type="station")
     vars_dict.update({f"alarm_{k}": v for k, v in alarm_vars.items()})
+
+    # FailureModes sub-node (Phase 10)
+    if enable_failure_modes and failure_mode_names:
+        fm_node = station_node.add_object(opcua_idx, "FailureModes")
+        vars_dict["fm_active"] = fm_node.add_variable(opcua_idx, "ActiveFailureMode", "none")
+
+        # Create variables for each failure mode
+        for fm_name in failure_mode_names:
+            prefix = fm_name.capitalize()
+            vars_dict[f"fm_{fm_name}_count"] = fm_node.add_variable(opcua_idx, f"{prefix}FailureCount", 0)
+            vars_dict[f"fm_{fm_name}_downtime"] = fm_node.add_variable(opcua_idx, f"{prefix}TotalDowntime", 0.0)
+            vars_dict[f"fm_{fm_name}_mtbf"] = fm_node.add_variable(opcua_idx, f"{prefix}MTBF", 0.0)
+            vars_dict[f"fm_{fm_name}_mttr"] = fm_node.add_variable(opcua_idx, f"{prefix}MTTR", 0.0)
+
+        # MaintenanceStrategy sub-node
+        ms_node = station_node.add_object(opcua_idx, "MaintenanceStrategy")
+        vars_dict["ms_type"] = ms_node.add_variable(opcua_idx, "StrategyType", "corrective")
+        vars_dict["ms_next_pm"] = ms_node.add_variable(opcua_idx, "NextPMScheduled", -1.0)
+        vars_dict["ms_pm_count"] = ms_node.add_variable(opcua_idx, "PMCount", 0)
+        vars_dict["ms_cm_count"] = ms_node.add_variable(opcua_idx, "CMCount", 0)
 
     return vars_dict
 
@@ -549,9 +574,35 @@ def build_simantha_system(config: dict):
     for machine_cfg in config["machines"]:
         name = machine_cfg["name"]
         cycle_time = int(machine_cfg.get("cycle_time", 1))  # Convert to int for Simantha
+        enable_advanced_failures = machine_cfg.get("enable_advanced_failures", False)
         enable_degradation = machine_cfg.get("enable_degradation", False)
 
-        if enable_degradation:
+        # Phase 10: Check for advanced failures
+        if enable_advanced_failures:
+            # Parse failure modes
+            failure_modes = []
+            for fm_cfg in machine_cfg.get("failure_modes", []):
+                failure_mode = FailureMode(
+                    name=fm_cfg["name"],
+                    type=fm_cfg["type"],
+                    mttf_config=fm_cfg["mttf"],
+                    mttr_config=fm_cfg["mttr"]
+                )
+                failure_modes.append(failure_mode)
+
+            # Parse maintenance strategy
+            strategy_cfg = machine_cfg.get("maintenance_strategy", {"type": "corrective"})
+
+            # Create AdvancedMachine
+            machines[name] = AdvancedMachine(
+                name=name,
+                cycle_time=cycle_time,
+                failure_modes=failure_modes,
+                maintenance_strategy=strategy_cfg
+            )
+
+        elif enable_degradation:
+            # Phase 4: Simple degradation (legacy)
             degradation_matrix = machine_cfg.get("degradation_matrix", DEGRADATION_MATRIX)
             cbm_threshold = machine_cfg.get("cbm_threshold", 1)
             machines[name] = Machine(
@@ -561,6 +612,7 @@ def build_simantha_system(config: dict):
                 cbm_threshold=cbm_threshold
             )
         else:
+            # No failures
             machines[name] = Machine(name=name, cycle_time=cycle_time)
 
     # Create buffers from config
@@ -670,7 +722,14 @@ def build_opcua_server(config: dict):
         station_name = f"Station{i}"  # "Station1", "Station2", "Station3", ...
         enable_health = machine_cfg.get("enable_degradation", False)
 
-        station_vars = create_station_node(line1, idx, station_name, enable_health)
+        # Phase 10: Check for advanced failures
+        enable_failure_modes = machine_cfg.get("enable_advanced_failures", False)
+        failure_mode_names = []
+        if enable_failure_modes:
+            failure_mode_names = [fm["name"] for fm in machine_cfg.get("failure_modes", [])]
+
+        station_vars = create_station_node(line1, idx, station_name, enable_health,
+                                          enable_failure_modes, failure_mode_names)
         machines_vars[machine_name] = station_vars
 
     # Dynamic buffer creation (Phase 7)
@@ -941,6 +1000,27 @@ def main(argv=None):
                     health_pct = 100.0 * (1 - health_state)
                     machine_vars["health"].set_value(health_state)
                     machine_vars["health_pct"].set_value(health_pct)
+
+                # Phase 10: Failure mode statistics (if enabled)
+                if isinstance(machine_obj, AdvancedMachine):
+                    # Get active failure mode
+                    active_mode = machine_obj.get_active_failure_mode()
+                    machine_vars["fm_active"].set_value(active_mode)
+
+                    # Get statistics for all failure modes
+                    fm_stats = machine_obj.get_failure_mode_stats()
+                    for fm_name, stats in fm_stats.items():
+                        machine_vars[f"fm_{fm_name}_count"].set_value(stats["failure_count"])
+                        machine_vars[f"fm_{fm_name}_downtime"].set_value(stats["total_downtime"])
+                        machine_vars[f"fm_{fm_name}_mtbf"].set_value(stats["mtbf"])
+                        machine_vars[f"fm_{fm_name}_mttr"].set_value(stats["mttr"])
+
+                    # Get maintenance statistics
+                    maint_stats = machine_obj.get_maintenance_stats()
+                    machine_vars["ms_type"].set_value(maint_stats["strategy_type"])
+                    machine_vars["ms_pm_count"].set_value(maint_stats["pm_count"])
+                    machine_vars["ms_cm_count"].set_value(maint_stats["cm_count"])
+                    machine_vars["ms_next_pm"].set_value(maint_stats["next_pm_time"])
 
                 # OEE
                 machine_vars["availability"].set_value(oee_result["availability"])

@@ -12,7 +12,7 @@ Key Design:
 """
 from simantha import Machine
 from typing import Optional, Dict, List
-from src.failure_modes import FailureMode, FailureModeManager
+from failure_modes import FailureMode, FailureModeManager
 
 
 class AdvancedMachine(Machine):
