@@ -75,13 +75,26 @@ pip install -r requirements.txt
 
 ### Run the OPC UA Server
 
+**Default (2-machine balanced line):**
 ```bash
 python src/opcua_server.py
 ```
 
+**Choose a scenario (Phase 7):**
+```bash
+# 3-machine line with degradation
+python src/opcua_server.py --scenario extended_line
+
+# 4-machine scalability test
+python src/opcua_server.py --scenario long_line
+```
+
 **Expected output:**
 ```
+[OK] Configuration validated: 2 machines, 1 buffers
+Loading scenario: balanced_line
 OPC UA server started at opc.tcp://localhost:4840/simantha/
+Scenario: balanced_line (2 machines, 1 buffers)
 Press Ctrl+C to stop.
 ```
 
@@ -366,10 +379,35 @@ Implements industry-standard OEE (Overall Equipment Effectiveness) metrics:
 - GoodPartCount, DefectivePartCount (Phase 8 prep)
 - TheoreticalOutput (diagnostic)
 
-### Phase 7: Multi-Buffer & Extended Topologies
-- 3+ machine lines with multiple buffers
+### Phase 7: Multi-Buffer & Extended Topologies ✅
+
+**Status:** Complete (2026-02-07)
+
+Extends the system from hardcoded 2-machine lines to configuration-driven N-machine topologies:
+
+**Key Features:**
+- **Configuration-Driven**: Load line topology from `config/line_models.yaml`
+- **Dynamic Node Creation**: OPC UA nodes (Station1, Station2, Station3...) created automatically
+- **Scalable Architecture**: Supports 2, 3, 4, or more machines in serial topology
+- **Command-Line Selection**: `python src/opcua_server.py --scenario <name>`
+- **Backward Compatible**: Existing 2-machine scenarios still work unchanged
+
+**Available Scenarios:**
+- `balanced_line`: 2 machines, 1 buffer (default)
+- `bottleneck_line`: 2 machines with M1 bottleneck (cycle_time=2s)
+- `failure_line`: 2 machines with M1 degradation/failures
+- `extended_line`: 3 machines, 2 buffers, with M1 degradation (NEW)
+- `long_line`: 4 machines, 3 buffers, scalability test (NEW)
+
+**Code Improvements:**
+- Reduced code from 704 to 570 lines (eliminated ~130 lines of duplication)
+- Extracted 5 reusable helper functions
+- Replaced hardcoded m1/m2 logic with loops over machine dictionaries
+- Added topology validation (N machines require N-1 buffers for serial lines)
+
+**Future Extensions (Phase 8+):**
 - Parallel lines, assembly/disassembly stations
-- Configurable line topologies via YAML
+- Non-serial topologies (merge/split points)
 
 ### Phase 8: Quality & Reject Modeling
 - Part defect tracking (good/defective attribute)
