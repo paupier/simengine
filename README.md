@@ -283,14 +283,6 @@ pytest tests/test_opcua_integration.py -v     # OPC UA integration
 pytest tests/test_scenarios.py -v             # Scenario validation
 ```
 
-### Run Baseline Scenarios (Batch Mode)
-
-```bash
-python src/simantha_baseline.py
-```
-
-Generates CSV results in `results/` for offline analysis.
-
 ### Verify Real-Time OPC UA Server
 
 1. **Start server:** `python src/opcua_server.py --scenario failure_line`
@@ -393,8 +385,6 @@ simantha-opcua/
 │   ├─ USER_MANUAL.md             # Comprehensive user manual
 │   ├─ phase11_spc_implementation_summary.md
 │   └─ address_space.md           # OPC UA address space reference
-│
-├─ results/                       # CSV outputs from baseline scenarios
 │
 ├─ requirements.txt               # Python dependencies
 ├─ LICENSE
