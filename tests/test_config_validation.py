@@ -9,6 +9,7 @@ from src.config_loader import (
     validate_failure_modes,
     validate_distribution_config,
     validate_maintenance_strategy,
+    validate_historian_config,
 )
 
 
@@ -397,3 +398,89 @@ class TestMaintenanceStrategyValidation:
         """Machine without maintenance_strategy field passes validation."""
         machine_cfg = {"name": "M1"}
         validate_maintenance_strategy(machine_cfg)  # Should not raise (optional field)
+
+
+class TestHistorianConfigValidation:
+    """Tests for Phase 13 historian configuration validation."""
+
+    def test_no_historian_config_passes(self):
+        """Config without historian section passes validation."""
+        config = {"machines": [], "buffers": []}
+        validate_historian_config(config)  # Should not raise
+
+    def test_disabled_historian_passes(self):
+        """Disabled historian passes validation."""
+        config = {"historian": {"enabled": False}}
+        validate_historian_config(config)  # Should not raise
+
+    def test_valid_csv_config_passes(self):
+        """Valid CSV historian config passes validation."""
+        config = {
+            "historian": {
+                "enabled": True,
+                "csv": {"enabled": True, "output_dir": "results/historian"},
+            }
+        }
+        validate_historian_config(config)  # Should not raise
+
+    def test_csv_missing_output_dir_raises(self):
+        """CSV enabled without output_dir raises error."""
+        config = {
+            "historian": {
+                "enabled": True,
+                "csv": {"enabled": True},
+            }
+        }
+        with pytest.raises(ValueError, match="output_dir"):
+            validate_historian_config(config)
+
+    def test_csv_invalid_max_size_raises(self):
+        """CSV with non-positive max_file_size_mb raises error."""
+        config = {
+            "historian": {
+                "enabled": True,
+                "csv": {"enabled": True, "output_dir": "results", "max_file_size_mb": -1},
+            }
+        }
+        with pytest.raises(ValueError, match="max_file_size_mb"):
+            validate_historian_config(config)
+
+    def test_influxdb_missing_fields_raises(self):
+        """InfluxDB enabled without required fields raises error."""
+        config = {
+            "historian": {
+                "enabled": True,
+                "influxdb": {"enabled": True, "url": "http://localhost:8086"},
+            }
+        }
+        with pytest.raises(ValueError, match="token"):
+            validate_historian_config(config)
+
+    def test_neo4j_missing_fields_raises(self):
+        """Neo4j enabled without required fields raises error."""
+        config = {
+            "historian": {
+                "enabled": True,
+                "neo4j": {"enabled": True, "uri": "bolt://localhost:7687"},
+            }
+        }
+        with pytest.raises(ValueError, match="user"):
+            validate_historian_config(config)
+
+    def test_invalid_production_summary_interval_raises(self):
+        """Non-positive production_summary_interval raises error."""
+        config = {
+            "historian": {
+                "enabled": True,
+                "events": {"production_summary_interval": 0},
+            }
+        }
+        with pytest.raises(ValueError, match="production_summary_interval"):
+            validate_historian_config(config)
+
+    def test_historian_line_scenario_loads(self):
+        """historian_line scenario loads and validates successfully."""
+        config = load_line_config("historian_line")
+        assert "historian" in config
+        assert config["historian"]["enabled"] is True
+        assert config["historian"]["csv"]["enabled"] is True

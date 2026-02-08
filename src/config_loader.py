@@ -113,6 +113,9 @@ def validate_serial_topology(config: Dict[str, Any]) -> None:
                 f"got {buffer['upstream']}→{buffer['downstream']}"
             )
 
+    # Validate historian config (Phase 13)
+    validate_historian_config(config)
+
     print(f"[OK] Configuration validated: {len(machines)} machines, {len(buffers)} buffers")
 
 
@@ -355,3 +358,52 @@ def validate_maintenance_strategy(machine_cfg: dict) -> None:
             raise ValueError(
                 f"Machine '{machine_cfg['name']}': cbm_threshold must be non-negative"
             )
+
+
+def validate_historian_config(config: Dict[str, Any]) -> None:
+    """
+    Validate historian configuration (Phase 13).
+
+    Args:
+        config: Full scenario configuration dictionary
+
+    Raises:
+        ValueError: If historian configuration is invalid
+    """
+    historian_cfg = config.get("historian")
+    if not historian_cfg or not historian_cfg.get("enabled", False):
+        return
+
+    # Validate CSV backend
+    csv_cfg = historian_cfg.get("csv", {})
+    if csv_cfg.get("enabled", False):
+        if "output_dir" not in csv_cfg:
+            raise ValueError("historian.csv: 'output_dir' is required when CSV is enabled")
+        max_size = csv_cfg.get("max_file_size_mb", 50)
+        if not isinstance(max_size, (int, float)) or max_size <= 0:
+            raise ValueError("historian.csv: 'max_file_size_mb' must be a positive number")
+
+    # Validate InfluxDB backend
+    influx_cfg = historian_cfg.get("influxdb", {})
+    if influx_cfg.get("enabled", False):
+        required_fields = ["url", "token", "org", "bucket"]
+        for field in required_fields:
+            if field not in influx_cfg:
+                raise ValueError(f"historian.influxdb: '{field}' is required when InfluxDB is enabled")
+
+    # Validate Neo4j backend
+    neo4j_cfg = historian_cfg.get("neo4j", {})
+    if neo4j_cfg.get("enabled", False):
+        required_fields = ["uri", "user", "password"]
+        for field in required_fields:
+            if field not in neo4j_cfg:
+                raise ValueError(f"historian.neo4j: '{field}' is required when Neo4j is enabled")
+        max_parts = neo4j_cfg.get("max_parts", 10000)
+        if not isinstance(max_parts, int) or max_parts <= 0:
+            raise ValueError("historian.neo4j: 'max_parts' must be a positive integer")
+
+    # Validate events config
+    events_cfg = historian_cfg.get("events", {})
+    interval = events_cfg.get("production_summary_interval", 60)
+    if not isinstance(interval, (int, float)) or interval <= 0:
+        raise ValueError("historian.events: 'production_summary_interval' must be a positive number")

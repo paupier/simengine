@@ -1,0 +1,164 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": "-- Grafana --",
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "gnetId": null,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "title": "Machine State Timeline",
+      "type": "row"
+    },
+    {
+      "datasource": "InfluxDB",
+      "description": "Shows state transitions for each machine as colored bars. Green=PROCESSING, Red=FAILED, Yellow=BLOCKED, Orange=STARVED, Blue=IDLE, Purple=UNDER_REPAIR, Gray=PAUSED",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 80,
+            "lineWidth": 0,
+            "spanNulls": false
+          },
+          "mappings": [
+            { "options": { "PROCESSING": { "color": "green", "index": 0, "text": "PROCESSING" } }, "type": "value" },
+            { "options": { "FAILED": { "color": "red", "index": 1, "text": "FAILED" } }, "type": "value" },
+            { "options": { "BLOCKED": { "color": "yellow", "index": 2, "text": "BLOCKED" } }, "type": "value" },
+            { "options": { "STARVED": { "color": "orange", "index": 3, "text": "STARVED" } }, "type": "value" },
+            { "options": { "IDLE": { "color": "blue", "index": 4, "text": "IDLE" } }, "type": "value" },
+            { "options": { "UNDER_REPAIR": { "color": "purple", "index": 5, "text": "UNDER_REPAIR" } }, "type": "value" },
+            { "options": { "PAUSED": { "color": "text", "index": 6, "text": "PAUSED" } }, "type": "value" }
+          ]
+        }
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 1 },
+      "id": 1,
+      "options": {
+        "mergeValues": true,
+        "showValue": "auto",
+        "alignValue": "left",
+        "rowHeight": 0.9
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sim_events\")\n  |> filter(fn: (r) => r.event_type == \"STATE_CHANGE\")\n  |> filter(fn: (r) => r.source_type == \"machine\")\n  |> filter(fn: (r) => r._field == \"new_state\")\n  |> group(columns: [\"source\"])"
+        }
+      ],
+      "title": "Machine State Timeline",
+      "type": "state-timeline"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
+      "id": 101,
+      "title": "State Duration Analysis",
+      "type": "row"
+    },
+    {
+      "datasource": "InfluxDB",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "stacking": { "mode": "normal", "group": "A" }
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "PROCESSING" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "FAILED" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "BLOCKED" }, "properties": [{ "id": "color", "value": { "fixedColor": "yellow", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "STARVED" }, "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "IDLE" }, "properties": [{ "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "UNDER_REPAIR" }, "properties": [{ "id": "color", "value": { "fixedColor": "purple", "mode": "fixed" } }] }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 10 },
+      "id": 2,
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sim_events\")\n  |> filter(fn: (r) => r.event_type == \"STATE_CHANGE\")\n  |> filter(fn: (r) => r.source_type == \"machine\")\n  |> filter(fn: (r) => r._field == \"new_state\")\n  |> group(columns: [\"source\", \"_value\"])\n  |> count()\n  |> group(columns: [\"source\"])\n  |> pivot(rowKey: [\"source\"], columnKey: [\"_value\"], valueColumn: \"_value\")"
+        }
+      ],
+      "title": "State Transition Counts by Machine",
+      "type": "barchart"
+    },
+    {
+      "datasource": "InfluxDB",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "fillOpacity": 10
+          },
+          "unit": "percentunit"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 10 },
+      "id": 3,
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sim_events\")\n  |> filter(fn: (r) => r.event_type == \"STATE_CHANGE\" or r.event_type == \"PRODUCTION_SUMMARY\")\n  |> filter(fn: (r) => r.source_type == \"machine\")\n  |> filter(fn: (r) => r._field == \"utilisation\")\n  |> group(columns: [\"source\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)"
+        }
+      ],
+      "title": "Machine Utilization Trend",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 },
+      "id": 102,
+      "title": "Buffer Levels",
+      "type": "row"
+    },
+    {
+      "datasource": "InfluxDB",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "stepAfter",
+            "fillOpacity": 30
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 19 },
+      "id": 4,
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sim_events\")\n  |> filter(fn: (r) => r.event_type == \"STATE_CHANGE\")\n  |> filter(fn: (r) => r.source_type == \"buffer\")\n  |> filter(fn: (r) => r._field == \"buffer_level\")\n  |> group(columns: [\"source\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)"
+        }
+      ],
+      "title": "Buffer Levels Over Time",
+      "type": "timeseries"
+    }
+  ],
+  "schemaVersion": 36,
+  "style": "dark",
+  "tags": ["manufacturing", "simantha", "state-timeline"],
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Machine State Timeline",
+  "uid": "simantha-state-timeline",
+  "version": 1
+}

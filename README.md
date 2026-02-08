@@ -10,7 +10,7 @@ A real-time **digital twin** of a manufacturing production line using [Simantha]
 
 ## 📋 Project Status
 
-**Current Phase:** Phase 12 Complete – Shift Tracking & Management
+**Current Phase:** Phase 13 Complete – Historical Data & Visualization
 **Last Updated:** 2026-02-08
 
 ### Phase Completion Status
@@ -29,6 +29,7 @@ A real-time **digital twin** of a manufacturing production line using [Simantha]
 | **Phase 10:** Advanced Failure Modes | ✅ **Complete** | Multiple failure modes with scipy distributions (Weibull, exponential, lognormal), competing risks, MTBF/MTTR tracking |
 | **Phase 11:** SPC Quality Analytics | ✅ **Complete** | X-bar/R control charts, Cp/Cpk capability analysis, Western Electric rules, Six Sigma quality levels |
 | **Phase 12:** Shift Tracking | ✅ **Complete** | 8-hour shift patterns, per-shift metrics reset, shift-based OEE, automatic rotation |
+| **Phase 13:** Historical Data & Viz | ✅ **Complete** | Event-based CSV/InfluxDB/Neo4j logging, Grafana dashboards, graph DB topology & part tracing |
 
 ---
 
@@ -40,6 +41,7 @@ This project creates a **realistic manufacturing digital twin** that:
 - **Exposes** real-time KPIs via industry-standard OPC UA protocol
 - **Models** realistic variability through health degradation, advanced failures, and quality defects
 - **Tracks** shift-based production with automatic rotation and per-shift OEE
+- **Logs** events to CSV, InfluxDB, and Neo4j with Grafana visualization
 - **Responds** to external control inputs (pause/resume, arrival rate adjustment)
 - **Demonstrates** buffer dynamics, bottlenecks, failure impacts, and SPC analytics
 
@@ -56,6 +58,8 @@ This project creates a **realistic manufacturing digital twin** that:
 ✅ **Alarms & Events** - Machine failure, quality, maintenance, and buffer alerts
 ✅ **Enhanced State Detection** - 7 states: IDLE, PROCESSING, BLOCKED, STARVED, PAUSED, FAILED, UNDER_REPAIR
 ✅ **Time Tracking** - Cumulative time in each state per machine
+✅ **Event Historian** - CSV, InfluxDB 2.x, Neo4j backends with edge-detection logging
+✅ **Grafana Dashboards** - Manufacturing overview, state timeline, alarm log, shift comparison
 
 ---
 
@@ -268,6 +272,7 @@ All KPIs, states, health metrics, buffer levels, maintenance status
 | `advanced_spc_line` | 2 | Advanced failures + SPC | Expert |
 | `shift_line` | 2 | 3-shift rotation tracking | Beginner |
 | `advanced_shift_line` | 2 | Shifts + failures + SPC | Expert |
+| `historian_line` | 2 | CSV event logging + failures + shifts | Intermediate |
 
 ### Run Tests
 
@@ -278,7 +283,9 @@ pytest tests/ -v
 # Specific test suites
 pytest tests/test_spc_analytics.py -v        # SPC (23 tests)
 pytest tests/test_failure_modes.py -v         # Failure modes (29 tests)
-pytest tests/test_config_validation.py -v     # Config validation (39 tests)
+pytest tests/test_config_validation.py -v     # Config validation (48 tests)
+pytest tests/test_event_historian.py -v       # Event historian (38 tests)
+pytest tests/test_neo4j_historian.py -v       # Neo4j historian (23 tests)
 pytest tests/test_opcua_integration.py -v     # OPC UA integration
 pytest tests/test_scenarios.py -v             # Scenario validation
 ```
@@ -366,20 +373,28 @@ simantha-opcua/
 │   ├─ failure_modes.py           # Phase 10: Statistical failure distributions
 │   ├─ advanced_machine.py        # Phase 10: AdvancedMachine class
 │   ├─ spc_analytics.py           # Phase 11: SPC control charts & capability
-│   └─ shift_manager.py           # Phase 12: Shift tracking & rotation
+│   ├─ shift_manager.py           # Phase 12: Shift tracking & rotation
+│   ├─ event_historian.py         # Phase 13: CSV/InfluxDB event historian
+│   └─ neo4j_historian.py         # Phase 13: Neo4j graph DB historian
 │
 ├─ config/
-│   └─ line_models.yaml           # Scenario definitions (11 scenarios)
+│   └─ line_models.yaml           # Scenario definitions (12 scenarios)
 │
 ├─ tests/
 │   ├─ test_opcua_integration.py  # OPC UA integration tests
 │   ├─ test_scenarios.py          # Scenario validation tests
-│   ├─ test_config_validation.py  # Configuration validation (39 tests)
+│   ├─ test_config_validation.py  # Configuration validation (48 tests)
 │   ├─ test_failure_modes.py      # Failure mode unit tests (29 tests)
 │   ├─ test_distribution_validation.py  # Statistical distribution tests
 │   ├─ test_advanced_scenarios.py # Advanced scenario integration tests
 │   ├─ test_spc_analytics.py      # SPC analytics unit tests (23 tests)
+│   ├─ test_event_historian.py    # Event historian tests (38 tests)
+│   ├─ test_neo4j_historian.py    # Neo4j historian tests (23 tests)
 │   └─ validate_opcua_server.py   # Server validation script
+│
+├─ grafana/
+│   ├─ dashboards/                # 4 Grafana dashboard JSON templates
+│   └─ README.md                  # InfluxDB + Grafana setup guide
 │
 ├─ docs/
 │   ├─ USER_MANUAL.md             # Comprehensive user manual
@@ -512,9 +527,60 @@ Line1/Shift/
 
 ---
 
+### Phase 13: Historical Data & Visualization
+
+Event-based logging to CSV, InfluxDB 2.x, and Neo4j with Grafana dashboard templates.
+
+**Run:**
+
+```bash
+python src/opcua_server.py --scenario historian_line
+```
+
+**Features:**
+
+- Event-based logging (state changes, alarms, shifts, SPC violations) - NOT every simulation step
+- CSV backend (zero dependencies, always-on)
+- InfluxDB 2.x backend (time-series DB for Grafana)
+- Neo4j backend (graph DB for topology + part traceability)
+- 4 Grafana dashboard templates (overview, state timeline, alarm log, shift comparison)
+- Environment variable substitution for secrets (`${INFLUXDB_TOKEN}`)
+- File rotation (size-based and shift-based)
+
+**Configuration (in YAML):**
+
+```yaml
+historian:
+  enabled: true
+  csv:
+    enabled: true
+    output_dir: "results/historian"
+  influxdb:
+    enabled: false
+    url: "http://localhost:8086"
+    token: "${INFLUXDB_TOKEN}"
+    org: "simantha"
+    bucket: "manufacturing"
+  neo4j:
+    enabled: false
+    uri: "bolt://localhost:7687"
+    user: "neo4j"
+    password: "${NEO4J_PASSWORD}"
+    track_parts: true
+  events:
+    state_changes: true
+    alarms: true
+    shift_changes: true
+    production_summary: true
+    production_summary_interval: 60
+```
+
+See [grafana/README.md](grafana/README.md) for InfluxDB + Grafana setup instructions.
+
+---
+
 ### Future Phases
 
-- **Phase 13:** Historical Data & Visualization - InfluxDB/TimescaleDB, Grafana dashboards, CSV export
 - **Phase 14:** Scrap & Rework Routing - Non-serial topologies with quality gates
 - **Phase 15:** Parallel Lines & Assembly - Multi-line coordination
 

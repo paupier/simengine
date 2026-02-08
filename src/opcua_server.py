@@ -7,6 +7,8 @@ from advanced_machine import AdvancedMachine
 from failure_modes import FailureMode
 from spc_analytics import ProcessMonitor, SPCConfiguration
 from shift_manager import create_shift_manager_from_config
+from event_historian import create_historian_from_config, collect_step_events, collect_production_summary
+from neo4j_historian import create_neo4j_historian_from_config
 
 
 # Machine health degradation matrix (2-state: healthy → failed)
@@ -999,6 +1001,20 @@ def main(argv=None):
         for i, shift_def in enumerate(shift_manager.shift_definitions):
             print(f"    Shift {i+1}: {shift_def.name} ({shift_def.duration} time units)")
 
+    # Phase 13: Create event historian if configured
+    historian = create_historian_from_config(config, args.scenario)
+    historian_state = {}  # Separate edge-detection state for historian
+    production_summary_counter = 0.0
+    production_summary_interval = config.get("historian", {}).get("events", {}).get("production_summary_interval", 60)
+    if historian:
+        print(f"  Event historian enabled: {historian.describe()}")
+
+    # Phase 13c: Create Neo4j historian if configured
+    neo4j_hist = create_neo4j_historian_from_config(config, args.scenario)
+    if neo4j_hist:
+        neo4j_hist.create_topology(config)
+        print(f"  Neo4j historian enabled: {neo4j_hist.describe()}")
+
     server.start()
     print(f"OPC UA server started at opc.tcp://localhost:4840/simantha/")
     print(f"Scenario: {args.scenario} ({len(machines)} machines, {len(buffers)} buffers)")
@@ -1029,6 +1045,7 @@ def main(argv=None):
                 prev_sink_level = current_sink_level
 
             # Phase 12: Shift tracking and rotation
+            shift_rotated = False
             if shift_manager and not pause_line:
                 # Check if shift should rotate
                 shift_rotated = shift_manager.check_shift_rotation(sim_time)
@@ -1056,6 +1073,10 @@ def main(argv=None):
                 maint_active = False
                 maint_queue_length = 0
                 total_repairs = 0
+
+            # Phase 13: Collect alarm maps for historian
+            machine_alarms_map = {}
+            buffer_alarms_map = {}
 
             # Update machine states and metrics (LOOP instead of m1/m2 specific)
             for machine_name, machine_obj in machines.items():
@@ -1134,6 +1155,7 @@ def main(argv=None):
                 # Update alarm variables
                 if machine_alarms:
                     update_alarm_variables(opcua_vars["machines"][machine_name], machine_alarms)
+                    machine_alarms_map[machine_name] = machine_alarms
 
                 # Calculate OEE (Phase 8: pass quality data)
                 oee_result = calculate_oee(
@@ -1255,6 +1277,7 @@ def main(argv=None):
                 # Update alarm variables
                 if buffer_alarms:
                     update_alarm_variables(buffer_vars, buffer_alarms)
+                    buffer_alarms_map[buffer_name] = buffer_alarms
 
             # Line-level OEE (bottleneck logic - minimum of all stations)
             all_oee_results = [calculate_oee(machine_metrics[m]["partcount"],
@@ -1328,6 +1351,50 @@ def main(argv=None):
                 opcua_vars["shift"]["total_defect_rate"].set_value(total_metrics["total_defect_rate"])
                 opcua_vars["shift"]["total_shifts"].set_value(total_metrics["total_shifts_completed"])
 
+            # Phase 13: Record historian events
+            if historian:
+                step_events = collect_step_events(
+                    sim_time=sim_time,
+                    machines=machines,
+                    machine_metrics=machine_metrics,
+                    buffers=buffers,
+                    machine_alarms_map=machine_alarms_map,
+                    buffer_alarms_map=buffer_alarms_map,
+                    shift_manager=shift_manager,
+                    shift_rotated=shift_rotated,
+                    spc_monitors=spc_monitors,
+                    historian_state=historian_state,
+                    config=config,
+                )
+
+                # Periodic production summary
+                if config.get("historian", {}).get("events", {}).get("production_summary", True):
+                    production_summary_counter += sim_step
+                    if production_summary_counter >= production_summary_interval:
+                        step_events.append(collect_production_summary(
+                            sim_time=sim_time,
+                            total_parts_produced=total_parts_produced,
+                            total_wip=total_wip,
+                            line_oee=line_oee,
+                            shift_manager=shift_manager,
+                        ))
+                        production_summary_counter = 0.0
+
+                if step_events:
+                    historian.record_events(step_events)
+                    if neo4j_hist:
+                        neo4j_hist.record_events(step_events)
+
+                # Phase 13c: Part tracking in Neo4j
+                if neo4j_hist and delta_parts_this_step > 0:
+                    machine_name_list = list(machines.keys())
+                    neo4j_hist.record_parts(
+                        delta_parts=delta_parts_this_step,
+                        machine_names=machine_name_list,
+                        defective_count=0,
+                        sim_time=sim_time,
+                    )
+
             time.sleep(real_step)
 
     except KeyboardInterrupt:
@@ -1350,6 +1417,14 @@ def main(argv=None):
 
         print("\nStopping server...")
     finally:
+        # Phase 13: Flush and close historians
+        if historian:
+            historian.flush()
+            historian.close()
+            print(f"Event historian closed ({historian.event_count} events recorded)")
+        if neo4j_hist:
+            neo4j_hist.close()
+            print(f"Neo4j historian closed ({neo4j_hist.event_count} events, {neo4j_hist._part_counter} parts)")
         server.stop()
         print("Server stopped.")
 

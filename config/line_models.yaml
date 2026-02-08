@@ -440,3 +440,73 @@ advanced_shift_line:
       - name: "Night Shift"
         duration: 28800        # 8 hours (22:00-06:00)
         start_offset: 57600
+
+# Scenario L: Historian Line (CSV event logging + failures + shifts)
+historian_line:
+  description: "2-machine line with event historian logging to CSV"
+
+  machines:
+    - name: M1
+      cycle_time: 1
+      enable_degradation: true
+      defect_rate: 0.02
+      health_multiplier: 5.0
+
+    - name: M2
+      cycle_time: 1
+      defect_rate: 0.005
+
+  buffers:
+    - name: B1
+      capacity: 10
+      upstream: M1
+      downstream: M2
+
+  maintainer:
+    enabled: true
+    capacity: 1
+
+  shifts:
+    schedule:
+      - name: "Day Shift"
+        duration: 28800
+        start_offset: 0
+      - name: "Night Shift"
+        duration: 28800
+        start_offset: 28800
+
+  # Phase 13: Event historian configuration
+  historian:
+    enabled: true
+
+    csv:
+      enabled: true
+      output_dir: "results/historian"
+      max_file_size_mb: 50
+      rotate_on_shift: true
+
+    influxdb:
+      enabled: false
+      url: "http://localhost:8086"
+      token: "${INFLUXDB_TOKEN}"
+      org: "simantha"
+      bucket: "manufacturing"
+      batch_size: 100
+
+    neo4j:
+      enabled: false
+      uri: "bolt://localhost:7687"
+      user: "neo4j"
+      password: "${NEO4J_PASSWORD}"
+      track_parts: true
+      max_parts: 10000
+
+    events:
+      state_changes: true
+      alarms: true
+      shift_changes: true
+      maintenance: true
+      spc_violations: true
+      buffer_level_changes: true
+      production_summary: true
+      production_summary_interval: 60
