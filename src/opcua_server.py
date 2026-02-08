@@ -5,6 +5,7 @@ from simantha import Source, Machine, Buffer, Sink, System, Maintainer
 from config_loader import load_line_config
 from advanced_machine import AdvancedMachine
 from failure_modes import FailureMode
+from spc_analytics import ProcessMonitor, SPCConfiguration
 
 
 # Machine health degradation matrix (2-state: healthy → failed)
@@ -18,7 +19,8 @@ DEGRADATION_MATRIX = [
 # ========== HELPER FUNCTIONS (Phase 7) ==========
 
 def create_station_node(parent_node, opcua_idx: int, station_name: str, enable_health: bool = False,
-                        enable_failure_modes: bool = False, failure_mode_names: list = None):
+                        enable_failure_modes: bool = False, failure_mode_names: list = None,
+                        enable_spc: bool = False):
     """
     Create OPC UA variables for a single station.
 
@@ -29,6 +31,7 @@ def create_station_node(parent_node, opcua_idx: int, station_name: str, enable_h
         enable_health: Whether to create health variables
         enable_failure_modes: Whether to create FailureModes/MaintenanceStrategy subnodes (Phase 10)
         failure_mode_names: List of failure mode names (e.g., ["mechanical", "electrical"])
+        enable_spc: Whether to create SPC (Statistical Process Control) subnode (Phase 11)
 
     Returns:
         dict: Dictionary of variable objects
@@ -85,6 +88,11 @@ def create_station_node(parent_node, opcua_idx: int, station_name: str, enable_h
         vars_dict["ms_next_pm"] = ms_node.add_variable(opcua_idx, "NextPMScheduled", -1.0)
         vars_dict["ms_pm_count"] = ms_node.add_variable(opcua_idx, "PMCount", 0)
         vars_dict["ms_cm_count"] = ms_node.add_variable(opcua_idx, "CMCount", 0)
+
+    # SPC sub-node (Phase 11)
+    if enable_spc:
+        spc_vars = create_spc_node(station_node, opcua_idx)
+        vars_dict.update({f"spc_{k}": v for k, v in spc_vars.items()})
 
     return vars_dict
 
@@ -144,6 +152,53 @@ def create_alarms_node(parent_node, opcua_idx: int, alarm_type: str = "station")
     elif alarm_type == "buffer":
         vars_dict["alarm_high"] = alarms_node.add_variable(opcua_idx, "HighLevelWarningActive", False)
         vars_dict["alarm_low"] = alarms_node.add_variable(opcua_idx, "LowLevelWarningActive", False)
+
+    return vars_dict
+
+
+def create_spc_node(parent_node, opcua_idx: int):
+    """
+    Create SPC (Statistical Process Control) sub-node for a station (Phase 11).
+
+    Args:
+        parent_node: Parent OPC UA node (station)
+        opcua_idx: OPC UA namespace index
+
+    Returns:
+        dict: Dictionary of SPC variable objects
+    """
+    spc_node = parent_node.add_object(opcua_idx, "SPC")
+
+    vars_dict = {}
+
+    # X-bar Chart sub-node
+    xbar_node = spc_node.add_object(opcua_idx, "XBarChart")
+    vars_dict["xbar_current"] = xbar_node.add_variable(opcua_idx, "XBar", 0.0)
+    vars_dict["xbar_ucl"] = xbar_node.add_variable(opcua_idx, "UCL", 0.0)
+    vars_dict["xbar_cl"] = xbar_node.add_variable(opcua_idx, "CL", 0.0)
+    vars_dict["xbar_lcl"] = xbar_node.add_variable(opcua_idx, "LCL", 0.0)
+
+    # R Chart sub-node
+    r_node = spc_node.add_object(opcua_idx, "RChart")
+    vars_dict["r_current"] = r_node.add_variable(opcua_idx, "Range", 0.0)
+    vars_dict["r_ucl"] = r_node.add_variable(opcua_idx, "UCL", 0.0)
+    vars_dict["r_cl"] = r_node.add_variable(opcua_idx, "CL", 0.0)
+    vars_dict["r_lcl"] = r_node.add_variable(opcua_idx, "LCL", 0.0)
+
+    # Capability sub-node
+    cap_node = spc_node.add_object(opcua_idx, "Capability")
+    vars_dict["cp"] = cap_node.add_variable(opcua_idx, "Cp", 0.0)
+    vars_dict["cpk"] = cap_node.add_variable(opcua_idx, "Cpk", 0.0)
+    vars_dict["pp"] = cap_node.add_variable(opcua_idx, "Pp", 0.0)
+    vars_dict["ppk"] = cap_node.add_variable(opcua_idx, "Ppk", 0.0)
+    vars_dict["sigma_level"] = cap_node.add_variable(opcua_idx, "SigmaLevel", 0.0)
+
+    # Status sub-node
+    status_node = spc_node.add_object(opcua_idx, "Status")
+    vars_dict["in_control"] = status_node.add_variable(opcua_idx, "InControl", True)
+    vars_dict["violations"] = status_node.add_variable(opcua_idx, "Violations", "")
+    vars_dict["total_samples"] = status_node.add_variable(opcua_idx, "TotalSamples", 0)
+    vars_dict["num_subgroups"] = status_node.add_variable(opcua_idx, "NumSubgroups", 0)
 
     return vars_dict
 
@@ -728,8 +783,12 @@ def build_opcua_server(config: dict):
         if enable_failure_modes:
             failure_mode_names = [fm["name"] for fm in machine_cfg.get("failure_modes", [])]
 
+        # Phase 11: Check for SPC analytics
+        enable_spc = machine_cfg.get("enable_spc", False)
+
         station_vars = create_station_node(line1, idx, station_name, enable_health,
-                                          enable_failure_modes, failure_mode_names)
+                                          enable_failure_modes, failure_mode_names,
+                                          enable_spc)
         machines_vars[machine_name] = station_vars
 
     # Dynamic buffer creation (Phase 7)
@@ -817,6 +876,10 @@ def main(argv=None):
 
     # Initialize per-machine metrics dictionaries
     machine_metrics = {}
+
+    # Phase 11: SPC monitors for machines with enable_spc=True
+    spc_monitors = {}
+
     for machine_name in machines.keys():
         # Find corresponding config to get cycle_time
         machine_cfg = next(m for m in config["machines"] if m["name"] == machine_name)
@@ -850,6 +913,21 @@ def main(argv=None):
             "alarm_maintenance_active": False,
             "alarm_quality_alert_active": False,
         }
+
+        # Phase 11: Create SPC monitor if enabled
+        if machine_cfg.get("enable_spc", False):
+            spc_config_dict = machine_cfg.get("spc", {})
+            spc_config = SPCConfiguration(
+                subgroup_size=spc_config_dict.get("subgroup_size", 5),
+                num_subgroups=spc_config_dict.get("num_subgroups", 25),
+                usl=spc_config_dict.get("usl", None),
+                lsl=spc_config_dict.get("lsl", None),
+                target=spc_config_dict.get("target", None),
+                enable_western_electric=spc_config_dict.get("enable_western_electric", True),
+                characteristic=spc_config_dict.get("characteristic", "cycle_time")
+            )
+            spc_monitors[machine_name] = ProcessMonitor(spc_config)
+            print(f"  SPC enabled for {machine_name}: {spc_config.characteristic} (USL={spc_config.usl}, LSL={spc_config.lsl})")
 
     server.start()
     print(f"OPC UA server started at opc.tcp://localhost:4840/simantha/")
@@ -1021,6 +1099,45 @@ def main(argv=None):
                     machine_vars["ms_pm_count"].set_value(maint_stats["pm_count"])
                     machine_vars["ms_cm_count"].set_value(maint_stats["cm_count"])
                     machine_vars["ms_next_pm"].set_value(maint_stats["next_pm_time"])
+
+                # Phase 11: SPC analytics (if enabled)
+                if machine_name in spc_monitors:
+                    spc_monitor = spc_monitors[machine_name]
+
+                    # Add measurement when machine completes a part (partcount increased)
+                    if new_parts > 0:
+                        # For each completed part, add a cycle time measurement
+                        # Use actual cycle_time as the measurement (in real system, would be measured)
+                        for _ in range(new_parts):
+                            measurement = metrics["cycle_time"]
+                            spc_monitor.add_measurement(measurement)
+
+                    # Get current SPC metrics
+                    spc_metrics = spc_monitor.get_metrics()
+
+                    # Update OPC UA variables
+                    machine_vars["spc_xbar_current"].set_value(spc_metrics.x_bar)
+                    machine_vars["spc_xbar_ucl"].set_value(spc_metrics.x_bar_ucl)
+                    machine_vars["spc_xbar_cl"].set_value(spc_metrics.x_bar_cl)
+                    machine_vars["spc_xbar_lcl"].set_value(spc_metrics.x_bar_lcl)
+
+                    machine_vars["spc_r_current"].set_value(spc_metrics.range)
+                    machine_vars["spc_r_ucl"].set_value(spc_metrics.r_ucl)
+                    machine_vars["spc_r_cl"].set_value(spc_metrics.r_cl)
+                    machine_vars["spc_r_lcl"].set_value(spc_metrics.r_lcl)
+
+                    machine_vars["spc_cp"].set_value(spc_metrics.cp)
+                    machine_vars["spc_cpk"].set_value(spc_metrics.cpk)
+                    machine_vars["spc_pp"].set_value(spc_metrics.pp)
+                    machine_vars["spc_ppk"].set_value(spc_metrics.ppk)
+                    machine_vars["spc_sigma_level"].set_value(spc_metrics.sigma_level)
+
+                    machine_vars["spc_in_control"].set_value(spc_metrics.in_control)
+                    # Join violations list into comma-separated string
+                    violations_str = ", ".join(spc_metrics.violations) if spc_metrics.violations else ""
+                    machine_vars["spc_violations"].set_value(violations_str)
+                    machine_vars["spc_total_samples"].set_value(spc_metrics.total_samples)
+                    machine_vars["spc_num_subgroups"].set_value(spc_metrics.num_subgroups)
 
                 # OEE
                 machine_vars["availability"].set_value(oee_result["availability"])

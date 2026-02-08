@@ -205,3 +205,128 @@ advanced_failure_line:
   maintainer:
     enabled: true
     capacity: 1
+
+
+# Scenario H: SPC Quality Analytics (Phase 11)
+spc_quality_line:
+  description: "2-machine line with Statistical Process Control (SPC) analytics for quality monitoring"
+
+  machines:
+    - name: M1
+      cycle_time: 1
+      enable_spc: true  # Phase 11: Enable SPC analytics
+
+      # SPC configuration
+      spc:
+        characteristic: "cycle_time"      # What to measure (cycle_time, dimension, etc.)
+        subgroup_size: 5                  # Samples per subgroup
+        num_subgroups: 25                 # Subgroups for control limit calculation
+        usl: 1.2                          # Upper specification limit (20% above nominal)
+        lsl: 0.8                          # Lower specification limit (20% below nominal)
+        target: 1.0                       # Target value (nominal cycle time)
+        enable_western_electric: true     # Enable out-of-control detection rules
+
+      # Optional: Add defect rate for quality tracking
+      defect_rate: 0.02                   # 2% base defect rate
+
+    - name: M2
+      cycle_time: 1
+      enable_spc: true  # Enable SPC on M2 as well
+
+      spc:
+        characteristic: "cycle_time"
+        subgroup_size: 5
+        num_subgroups: 25
+        usl: 1.3                          # Slightly looser tolerances on M2
+        lsl: 0.7
+        target: 1.0
+        enable_western_electric: true
+
+      defect_rate: 0.01  # 1% base defect rate (better quality)
+
+  buffers:
+    - name: B1
+      capacity: 10
+      upstream: M1
+      downstream: M2
+
+  maintainer:
+    enabled: false  # No failures in this scenario (focus on quality)
+
+
+# Scenario I: Combined Advanced Failures + SPC (Phase 11)
+advanced_spc_line:
+  description: "2-machine line combining advanced failure modes with SPC quality analytics"
+
+  machines:
+    - name: M1
+      cycle_time: 1
+      enable_advanced_failures: true  # Phase 10: Advanced failures
+      enable_spc: true                # Phase 11: SPC analytics
+
+      # Multiple failure modes
+      failure_modes:
+        - name: mechanical
+          type: wearout
+          mttf:
+            distribution: weibull
+            shape: 2.5
+            scale: 800               # Less frequent failures for SPC stability
+          mttr:
+            distribution: lognormal
+            mean: 15
+            std: 5
+
+        - name: electrical
+          type: random
+          mttf:
+            distribution: exponential
+            mean: 1500
+          mttr:
+            distribution: lognormal
+            mean: 10
+            std: 3
+
+      # SPC configuration (monitoring cycle time)
+      spc:
+        characteristic: "cycle_time"
+        subgroup_size: 5
+        num_subgroups: 25
+        usl: 1.2
+        lsl: 0.8
+        target: 1.0
+        enable_western_electric: true
+
+      # Maintenance strategy
+      maintenance_strategy:
+        type: predictive
+        cbm_threshold: 1
+
+      # Quality correlation with health
+      defect_rate: 0.01
+      health_multiplier: 5.0  # Defect rate increases 5x when failed
+
+    - name: M2
+      cycle_time: 1
+      enable_spc: true  # SPC only (no failures)
+
+      spc:
+        characteristic: "cycle_time"
+        subgroup_size: 5
+        num_subgroups: 25
+        usl: 1.15
+        lsl: 0.85
+        target: 1.0
+        enable_western_electric: true
+
+      defect_rate: 0.005  # Very low defect rate
+
+  buffers:
+    - name: B1
+      capacity: 10
+      upstream: M1
+      downstream: M2
+
+  maintainer:
+    enabled: true
+    capacity: 1

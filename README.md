@@ -10,8 +10,8 @@ A real-time **digital twin** of a manufacturing production line using [Simantha]
 
 ## 📋 Project Status
 
-**Current Phase:** Phase 5 Complete – Enhanced State Logic & Time Tracking
-**Last Updated:** 2026-02-06
+**Current Phase:** Phase 11 Complete – SPC Quality Analytics
+**Last Updated:** 2026-02-08
 
 ### Phase Completion Status
 
@@ -25,6 +25,9 @@ A real-time **digital twin** of a manufacturing production line using [Simantha]
 | **Phase 6:** OEE Calculation | ✅ **Complete** | Per-station and line-level OEE (Availability × Performance × Quality) |
 | **Phase 7:** Multi-Buffer Lines | ✅ **Complete** | 3+ machines, config-driven topologies |
 | **Phase 8:** Quality Modeling | ✅ **Complete** | Health-correlated defect tracking, real Quality OEE |
+| **Phase 9:** OPC UA Alarms & Events | ✅ **Complete** | Real-time alarm generation (failure, maintenance, quality alerts) |
+| **Phase 10:** Advanced Failure Modes | ✅ **Complete** | Multiple failure modes with scipy distributions (Weibull, exponential, lognormal), competing risks, MTBF/MTTR tracking |
+| **Phase 11:** SPC Quality Analytics | ✅ **Complete** | X-bar/R control charts, Cp/Cpk capability analysis, Western Electric rules, Six Sigma quality levels |
 
 ---
 
@@ -672,10 +675,107 @@ pytest tests/test_advanced_scenarios.py::TestAdvancedFailureScenario -v
 
 All Phase 1-9 scenarios continue to work unchanged. Advanced failures are opt-in via `enable_advanced_failures: true`.
 
-### Phase 11: Historical Data & Analytics
+### Phase 11: SPC Quality Analytics ✅
+
+**Statistical Process Control (SPC)** for real-time quality monitoring with control charts and capability analysis.
+
+**Features:**
+- **X-bar and R Control Charts** - Monitor process mean and variability
+- **Process Capability Indices** - Cp, Cpk, Pp, Ppk calculations
+- **Western Electric Rules** - Automatic out-of-control detection (4 rules)
+- **Six Sigma Quality Levels** - Sigma level estimation (2σ to 6σ)
+- **Real-Time OPC UA Integration** - All metrics exposed via OPC UA
+
+**Configuration Example:**
+
+```yaml
+# Scenario: spc_quality_line
+machines:
+  - name: M1
+    cycle_time: 1
+    enable_spc: true  # Enable SPC analytics
+
+    spc:
+      characteristic: "cycle_time"      # What to measure
+      subgroup_size: 5                  # Samples per subgroup
+      num_subgroups: 25                 # Subgroups for control limits
+      usl: 1.2                          # Upper specification limit
+      lsl: 0.8                          # Lower specification limit
+      target: 1.0                       # Target value
+      enable_western_electric: true     # Enable out-of-control rules
+
+    defect_rate: 0.02  # 2% base defect rate
+```
+
+**Run SPC Scenarios:**
+
+```bash
+# Basic SPC quality monitoring
+python src/opcua_server.py --scenario spc_quality_line
+
+# Combined advanced failures + SPC
+python src/opcua_server.py --scenario advanced_spc_line
+```
+
+**OPC UA Variables (Phase 11):**
+
+```plaintext
+Station1/
+  SPC/
+    XBarChart/
+      XBar           - Current subgroup mean
+      UCL            - Upper control limit (μ + A2×R̄)
+      CL             - Center line (μ)
+      LCL            - Lower control limit (μ - A2×R̄)
+
+    RChart/
+      Range          - Current subgroup range
+      UCL            - D4 × R̄
+      CL             - R̄
+      LCL            - D3 × R̄
+
+    Capability/
+      Cp             - Process capability
+      Cpk            - Process capability index
+      Pp             - Process performance
+      Ppk            - Process performance index
+      SigmaLevel     - Estimated sigma quality (2σ to 6σ)
+
+    Status/
+      InControl      - Process in statistical control (bool)
+      Violations     - Active rule violations (string)
+      TotalSamples   - Total measurements collected
+      NumSubgroups   - Complete subgroups analyzed
+```
+
+**Capability Interpretation:**
+
+| Cpk Value | Sigma Level | Quality     | DPMO    |
+|-----------|-------------|-------------|---------|
+| Cpk ≥ 2.0 | 6σ          | World Class | 3.4     |
+| Cpk ≥ 1.67 | 5σ         | Excellent   | 233     |
+| Cpk ≥ 1.33 | 4σ         | Acceptable  | 6,210   |
+| Cpk ≥ 1.0 | 3σ          | Marginal    | 66,807  |
+| Cpk < 1.0 | <3σ         | Poor        | >66,807 |
+
+**Western Electric Rules:**
+
+- **Rule 1:** Point beyond 3σ control limits (sudden shift/outlier)
+- **Rule 2:** 2 of 3 points beyond 2σ on same side (process mean shift)
+- **Rule 3:** 4 of 5 points beyond 1σ on same side (trending/drift)
+- **Rule 4:** 8 consecutive points on same side of centerline (sustained shift)
+
+**Tests:** 23 unit tests covering control charts, capability analysis, and Western Electric rules (all passing)
+
+**Documentation:** See [docs/phase11_spc_implementation_summary.md](docs/phase11_spc_implementation_summary.md) for complete details.
+
+---
+
+### Phase 12: Historical Data & Visualization (Future)
 - Time-series database integration (InfluxDB/TimescaleDB)
+- Web dashboard for control chart visualization
 - Grafana dashboards for trend analysis
-- Alarm/notification system
+- Historical capability studies
 - CSV export for offline analysis
 
 ---
