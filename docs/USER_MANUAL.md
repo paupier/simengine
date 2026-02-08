@@ -984,151 +984,218 @@ shifts:
 
 ## 9. OPC UA Address Space Reference
 
-### Complete Hierarchy
+### Top-Level Structure
 
-```
-Objects/
-  Line1/
-    System/
-      SimTime                    [READ]  Double    - Simulation time
-      Throughput                 [READ]  Int32     - Total parts produced
-      Controls/
-        cmdPauseLine             [WRITE] Boolean   - Pause simulation
-        setInterarrivalTime      [WRITE] Double    - Part arrival delay
+All nodes live under `Objects / Line1 /`:
 
-    LineKPIs/
-      TotalWIP                   [READ]  Int32     - Total WIP in all buffers
-      LineOEE/
-        Availability             [READ]  Double    - Line availability
-        Performance              [READ]  Double    - Line performance
-        Quality                  [READ]  Double    - Line quality
-        OEE                      [READ]  Double    - Overall OEE
+| Node | Description |
+|------|-------------|
+| `System/` | Simulation time, throughput, controls |
+| `LineKPIs/` | Line-level WIP and OEE |
+| `Station1/` ... `StationN/` | Per-machine state, time tracking, OEE, alarms, SPC |
+| `Buffer1/` ... `BufferN/` | Buffer levels and alarms |
+| `Maintenance/` | Maintainer status and repair counts |
+| `Shift/` | Shift tracking and per-shift metrics *(Phase 12, if configured)* |
+| `EventLog/` | Event counter |
 
-    Station1/
-      State                      [READ]  String    - Machine state
-      PartCount                  [READ]  Int32     - Parts processed
-      Utilisation                [READ]  Double    - Utilization (0-1)
-      BlockedTime                [READ]  Double    - Time blocked
-      StarvedTime                [READ]  Double    - Time starved
-      DownTime                   [READ]  Double    - Time down (failed)
-      ProcessingTime             [READ]  Double    - Time processing
-      IdleTime                   [READ]  Double    - Time idle
+---
 
-      HealthState                [READ]  Int32     - 0=healthy, 1=failed
-      HealthPercent              [READ]  Double    - Health %
+### `Line1 / System /`
 
-      OEE/
-        Availability             [READ]  Double    - Station availability
-        Performance              [READ]  Double    - Station performance
-        Quality                  [READ]  Double    - Station quality
-        OEE                      [READ]  Double    - Station OEE
-        GoodPartCount            [READ]  Int32     - Good parts
-        DefectivePartCount       [READ]  Int32     - Defective parts
-        TheoreticalOutput        [READ]  Double    - Theoretical max
+| Variable | Access | Type | Description |
+|----------|--------|------|-------------|
+| `SimTime` | READ | Double | Simulation time in seconds |
+| `Throughput` | READ | Int32 | Total parts produced (monotonic) |
 
-      Alarms/
-        ActiveAlarmCount         [READ]  Int32     - Active alarms
-        LastAlarmTime            [READ]  DateTime  - Last alarm timestamp
-        LastAlarmMessage         [READ]  String    - Last alarm text
-        LastAlarmSeverity        [READ]  String    - CRITICAL/MEDIUM/LOW
-        MachineFailureActive     [READ]  Boolean   - Failure alarm
-        MaintenanceActive        [READ]  Boolean   - Maintenance alarm
-        QualityAlertActive       [READ]  Boolean   - Quality alarm
+**`System / Controls /`**
 
-      FailureModes/              (Phase 10 - if enabled)
-        ActiveFailureMode        [READ]  String    - Current failure mode
-        MechanicalFailureCount   [READ]  Int32     - Mechanical failures
-        MechanicalMTBF           [READ]  Double    - Mean time between
-        MechanicalMTTR           [READ]  Double    - Mean time to repair
-        (similar for other modes)
+| Variable | Access | Type | Description |
+|----------|--------|------|-------------|
+| `cmdPauseLine` | **WRITE** | Boolean | Pause/resume entire line |
+| `setInterarrivalTime` | **WRITE** | Double | Part arrival delay (0 = fast as possible) |
 
-      MaintenanceStrategy/       (Phase 10 - if enabled)
-        StrategyType             [READ]  String    - corrective/preventive/predictive
-        NextPMScheduled          [READ]  Double    - Next PM time
-        PMCount                  [READ]  Int32     - Preventive count
-        CMCount                  [READ]  Int32     - Corrective count
+---
 
-      SPC/                       (Phase 11 - if enabled)
-        XBarChart/
-          XBar                   [READ]  Double    - Current mean
-          UCL                    [READ]  Double    - Upper control limit
-          CL                     [READ]  Double    - Center line
-          LCL                    [READ]  Double    - Lower control limit
+### `Line1 / LineKPIs /`
 
-        RChart/
-          Range                  [READ]  Double    - Current range
-          UCL                    [READ]  Double    - Upper control limit
-          CL                     [READ]  Double    - Center line
-          LCL                    [READ]  Double    - Lower control limit
+| Variable | Access | Type | Description |
+|----------|--------|------|-------------|
+| `TotalWIP` | READ | Int32 | Total WIP in all buffers |
 
-        Capability/
-          Cp                     [READ]  Double    - Process capability
-          Cpk                    [READ]  Double    - Process capability index
-          Pp                     [READ]  Double    - Process performance
-          Ppk                    [READ]  Double    - Process performance index
-          SigmaLevel             [READ]  Double    - Sigma quality (2-6)
+**`LineKPIs / LineOEE /`**
 
-        Status/
-          InControl              [READ]  Boolean   - Process in control
-          Violations             [READ]  String    - Rule violations
-          TotalSamples           [READ]  Int32     - Sample count
-          NumSubgroups           [READ]  Int32     - Subgroup count
+| Variable | Access | Type | Description |
+|----------|--------|------|-------------|
+| `Availability` | READ | Double | Line availability (bottleneck) |
+| `Performance` | READ | Double | Line performance (bottleneck) |
+| `Quality` | READ | Double | Line quality |
+| `OEE` | READ | Double | Availability x Performance x Quality |
 
-    Buffer1/
-      CurrentLevel               [READ]  Int32     - Current WIP
-      Capacity                   [READ]  Int32     - Max capacity
+---
 
-      Alarms/
-        ActiveAlarmCount         [READ]  Int32     - Active alarms
-        HighLevelWarningActive   [READ]  Boolean   - >90% full
-        LowLevelWarningActive    [READ]  Boolean   - <10% full
+### `Line1 / StationN /` *(per machine)*
 
-    Station2/
-      (same structure as Station1)
+| Variable | Access | Type | Description |
+|----------|--------|------|-------------|
+| `State` | READ | String | IDLE, PROCESSING, BLOCKED, STARVED, PAUSED, FAILED, UNDER_REPAIR |
+| `PartCount` | READ | Int32 | Parts processed (monotonic) |
+| `Utilisation` | READ | Double | ProcessingTime / TotalTime (0.0-1.0) |
+| `BlockedTime` | READ | Double | Time spent waiting for downstream |
+| `StarvedTime` | READ | Double | Time spent waiting for upstream |
+| `DownTime` | READ | Double | Time spent failed or under repair |
+| `ProcessingTime` | READ | Double | Time spent actively processing |
+| `IdleTime` | READ | Double | Time spent idle |
+| `HealthState` | READ | Int32 | 0 = healthy, 1 = failed |
+| `HealthPercent` | READ | Double | Health percentage |
 
-    Maintenance/
-      MaintenanceActive          [READ]  Boolean   - Maintainer busy
-      QueueLength                [READ]  Int32     - Machines waiting
-      TotalRepairs               [READ]  Int32     - Total repairs
+**`StationN / OEE /`**
 
-    Shift/                               (Phase 12 - if shifts configured)
-      CurrentShiftNumber         [READ]  Int32     - Sequential shift counter (1, 2, 3...)
-      CurrentShiftName           [READ]  String    - "Day Shift", "Evening Shift", etc.
-      ShiftStartTime             [READ]  Double    - Sim time when shift started
-      ShiftEndTime               [READ]  Double    - Sim time when shift ends
-      ShiftDuration              [READ]  Double    - Shift length in time units
-      ShiftElapsedTime           [READ]  Double    - Time spent in current shift
-      ShiftTimeRemaining         [READ]  Double    - Countdown to next shift
+| Variable | Access | Type | Description |
+|----------|--------|------|-------------|
+| `Availability` | READ | Double | (TotalTime - DownTime) / TotalTime |
+| `Performance` | READ | Double | ActualOutput / TheoreticalOutput |
+| `Quality` | READ | Double | GoodParts / TotalParts |
+| `OEE` | READ | Double | Availability x Performance x Quality |
+| `GoodPartCount` | READ | Int32 | Parts without defects |
+| `DefectivePartCount` | READ | Int32 | Defective parts |
+| `TheoreticalOutput` | READ | Double | Theoretical max output |
 
-      CurrentShift/                      (resets at each shift boundary)
-        PartsProduced            [READ]  Int32     - Parts this shift only
-        GoodParts                [READ]  Int32     - Good parts this shift
-        DefectiveParts           [READ]  Int32     - Defects this shift
-        DefectRate               [READ]  Double    - Defect % this shift (0.0-1.0)
-        Availability             [READ]  Double    - Shift availability (0.0-1.0)
-        Performance              [READ]  Double    - Shift performance (0.0-1.0)
-        Quality                  [READ]  Double    - Shift quality (0.0-1.0)
-        OEE                      [READ]  Double    - Shift OEE = A x P x Q
+**`StationN / Alarms /`**
 
-      PreviousShift/                     (snapshot of last completed shift)
-        ShiftNumber              [READ]  Int32     - Number of previous shift
-        ShiftName                [READ]  String    - Name of previous shift
-        PartsProduced            [READ]  Int32     - Parts in previous shift
-        GoodParts                [READ]  Int32     - Good parts in previous shift
-        DefectiveParts           [READ]  Int32     - Defects in previous shift
-        DefectRate               [READ]  Double    - Defect rate of previous shift
-        OEE                      [READ]  Double    - OEE of previous shift
+| Variable | Access | Type | Description |
+|----------|--------|------|-------------|
+| `ActiveAlarmCount` | READ | Int32 | Number of active alarms |
+| `LastAlarmTime` | READ | DateTime | Most recent alarm timestamp |
+| `LastAlarmMessage` | READ | String | Most recent alarm text |
+| `LastAlarmSeverity` | READ | String | CRITICAL / MEDIUM / LOW / INFO |
+| `MachineFailureActive` | READ | Boolean | Failure alarm active |
+| `MaintenanceActive` | READ | Boolean | Maintenance alarm active |
+| `QualityAlertActive` | READ | Boolean | Quality alert active |
 
-      Totals/                            (cumulative, NEVER reset)
-        TotalPartsProduced       [READ]  Int32     - Sum across all shifts
-        TotalGoodParts           [READ]  Int32     - Sum across all shifts
-        TotalDefectiveParts      [READ]  Int32     - Sum across all shifts
-        TotalDefectRate          [READ]  Double    - Overall defect rate
-        TotalShiftsCompleted     [READ]  Int32     - Number of completed shifts
+**`StationN / FailureModes /`** *(Phase 10 - if `enable_advanced_failures: true`)*
 
-    EventLog/
-      TotalEventsGenerated       [READ]  Int32     - Event count
-```
+| Variable | Access | Type | Description |
+|----------|--------|------|-------------|
+| `ActiveFailureMode` | READ | String | Current failure mode or "none" |
+| `{Mode}FailureCount` | READ | Int32 | Total failures for this mode |
+| `{Mode}TotalDowntime` | READ | Double | Cumulative downtime |
+| `{Mode}MTBF` | READ | Double | Mean time between failures |
+| `{Mode}MTTR` | READ | Double | Mean time to repair |
+
+**`StationN / MaintenanceStrategy /`** *(Phase 10 - if `enable_advanced_failures: true`)*
+
+| Variable | Access | Type | Description |
+|----------|--------|------|-------------|
+| `StrategyType` | READ | String | corrective / preventive / predictive |
+| `NextPMScheduled` | READ | Double | Next preventive maintenance time |
+| `PMCount` | READ | Int32 | Preventive maintenance count |
+| `CMCount` | READ | Int32 | Corrective maintenance count |
+
+**`StationN / SPC /`** *(Phase 11 - if `enable_spc: true`)*
+
+| Group | Variable | Type | Description |
+|-------|----------|------|-------------|
+| `XBarChart/` | `XBar` | Double | Current subgroup mean |
+| | `UCL` | Double | Upper control limit |
+| | `CL` | Double | Center line |
+| | `LCL` | Double | Lower control limit |
+| `RChart/` | `Range` | Double | Current subgroup range |
+| | `UCL` | Double | Upper control limit |
+| | `CL` | Double | Center line |
+| | `LCL` | Double | Lower control limit |
+| `Capability/` | `Cp` | Double | Process capability |
+| | `Cpk` | Double | Process capability index |
+| | `Pp` | Double | Process performance |
+| | `Ppk` | Double | Process performance index |
+| | `SigmaLevel` | Double | Sigma quality level (2-6) |
+| `Status/` | `InControl` | Boolean | Process in statistical control |
+| | `Violations` | String | Active rule violations |
+| | `TotalSamples` | Int32 | Total measurements |
+| | `NumSubgroups` | Int32 | Complete subgroups analyzed |
+
+---
+
+### `Line1 / BufferN /` *(per buffer)*
+
+| Variable | Access | Type | Description |
+|----------|--------|------|-------------|
+| `CurrentLevel` | READ | Int32 | Current WIP count |
+| `Capacity` | READ | Int32 | Max buffer capacity |
+
+**`BufferN / Alarms /`**
+
+| Variable | Access | Type | Description |
+|----------|--------|------|-------------|
+| `ActiveAlarmCount` | READ | Int32 | Number of active alarms |
+| `HighLevelWarningActive` | READ | Boolean | Buffer >90% full |
+| `LowLevelWarningActive` | READ | Boolean | Buffer <10% full |
+
+---
+
+### `Line1 / Maintenance /`
+
+| Variable | Access | Type | Description |
+|----------|--------|------|-------------|
+| `MaintenanceActive` | READ | Boolean | Maintainer currently busy |
+| `QueueLength` | READ | Int32 | Machines waiting for repair |
+| `TotalRepairs` | READ | Int32 | Completed repairs count |
+
+---
+
+### `Line1 / Shift /` *(Phase 12 - if `shifts` configured)*
+
+| Variable | Access | Type | Description |
+|----------|--------|------|-------------|
+| `CurrentShiftNumber` | READ | Int32 | Sequential shift counter (1, 2, 3...) |
+| `CurrentShiftName` | READ | String | "Day Shift", "Evening Shift", etc. |
+| `ShiftStartTime` | READ | Double | Sim time when shift started |
+| `ShiftEndTime` | READ | Double | Sim time when shift ends |
+| `ShiftDuration` | READ | Double | Shift length in time units |
+| `ShiftElapsedTime` | READ | Double | Time spent in current shift |
+| `ShiftTimeRemaining` | READ | Double | Countdown to next shift |
+
+**`Shift / CurrentShift /`** *(resets at each shift boundary)*
+
+| Variable | Access | Type | Description |
+|----------|--------|------|-------------|
+| `PartsProduced` | READ | Int32 | Parts produced this shift |
+| `GoodParts` | READ | Int32 | Good parts this shift |
+| `DefectiveParts` | READ | Int32 | Defective parts this shift |
+| `DefectRate` | READ | Double | Defect rate this shift (0.0-1.0) |
+| `Availability` | READ | Double | Shift availability (0.0-1.0) |
+| `Performance` | READ | Double | Shift performance (0.0-1.0) |
+| `Quality` | READ | Double | Shift quality (0.0-1.0) |
+| `OEE` | READ | Double | Shift OEE = A x P x Q |
+
+**`Shift / PreviousShift /`** *(snapshot of last completed shift)*
+
+| Variable | Access | Type | Description |
+|----------|--------|------|-------------|
+| `ShiftNumber` | READ | Int32 | Number of previous shift |
+| `ShiftName` | READ | String | Name of previous shift |
+| `PartsProduced` | READ | Int32 | Parts in previous shift |
+| `GoodParts` | READ | Int32 | Good parts in previous shift |
+| `DefectiveParts` | READ | Int32 | Defective parts in previous shift |
+| `DefectRate` | READ | Double | Defect rate of previous shift |
+| `OEE` | READ | Double | OEE of previous shift |
+
+**`Shift / Totals /`** *(cumulative across all shifts, NEVER reset)*
+
+| Variable | Access | Type | Description |
+|----------|--------|------|-------------|
+| `TotalPartsProduced` | READ | Int32 | Sum of parts across all shifts |
+| `TotalGoodParts` | READ | Int32 | Sum of good parts across all shifts |
+| `TotalDefectiveParts` | READ | Int32 | Sum of defects across all shifts |
+| `TotalDefectRate` | READ | Double | Overall defect rate |
+| `TotalShiftsCompleted` | READ | Int32 | Number of completed shifts |
+
+---
+
+### `Line1 / EventLog /`
+
+| Variable | Access | Type | Description |
+|----------|--------|------|-------------|
+| `TotalEventsGenerated` | READ | Int32 | Total event count |
 
 ### Data Types Reference
 
