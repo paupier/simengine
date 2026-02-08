@@ -10,7 +10,7 @@ A real-time **digital twin** of a manufacturing production line using [Simantha]
 
 ## 📋 Project Status
 
-**Current Phase:** Phase 11 Complete – SPC Quality Analytics
+**Current Phase:** Phase 12 Complete – Shift Tracking & Management
 **Last Updated:** 2026-02-08
 
 ### Phase Completion Status
@@ -28,6 +28,7 @@ A real-time **digital twin** of a manufacturing production line using [Simantha]
 | **Phase 9:** OPC UA Alarms & Events | ✅ **Complete** | Real-time alarm generation (failure, maintenance, quality alerts) |
 | **Phase 10:** Advanced Failure Modes | ✅ **Complete** | Multiple failure modes with scipy distributions (Weibull, exponential, lognormal), competing risks, MTBF/MTTR tracking |
 | **Phase 11:** SPC Quality Analytics | ✅ **Complete** | X-bar/R control charts, Cp/Cpk capability analysis, Western Electric rules, Six Sigma quality levels |
+| **Phase 12:** Shift Tracking | ✅ **Complete** | 8-hour shift patterns, per-shift metrics reset, shift-based OEE, automatic rotation |
 
 ---
 

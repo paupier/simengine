@@ -330,3 +330,113 @@ advanced_spc_line:
   maintainer:
     enabled: true
     capacity: 1
+
+
+# Scenario J: Shift Tracking (Phase 12)
+shift_line:
+  description: "2-machine line with 8-hour shift tracking - production resets per shift"
+
+  machines:
+    - name: M1
+      cycle_time: 1
+      defect_rate: 0.02        # 2% base defect rate
+
+    - name: M2
+      cycle_time: 1
+      defect_rate: 0.01        # 1% base defect rate
+
+  buffers:
+    - name: B1
+      capacity: 10
+      upstream: M1
+      downstream: M2
+
+  maintainer:
+    enabled: false
+
+  # Phase 12: Shift configuration
+  shifts:
+    schedule:
+      - name: "Day Shift"
+        duration: 28800        # 8 hours in seconds (8 * 3600)
+        start_offset: 0
+
+      - name: "Evening Shift"
+        duration: 28800        # 8 hours
+        start_offset: 28800
+
+      - name: "Night Shift"
+        duration: 28800        # 8 hours
+        start_offset: 57600
+
+
+# Scenario K: Shift Tracking with Advanced Features (Phase 12)
+advanced_shift_line:
+  description: "2-machine line with shift tracking, failures, SPC, and quality modeling"
+
+  machines:
+    - name: M1
+      cycle_time: 1
+      enable_advanced_failures: true
+      enable_spc: true
+
+      # Advanced failures
+      failure_modes:
+        - name: mechanical
+          type: wearout
+          mttf:
+            distribution: weibull
+            shape: 2.5
+            scale: 1000        # Longer MTTF for shift-scale operations
+          mttr:
+            distribution: lognormal
+            mean: 15
+            std: 5
+
+      # SPC monitoring
+      spc:
+        characteristic: "cycle_time"
+        subgroup_size: 5
+        num_subgroups: 25
+        usl: 1.2
+        lsl: 0.8
+        target: 1.0
+        enable_western_electric: true
+
+      # Quality
+      defect_rate: 0.01
+      health_multiplier: 5.0
+
+      # Maintenance
+      maintenance_strategy:
+        type: predictive
+        cbm_threshold: 1
+
+    - name: M2
+      cycle_time: 1
+      defect_rate: 0.005       # Better quality on M2
+
+  buffers:
+    - name: B1
+      capacity: 15
+      upstream: M1
+      downstream: M2
+
+  maintainer:
+    enabled: true
+    capacity: 1
+
+  # Phase 12: 3-shift operation (24/7 coverage)
+  shifts:
+    schedule:
+      - name: "Day Shift"
+        duration: 28800        # 8 hours (06:00-14:00)
+        start_offset: 0
+
+      - name: "Evening Shift"
+        duration: 28800        # 8 hours (14:00-22:00)
+        start_offset: 28800
+
+      - name: "Night Shift"
+        duration: 28800        # 8 hours (22:00-06:00)
+        start_offset: 57600

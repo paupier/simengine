@@ -6,6 +6,7 @@ from config_loader import load_line_config
 from advanced_machine import AdvancedMachine
 from failure_modes import FailureMode
 from spc_analytics import ProcessMonitor, SPCConfiguration
+from shift_manager import create_shift_manager_from_config
 
 
 # Machine health degradation matrix (2-state: healthy → failed)
@@ -199,6 +200,62 @@ def create_spc_node(parent_node, opcua_idx: int):
     vars_dict["violations"] = status_node.add_variable(opcua_idx, "Violations", "")
     vars_dict["total_samples"] = status_node.add_variable(opcua_idx, "TotalSamples", 0)
     vars_dict["num_subgroups"] = status_node.add_variable(opcua_idx, "NumSubgroups", 0)
+
+    return vars_dict
+
+
+def create_shift_node(parent_node, opcua_idx: int):
+    """
+    Create Shift tracking sub-node (Phase 12).
+
+    Args:
+        parent_node: Parent OPC UA node (usually Line1)
+        opcua_idx: OPC UA namespace index
+
+    Returns:
+        dict: Dictionary of shift variable objects
+    """
+    shift_node = parent_node.add_object(opcua_idx, "Shift")
+
+    vars_dict = {}
+
+    # Current shift information
+    vars_dict["shift_number"] = shift_node.add_variable(opcua_idx, "CurrentShiftNumber", 1)
+    vars_dict["shift_name"] = shift_node.add_variable(opcua_idx, "CurrentShiftName", "")
+    vars_dict["shift_start_time"] = shift_node.add_variable(opcua_idx, "ShiftStartTime", 0.0)
+    vars_dict["shift_end_time"] = shift_node.add_variable(opcua_idx, "ShiftEndTime", 0.0)
+    vars_dict["shift_duration"] = shift_node.add_variable(opcua_idx, "ShiftDuration", 0.0)
+    vars_dict["shift_elapsed"] = shift_node.add_variable(opcua_idx, "ShiftElapsedTime", 0.0)
+    vars_dict["shift_remaining"] = shift_node.add_variable(opcua_idx, "ShiftTimeRemaining", 0.0)
+
+    # Current shift metrics (reset at shift end)
+    current_node = shift_node.add_object(opcua_idx, "CurrentShift")
+    vars_dict["current_parts"] = current_node.add_variable(opcua_idx, "PartsProduced", 0)
+    vars_dict["current_good"] = current_node.add_variable(opcua_idx, "GoodParts", 0)
+    vars_dict["current_defects"] = current_node.add_variable(opcua_idx, "DefectiveParts", 0)
+    vars_dict["current_defect_rate"] = current_node.add_variable(opcua_idx, "DefectRate", 0.0)
+    vars_dict["current_availability"] = current_node.add_variable(opcua_idx, "Availability", 0.0)
+    vars_dict["current_performance"] = current_node.add_variable(opcua_idx, "Performance", 0.0)
+    vars_dict["current_quality"] = current_node.add_variable(opcua_idx, "Quality", 1.0)
+    vars_dict["current_oee"] = current_node.add_variable(opcua_idx, "OEE", 0.0)
+
+    # Previous shift summary (for reporting)
+    prev_node = shift_node.add_object(opcua_idx, "PreviousShift")
+    vars_dict["prev_shift_number"] = prev_node.add_variable(opcua_idx, "ShiftNumber", 0)
+    vars_dict["prev_shift_name"] = prev_node.add_variable(opcua_idx, "ShiftName", "")
+    vars_dict["prev_parts"] = prev_node.add_variable(opcua_idx, "PartsProduced", 0)
+    vars_dict["prev_good"] = prev_node.add_variable(opcua_idx, "GoodParts", 0)
+    vars_dict["prev_defects"] = prev_node.add_variable(opcua_idx, "DefectiveParts", 0)
+    vars_dict["prev_defect_rate"] = prev_node.add_variable(opcua_idx, "DefectRate", 0.0)
+    vars_dict["prev_oee"] = prev_node.add_variable(opcua_idx, "OEE", 0.0)
+
+    # Overall totals (never reset)
+    totals_node = shift_node.add_object(opcua_idx, "Totals")
+    vars_dict["total_parts"] = totals_node.add_variable(opcua_idx, "TotalPartsProduced", 0)
+    vars_dict["total_good"] = totals_node.add_variable(opcua_idx, "TotalGoodParts", 0)
+    vars_dict["total_defects"] = totals_node.add_variable(opcua_idx, "TotalDefectiveParts", 0)
+    vars_dict["total_defect_rate"] = totals_node.add_variable(opcua_idx, "TotalDefectRate", 0.0)
+    vars_dict["total_shifts"] = totals_node.add_variable(opcua_idx, "TotalShiftsCompleted", 0)
 
     return vars_dict
 
@@ -807,6 +864,11 @@ def build_opcua_server(config: dict):
     var_maint_queue = maintenance_node.add_variable(idx, "QueueLength", 0)
     var_total_repairs = maintenance_node.add_variable(idx, "TotalRepairs", 0)
 
+    # Phase 12: Shift tracking (optional)
+    shift_vars = {}
+    if "shifts" in config:
+        shift_vars = create_shift_node(line1, idx)
+
     # Writable controls
     writable_vars = [var_pause_line, var_interarrival]
     for v in writable_vars:
@@ -833,7 +895,8 @@ def build_opcua_server(config: dict):
             "active": var_maint_active,
             "queue": var_maint_queue,
             "total_repairs": var_total_repairs,
-        }
+        },
+        "shift": shift_vars,  # Phase 12: Shift tracking
     }
 
     return server, opcua_vars, idx
@@ -929,6 +992,13 @@ def main(argv=None):
             spc_monitors[machine_name] = ProcessMonitor(spc_config)
             print(f"  SPC enabled for {machine_name}: {spc_config.characteristic} (USL={spc_config.usl}, LSL={spc_config.lsl})")
 
+    # Phase 12: Create shift manager if configured
+    shift_manager = create_shift_manager_from_config(config, list(machines.keys()))
+    if shift_manager:
+        print(f"  Shift tracking enabled: {len(shift_manager.shift_definitions)} shifts")
+        for i, shift_def in enumerate(shift_manager.shift_definitions):
+            print(f"    Shift {i+1}: {shift_def.name} ({shift_def.duration} time units)")
+
     server.start()
     print(f"OPC UA server started at opc.tcp://localhost:4840/simantha/")
     print(f"Scenario: {args.scenario} ({len(machines)} machines, {len(buffers)} buffers)")
@@ -950,12 +1020,20 @@ def main(argv=None):
 
             # Monotonic part counter
             current_sink_level = sink.level
+            delta_parts_this_step = 0
             if current_sink_level > prev_sink_level:
-                delta_parts = current_sink_level - prev_sink_level
-                total_parts_produced += delta_parts
+                delta_parts_this_step = current_sink_level - prev_sink_level
+                total_parts_produced += delta_parts_this_step
                 prev_sink_level = current_sink_level
             elif current_sink_level < prev_sink_level:
                 prev_sink_level = current_sink_level
+
+            # Phase 12: Shift tracking and rotation
+            if shift_manager and not pause_line:
+                # Check if shift should rotate
+                shift_rotated = shift_manager.check_shift_rotation(sim_time)
+                if shift_rotated:
+                    print(f"\n[SHIFT CHANGE] Shift {shift_manager.current_shift_number} started: {shift_manager.shift_definitions[shift_manager.current_shift_index].name}")
 
             # Total WIP (sum of all buffer levels)
             total_wip = sum(buffer.level for buffer in buffers.values())
@@ -1022,6 +1100,15 @@ def main(argv=None):
                 )
                 metrics["defective_parts"] += new_defects
                 metrics["good_parts"] = metrics["partcount"] - metrics["defective_parts"]
+
+                # Phase 12: Update shift metrics (if shift tracking enabled)
+                if shift_manager and not pause_line:
+                    # Update machine time tracking
+                    shift_manager.update_machine_time(machine_name, sim_step, current_state)
+
+                    # Record failures (for shift tracking)
+                    if current_state == "FAILED" and metrics["prev_state"] != "FAILED":
+                        shift_manager.record_failure(machine_name)
 
                 # Phase 8b: Mark individual parts as defective
                 if new_defects > 0 and hasattr(sink, 'contents') and len(sink.contents) > 0:
@@ -1193,6 +1280,53 @@ def main(argv=None):
             opcua_vars["maintenance"]["active"].set_value(maint_active)
             opcua_vars["maintenance"]["queue"].set_value(maint_queue_length)
             opcua_vars["maintenance"]["total_repairs"].set_value(total_repairs)
+
+            # Phase 12: Update shift metrics and OPC UA variables
+            if shift_manager and opcua_vars["shift"]:
+                # Update shift production metrics (defects tracked per-machine in shift_manager)
+                shift_manager.update_production(delta_parts_this_step, 0)
+
+                # Get shift information
+                shift_info = shift_manager.get_current_shift_info()
+                shift_metrics = shift_manager.get_current_shift_metrics()
+                total_metrics = shift_manager.get_total_metrics()
+                prev_shift = shift_manager.get_previous_shift_summary()
+
+                # Update current shift info
+                opcua_vars["shift"]["shift_number"].set_value(shift_info["shift_number"])
+                opcua_vars["shift"]["shift_name"].set_value(shift_info["shift_name"])
+                opcua_vars["shift"]["shift_start_time"].set_value(shift_info["shift_start_time"])
+                opcua_vars["shift"]["shift_end_time"].set_value(shift_info["shift_end_time"])
+                opcua_vars["shift"]["shift_duration"].set_value(shift_info["shift_duration"])
+                opcua_vars["shift"]["shift_elapsed"].set_value(shift_manager.get_shift_elapsed_time(sim_time))
+                opcua_vars["shift"]["shift_remaining"].set_value(shift_manager.get_shift_time_remaining(sim_time))
+
+                # Update current shift metrics
+                opcua_vars["shift"]["current_parts"].set_value(shift_metrics["parts_produced"])
+                opcua_vars["shift"]["current_good"].set_value(shift_metrics["good_parts"])
+                opcua_vars["shift"]["current_defects"].set_value(shift_metrics["defective_parts"])
+                opcua_vars["shift"]["current_defect_rate"].set_value(shift_metrics["defect_rate"])
+                opcua_vars["shift"]["current_availability"].set_value(shift_metrics["availability"])
+                opcua_vars["shift"]["current_performance"].set_value(shift_metrics["performance"])
+                opcua_vars["shift"]["current_quality"].set_value(shift_metrics["quality"])
+                opcua_vars["shift"]["current_oee"].set_value(shift_metrics["oee"])
+
+                # Update previous shift summary (if available)
+                if prev_shift:
+                    opcua_vars["shift"]["prev_shift_number"].set_value(prev_shift["shift_number"])
+                    opcua_vars["shift"]["prev_shift_name"].set_value(prev_shift["shift_name"])
+                    opcua_vars["shift"]["prev_parts"].set_value(prev_shift["parts_produced"])
+                    opcua_vars["shift"]["prev_good"].set_value(prev_shift["good_parts"])
+                    opcua_vars["shift"]["prev_defects"].set_value(prev_shift["defective_parts"])
+                    opcua_vars["shift"]["prev_defect_rate"].set_value(prev_shift["defect_rate"])
+                    opcua_vars["shift"]["prev_oee"].set_value(prev_shift["oee"])
+
+                # Update total metrics
+                opcua_vars["shift"]["total_parts"].set_value(total_metrics["total_parts_produced"])
+                opcua_vars["shift"]["total_good"].set_value(total_metrics["total_good_parts"])
+                opcua_vars["shift"]["total_defects"].set_value(total_metrics["total_defective_parts"])
+                opcua_vars["shift"]["total_defect_rate"].set_value(total_metrics["total_defect_rate"])
+                opcua_vars["shift"]["total_shifts"].set_value(total_metrics["total_shifts_completed"])
 
             time.sleep(real_step)
 
