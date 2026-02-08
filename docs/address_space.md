@@ -1,197 +1,195 @@
-# OPC UA Address Space Structure
+# OPC UA Address Space Reference
 
-**Namespace URI:** `http://simantha.nist.gov/`  
-**Version:** 1.0.0
+**Namespace URI:** `urn:simantha:opcua`
+**Namespace Index:** `ns=2`
+**Version:** Phase 12
+
+> **Authoritative reference:** See the [User Manual, Section 9](USER_MANUAL.md#9-opc-ua-address-space-reference) for full tables with descriptions.
 
 ---
 
 ## Hierarchy Overview
 
-\`\`\`
+```
 Objects/
-└─ SimanthaLine/
+└─ Line1/
    ├─ System/
-   │  ├─ Throughput
-   │  ├─ TotalWIP
-   │  ├─ SimTime
-   │  ├─ SimulationSpeed (write)
-   │  ├─ ResetCommand (write)
-   │  ├─ ExportAlarmLog (write)
+   │  ├─ SimTime                        (Double, READ)
+   │  ├─ Throughput                     (Int32, READ)
+   │  └─ Controls/
+   │     ├─ cmdPauseLine                (Boolean, WRITE)
+   │     └─ setInterarrivalTime         (Double, WRITE)
+   │
+   ├─ LineKPIs/
+   │  ├─ TotalWIP                       (Int32, READ)
+   │  └─ LineOEE/
+   │     ├─ Availability                (Double, READ)
+   │     ├─ Performance                 (Double, READ)
+   │     ├─ Quality                     (Double, READ)
+   │     └─ OEE                         (Double, READ)
+   │
+   ├─ Station1/ ... StationN/
+   │  ├─ State                          (String, READ)
+   │  ├─ PartCount                      (Int32, READ)
+   │  ├─ Utilisation                    (Double, READ)
+   │  ├─ BlockedTime                    (Double, READ)
+   │  ├─ StarvedTime                    (Double, READ)
+   │  ├─ DownTime                       (Double, READ)
+   │  ├─ ProcessingTime                 (Double, READ)
+   │  ├─ IdleTime                       (Double, READ)
+   │  ├─ HealthState                    (Int32, READ)
+   │  ├─ HealthPercent                  (Double, READ)
    │  ├─ OEE/
-   │  │  ├─ OEE
-   │  │  ├─ Availability
-   │  │  ├─ Performance
-   │  │  └─ Quality
-   │  └─ KPIs/
-   │     ├─ CycleTime
-   │     ├─ Throughput
-   │     ├─ MTBF
-   │     └─ MTTR
-   ├─ M1/
-   │  ├─ State
-   │  ├─ PartCount
-   │  ├─ UpTime
-   │  ├─ DownTime
-   │  ├─ BlockedTime
-   │  ├─ StarvedTime
-   │  ├─ Utilization
-   │  ├─ AlarmActive
-   │  ├─ CycleTime (write)
-   │  ├─ FailureRate (write)
-   │  ├─ RepairTime (write)
+   │  │  ├─ Availability                (Double, READ)
+   │  │  ├─ Performance                 (Double, READ)
+   │  │  ├─ Quality                     (Double, READ)
+   │  │  ├─ OEE                         (Double, READ)
+   │  │  ├─ GoodPartCount               (Int32, READ)
+   │  │  ├─ DefectivePartCount          (Int32, READ)
+   │  │  └─ TheoreticalOutput           (Double, READ)
    │  ├─ Alarms/
-   │  │  ├─ ActiveAlarms
-   │  │  ├─ TotalAlarms
-   │  │  └─ LastAlarm/
-   │  │     ├─ Code
-   │  │     ├─ Message
-   │  │     ├─ Timestamp
-   │  │     └─ Severity
-   │  └─ Quality/
-   │     ├─ YieldRate (write)
-   │     ├─ GoodParts
-   │     ├─ DefectParts
-   │     └─ Cpk
-   ├─ M2/
-   │  └─ (same structure as M1)
-   └─ B1/
-      ├─ CurrentLevel
-      ├─ Capacity (write)
-      └─ Analytics/
-         ├─ AverageLevel
-         ├─ MinLevel
-         ├─ MaxLevel
-         └─ EmptyEvents
-\`\`\`
+   │  │  ├─ ActiveAlarmCount            (Int32, READ)
+   │  │  ├─ LastAlarmTime               (DateTime, READ)
+   │  │  ├─ LastAlarmMessage            (String, READ)
+   │  │  ├─ LastAlarmSeverity           (String, READ)
+   │  │  ├─ MachineFailureActive        (Boolean, READ)
+   │  │  ├─ MaintenanceActive           (Boolean, READ)
+   │  │  └─ QualityAlertActive          (Boolean, READ)
+   │  ├─ FailureModes/                  (Phase 10, optional)
+   │  │  ├─ ActiveFailureMode           (String, READ)
+   │  │  ├─ {Mode}FailureCount          (Int32, READ)
+   │  │  ├─ {Mode}TotalDowntime         (Double, READ)
+   │  │  ├─ {Mode}MTBF                  (Double, READ)
+   │  │  └─ {Mode}MTTR                  (Double, READ)
+   │  ├─ MaintenanceStrategy/           (Phase 10, optional)
+   │  │  ├─ StrategyType                (String, READ)
+   │  │  ├─ NextPMScheduled             (Double, READ)
+   │  │  ├─ PMCount                     (Int32, READ)
+   │  │  └─ CMCount                     (Int32, READ)
+   │  └─ SPC/                           (Phase 11, optional)
+   │     ├─ XBarChart/ {XBar, UCL, CL, LCL}
+   │     ├─ RChart/ {Range, UCL, CL, LCL}
+   │     ├─ Capability/ {Cp, Cpk, Pp, Ppk, SigmaLevel}
+   │     └─ Status/ {InControl, Violations, TotalSamples, NumSubgroups}
+   │
+   ├─ Buffer1/ ... BufferN/
+   │  ├─ CurrentLevel                   (Int32, READ)
+   │  ├─ Capacity                       (Int32, READ)
+   │  └─ Alarms/
+   │     ├─ ActiveAlarmCount            (Int32, READ)
+   │     ├─ HighLevelWarningActive      (Boolean, READ)
+   │     └─ LowLevelWarningActive       (Boolean, READ)
+   │
+   ├─ Maintenance/
+   │  ├─ MaintenanceActive              (Boolean, READ)
+   │  ├─ QueueLength                    (Int32, READ)
+   │  └─ TotalRepairs                   (Int32, READ)
+   │
+   ├─ Shift/                            (Phase 12, optional)
+   │  ├─ CurrentShiftNumber             (Int32, READ)
+   │  ├─ CurrentShiftName               (String, READ)
+   │  ├─ ShiftStartTime                 (Double, READ)
+   │  ├─ ShiftEndTime                   (Double, READ)
+   │  ├─ ShiftDuration                  (Double, READ)
+   │  ├─ ShiftElapsedTime               (Double, READ)
+   │  ├─ ShiftTimeRemaining             (Double, READ)
+   │  ├─ CurrentShift/                  (resets each shift)
+   │  │  ├─ PartsProduced               (Int32, READ)
+   │  │  ├─ GoodParts                   (Int32, READ)
+   │  │  ├─ DefectiveParts              (Int32, READ)
+   │  │  ├─ DefectRate                  (Double, READ)
+   │  │  ├─ Availability                (Double, READ)
+   │  │  ├─ Performance                 (Double, READ)
+   │  │  ├─ Quality                     (Double, READ)
+   │  │  └─ OEE                         (Double, READ)
+   │  ├─ PreviousShift/                 (last completed shift)
+   │  │  ├─ ShiftNumber                 (Int32, READ)
+   │  │  ├─ ShiftName                   (String, READ)
+   │  │  ├─ PartsProduced               (Int32, READ)
+   │  │  ├─ GoodParts                   (Int32, READ)
+   │  │  ├─ DefectiveParts              (Int32, READ)
+   │  │  ├─ DefectRate                  (Double, READ)
+   │  │  └─ OEE                         (Double, READ)
+   │  └─ Totals/                        (cumulative, never reset)
+   │     ├─ TotalPartsProduced          (Int32, READ)
+   │     ├─ TotalGoodParts              (Int32, READ)
+   │     ├─ TotalDefectiveParts         (Int32, READ)
+   │     ├─ TotalDefectRate             (Double, READ)
+   │     └─ TotalShiftsCompleted        (Int32, READ)
+   │
+   └─ EventLog/
+      └─ TotalEventsGenerated           (Int32, READ)
+```
 
 ---
 
-## Variable Reference Table
+## Access Rights
 
-### System Variables
+**Writable (control inputs):**
 
-| Variable | NodeId | DataType | Access | Units | Description |
-|----------|--------|----------|--------|-------|-------------|
-| Throughput | ns=1;i=1001 | Int32 | Read | parts | Total parts delivered to sink |
-| TotalWIP | ns=1;i=1002 | Int32 | Read | parts | Sum of all buffer levels |
-| SimTime | ns=1;i=1003 | Float | Read | seconds | Current simulation time |
-| SimulationSpeed | ns=1;i=1004 | Float | Write | multiplier | Real-time speed (1.0 = real-time) |
-| ResetCommand | ns=1;i=1005 | Boolean | Write | - | Trigger simulation reset |
+| Variable | Type | Description |
+|----------|------|-------------|
+| `System/Controls/cmdPauseLine` | Boolean | Pause/resume entire line |
+| `System/Controls/setInterarrivalTime` | Double | Part arrival delay (0 = fast as possible) |
 
-### Machine Variables (M1, M2)
-
-| Variable | DataType | Access | Units | Description |
-|----------|----------|--------|-------|-------------|
-| State | String | Read | - | IDLE, RUNNING, BLOCKED, STARVED, FAULTED |
-| PartCount | Int32 | Read | parts | Cumulative parts processed |
-| UpTime | Float | Read | seconds | Time in RUNNING state |
-| DownTime | Float | Read | seconds | Time in FAULTED state |
-| BlockedTime | Float | Read | seconds | Time waiting (downstream full) |
-| StarvedTime | Float | Read | seconds | Time waiting (upstream empty) |
-| Utilization | Float | Read | % | UpTime / TotalTime × 100 |
-| AlarmActive | Boolean | Read | - | True if machine faulted |
-| CycleTime | Float | Write | seconds | Processing time per part |
-| FailureRate | Float | Write | per hour | Random failure frequency |
-| RepairTime | Float | Write | seconds | Mean repair duration |
-
-### Buffer Variables
-
-| Variable | DataType | Access | Units | Description |
-|----------|----------|--------|-------|-------------|
-| CurrentLevel | Int32 | Read | parts | Current WIP in buffer |
-| Capacity | Int32 | Write | parts | Maximum buffer capacity |
-| AverageLevel | Float | Read | parts | Time-weighted mean level |
-| MinLevel | Int32 | Read | parts | Minimum level observed |
-| MaxLevel | Int32 | Read | parts | Maximum level observed |
-| EmptyEvents | Int32 | Read | count | Times buffer hit zero |
-
-### OEE Variables
-
-| Variable | DataType | Access | Units | Description |
-|----------|----------|--------|-------|-------------|
-| OEE | Float | Read | % | Overall Equipment Effectiveness |
-| Availability | Float | Read | % | Uptime / Planned time |
-| Performance | Float | Read | % | Actual vs. ideal cycle time |
-| Quality | Float | Read | % | Good parts / Total parts |
-
----
-
-## Data Types and Ranges
-
-### Valid Ranges (Write Variables)
-
-| Variable | Min | Max | Default | Notes |
-|----------|-----|-----|---------|-------|
-| CycleTime | 0.1 | 60.0 | 1.0 | Seconds per part |
-| FailureRate | 0.0 | 10.0 | 0.0 | Per hour (0 = no failures) |
-| RepairTime | 1.0 | 600.0 | 10.0 | Seconds |
-| Capacity | 1 | 100 | 10 | Parts |
-| SimulationSpeed | 0.1 | 100.0 | 1.0 | Real-time multiplier |
-| YieldRate | 0.0 | 1.0 | 1.0 | Fraction (0-1) |
-
-Writes outside these ranges return OPC UA `Bad` status code.
+All other variables are **read-only**.
 
 ---
 
 ## State Machine
 
-Machine `State` transitions:
+Machine `State` values (checked in priority order):
 
-\`\`\`
-IDLE ──┬──> RUNNING ──┬──> BLOCKED
-       │              │
-       │              └──> STARVED
-       │              │
-       │              └──> FAULTED ──> (repair) ──> IDLE
-       │
-       └──────────────────────────────────────────> IDLE
-\`\`\`
-
-- **IDLE**: Waiting for simulation start or after repair
-- **RUNNING**: Actively processing parts
-- **BLOCKED**: Downstream buffer full, cannot output part
-- **STARVED**: Upstream buffer empty, cannot retrieve part
-- **FAULTED**: Random failure occurred, requires repair
+```
+PAUSED ─────────────────────────────── (cmdPauseLine = true)
+FAILED ─────────────────────────────── (health = 1, no maintainer)
+UNDER_REPAIR ───────────────────────── (health = 1, maintainer active)
+BLOCKED ────────────────────────────── (downstream buffer full)
+STARVED ────────────────────────────── (upstream buffer empty)
+PROCESSING ─────────────────────────── (has_part = true)
+IDLE ───────────────────────────────── (default)
+```
 
 ---
 
-## Alarm Codes
+## Alarm Severity Levels
 
-| Code | Severity | Description |
-|------|----------|-------------|
-| FAIL_MECH | 3 (Critical) | Mechanical failure (random) |
-| FAIL_ELEC | 3 (Critical) | Electrical failure |
-| STARVE | 1 (Warning) | Machine starved (upstream empty) |
-| BLOCK | 1 (Warning) | Machine blocked (downstream full) |
-| MAINT_START | 2 (Alarm) | Maintenance begun |
-| MAINT_END | 1 (Warning) | Maintenance completed |
-
-Severity levels: 1=Warning, 2=Alarm, 3=Critical
+| Severity | Value | Triggers |
+|----------|-------|----------|
+| CRITICAL | 1000 | Machine failure |
+| MEDIUM | 500 | Quality alert (defect rate > 5%) |
+| LOW | 300 | Buffer high/low warnings |
+| INFO | 100 | Maintenance start/end |
 
 ---
 
-## Engineering Units (EU Information)
+## Browsing Nodes (Python Client)
 
-Variables include OPC UA `EUInformation`:
+Use browse paths, not string node IDs:
 
-| Unit | Unit ID | Display | Variables |
-|------|---------|---------|-----------|
-| Second | 5457219 | s | CycleTime, RepairTime, SimTime, UpTime, DownTime |
-| Percent | 20529 | % | Utilization, OEE, Availability, Performance, Quality |
-| Count | Custom | parts | Throughput, PartCount, CurrentLevel, Capacity |
-| Parts/Hour | Custom | PPH | System/KPIs/Throughput |
+```python
+from opcua import Client
+
+client = Client("opc.tcp://localhost:4840/simantha/")
+client.connect()
+
+root = client.get_objects_node()
+line1 = root.get_child(["2:Line1"])
+station1 = line1.get_child(["2:Station1"])
+state = station1.get_child(["2:State"])
+
+print(state.get_value())  # "PROCESSING"
+```
 
 ---
 
-## NodeSet Export (Phase 6)
+## Optional Node Groups
 
-The complete address space is exportable to XML:
+These nodes only appear when enabled in the scenario config (`config/line_models.yaml`):
 
-\`\`\`bash
-python src/export_nodeset.py --output SimanthaLine_v1.0.xml
-\`\`\`
-
-Import into:
-- UA Expert: Tools → Add Custom Types → Import XML
-- UaModeler: Project → Import → NodeSet
-- Ignition: Config → OPC UA → Import Types
+| Node Group | Config Flag | Phase |
+|------------|------------|-------|
+| `FailureModes/` | `enable_advanced_failures: true` | 10 |
+| `MaintenanceStrategy/` | `enable_advanced_failures: true` | 10 |
+| `SPC/` | `enable_spc: true` | 11 |
+| `Shift/` | `shifts: schedule: [...]` | 12 |

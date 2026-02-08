@@ -334,7 +334,7 @@ From Montgomery, "Introduction to Statistical Quality Control", 7th ed.
    - No persistent storage of control chart history
    - Resets on server restart
 
-### Future Enhancements (Phase 12+)
+### Future Enhancements (Phase 13+)
 
 1. **Real Measurement Collection**
    ```python
@@ -453,4 +453,4 @@ The system is now capable of real-time quality monitoring with statistical proce
 - Six Sigma quality level estimation
 - Integration with advanced failure modes for comprehensive manufacturing simulation
 
-**Next Phase Recommendation:** Phase 12 - Visualization & Historical Trending
+**Next Phase Recommendation:** Phase 13 - Historical Data & Visualization

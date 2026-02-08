@@ -21,32 +21,32 @@ Think of it as "Google Docs for code" with powerful project management tools.
 ### 1. Repository (Repo)
 A project folder containing all files, history, and documentation.
 
-\`\`\`
+```
 simantha-opcua/          <- Your repository
 ├── src/                 <- Source code
 ├── tests/               <- Test files
 ├── docs/                <- Documentation
 └── README.md            <- Project homepage
-\`\`\`
+```
 
 ### 2. Commit
 A snapshot of changes with a descriptive message.
 
-\`\`\`bash
+```bash
 git add src/opcua_server.py        # Stage file
 git commit -m "Add OPC UA server setup"  # Save snapshot
-\`\`\`
+```
 
 **Best practice:** Small, frequent commits with clear messages.
 
 ### 3. Branch
 A parallel version of the code for working on features.
 
-\`\`\`
+```
 main ────────────────────── (stable)
       \
        feature/issue-5 ──── (work in progress)
-\`\`\`
+```
 
 ### 4. Pull Request (PR)
 A request to merge your branch into main after review.
@@ -75,17 +75,17 @@ Kanban board for tracking issues (Backlog → In Progress → Testing → Done).
 
 ### Step 2: Clone to Your Computer
 
-\`\`\`bash
+```bash
 # Get the repository URL from GitHub (green "Code" button)
 git clone https://github.com/YOUR-USERNAME/simantha-opcua.git
 cd simantha-opcua
-\`\`\`
+```
 
 You now have a local copy!
 
 ### Step 3: Set Up Development Environment
 
-\`\`\`bash
+```bash
 # Create virtual environment
 python -m venv venv
 venv\Scripts\activate  # Windows
@@ -94,7 +94,7 @@ source venv/bin/activate  # Linux/Mac
 
 # Install dependencies
 pip install -r requirements.txt
-\`\`\`
+```
 
 ---
 
@@ -102,7 +102,7 @@ pip install -r requirements.txt
 
 ### Scenario: Adding Phase 1 baseline simulation
 
-\`\`\`bash
+```bash
 # 1. Make sure you're on main branch and up to date
 git checkout main
 git pull origin main
@@ -134,12 +134,12 @@ git commit -m "Add baseline simulation with 3 test scenarios
 
 # 7. Push to GitHub
 git push origin feature/issue-1-baseline-sim
-\`\`\`
+```
 
 ### Commit Message Best Practices
 
 **Good:**
-\`\`\`
+```
 Add OPC UA server with read-only variables
 
 - Configure endpoint opc.tcp://localhost:4840
@@ -148,15 +148,15 @@ Add OPC UA server with read-only variables
 - Add integration layer for state updates
 
 Closes #5
-\`\`\`
+```
 
 **Bad:**
-\`\`\`
+```
 fixed stuff
-\`\`\`
+```
 
 **Format:**
-\`\`\`
+```
 <Type>: <Short summary> (50 chars max)
 
 <Detailed description>
@@ -164,7 +164,7 @@ fixed stuff
 - Reference issue numbers
 
 Closes #XX
-\`\`\`
+```
 
 ---
 
@@ -176,7 +176,7 @@ Closes #XX
 2. Click "Issues" tab → "New issue"
 3. Title: `[PHASE-1] Setup Development Environment`
 4. Description:
-   \`\`\`
+   ```
    Install required dependencies and configure environment.
 
    Tasks:
@@ -186,7 +186,7 @@ Closes #XX
    - [ ] Verify installation
 
    Acceptance: No import errors, simantha.__version__ displayed
-   \`\`\`
+   ```
 5. Assign to yourself
 6. Add labels: `phase-1`, `setup`
 7. Set milestone: `Phase 1: Simantha Baseline`
@@ -196,7 +196,7 @@ You now have Issue #1!
 
 ### Working on an Issue
 
-\`\`\`bash
+```bash
 # Create branch named after issue
 git checkout -b feature/issue-1-dev-setup
 
@@ -211,7 +211,7 @@ Relates to #1"
 
 # Push and create PR
 git push origin feature/issue-1-dev-setup
-\`\`\`
+```
 
 On GitHub, create Pull Request:
 1. Click "Compare & pull request" button
@@ -302,16 +302,16 @@ Track progress: Milestones page shows "X of Y issues complete"
 ### 1. Create PR
 
 After pushing branch:
-\`\`\`bash
+```bash
 git push origin feature/issue-5-opcua-server
-\`\`\`
+```
 
 On GitHub:
 1. Click "Compare & pull request"
 2. **Base:** `main` ← **Compare:** `feature/issue-5-opcua-server`
 3. Title: `Add OPC UA server with read-only variables`
 4. Description:
-   \`\`\`
+   ```
    ## Changes
    - Created opcua_server.py with endpoint configuration
    - Added System, M1, M2, B1 folders to address space
@@ -323,7 +323,7 @@ On GitHub:
    - [x] All variables browseable
 
    Closes #5, Closes #6, Closes #7
-   \`\`\`
+   ```
 5. Link to project (right sidebar → Projects)
 6. Click "Create pull request"
 
@@ -352,11 +352,11 @@ Once tests pass:
 
 ### 4. Update Local
 
-\`\`\`bash
+```bash
 git checkout main
 git pull origin main
 git branch -d feature/issue-5-opcua-server  # Delete local branch
-\`\`\`
+```
 
 ---
 
@@ -364,7 +364,7 @@ git branch -d feature/issue-5-opcua-server  # Delete local branch
 
 ### Daily Workflow
 
-\`\`\`bash
+```bash
 # Check status
 git status
 
@@ -383,11 +383,11 @@ git reset --soft HEAD~1
 # Update from main
 git checkout main
 git pull origin main
-\`\`\`
+```
 
 ### Branch Management
 
-\`\`\`bash
+```bash
 # List branches
 git branch
 
@@ -402,11 +402,11 @@ git branch -d feature/old-feature
 
 # See remote branches
 git branch -r
-\`\`\`
+```
 
 ### Fixing Mistakes
 
-\`\`\`bash
+```bash
 # Forgot to add file to commit
 git add forgotten_file.py
 git commit --amend --no-edit
@@ -417,7 +417,7 @@ git commit --amend -m "Correct message"
 # Pushed wrong code (careful!)
 git revert HEAD  # Creates new commit undoing last
 git push origin main
-\`\`\`
+```
 
 ---
 
@@ -425,7 +425,7 @@ git push origin main
 
 ### Day 1: Issue #1
 
-\`\`\`bash
+```bash
 # Morning
 git checkout main
 git pull
@@ -447,11 +447,11 @@ Closes #1"
 git push origin feature/issue-1-dev-setup
 
 # On GitHub: Create PR, merge
-\`\`\`
+```
 
 ### Day 1: Issue #2
 
-\`\`\`bash
+```bash
 # Afternoon
 git checkout main
 git pull  # Get Issue #1 changes
@@ -472,11 +472,11 @@ Relates to #2"
 git push origin feature/issue-2-baseline-model
 
 # GitHub: Create PR, merge
-\`\`\`
+```
 
 ### Day 1: Issue #3
 
-\`\`\`bash
+```bash
 git checkout main
 git pull
 git checkout -b feature/issue-3-test-scenarios
@@ -499,7 +499,7 @@ Closes #3"
 git push origin feature/issue-3-test-scenarios
 
 # GitHub: PR, merge
-\`\`\`
+```
 
 ### Day 1 Evening: Close Phase 1
 
@@ -515,10 +515,10 @@ git push origin feature/issue-3-test-scenarios
 ### 1. README Badges
 
 Top of README.md:
-\`\`\`markdown
+```markdown
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![Tests](https://github.com/YOUR-USERNAME/simantha-opcua/actions/workflows/tests.yml/badge.svg)](https://github.com/YOUR-USERNAME/simantha-opcua/actions)
-\`\`\`
+```
 
 ### 2. GitHub Actions (CI/CD)
 
@@ -574,14 +574,14 @@ After Phase completion:
 ### Command Line Aliases
 
 Add to `~/.gitconfig`:
-\`\`\`ini
+```ini
 [alias]
     st = status
     co = checkout
     br = branch
     ci = commit
     lg = log --oneline --graph --decorate --all
-\`\`\`
+```
 
 Now use: `git st` instead of `git status`
 
@@ -592,21 +592,21 @@ Now use: `git st` instead of `git status`
 ### 1. Committing to main directly
 
 ❌ Bad:
-\`\`\`bash
+```bash
 git checkout main
 # edit files
 git commit -m "changes"
 git push
-\`\`\`
+```
 
 ✅ Good:
-\`\`\`bash
+```bash
 git checkout -b feature/my-changes
 # edit files
 git commit -m "changes"
 git push origin feature/my-changes
 # Create PR on GitHub
-\`\`\`
+```
 
 ### 2. Large binary files
 
@@ -623,10 +623,10 @@ Don't commit:
 ### 4. Not pulling before pushing
 
 Always:
-\`\`\`bash
+```bash
 git pull origin main  # Get latest changes
 # Then work and push
-\`\`\`
+```
 
 ---
 
