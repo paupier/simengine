@@ -555,11 +555,122 @@ pytest tests/test_opcua_integration.py::TestAlarmsAndEvents -v
 - Event subscriptions for real-time monitoring
 - Event filtering and acknowledgment
 
-### Phase 10: Advanced Failure Modes
+### Phase 10: Advanced Failure Modes & Maintenance ✅
 
-- MTTF/MTTR distributions (replace simple degradation matrix)
-- Multiple failure types per machine (mechanical, electrical, tooling)
-- Preventive vs. predictive maintenance strategies
+Replaces simple degradation matrices with realistic statistical distributions and multiple failure modes per machine.
+
+**Key Features:**
+- **Statistical Distributions:** Weibull (wear-out), Exponential (random), Lognormal (repairs), Normal, Uniform
+- **Multiple Failure Modes:** Competing risks model - multiple failure types compete, minimum time-to-failure wins
+- **MTBF/MTTR Tracking:** Real-time calculation from historical failure data
+- **Maintenance Strategies:** Corrective (reactive), Preventive (time-based), Predictive (condition-based)
+
+**Configuration Example (`config/line_models.yaml`):**
+
+```yaml
+advanced_failure_line:
+  machines:
+    - name: M1
+      cycle_time: 1
+      enable_advanced_failures: true  # Phase 10 flag
+
+      # Multiple failure modes with competing risks
+      failure_modes:
+        - name: mechanical
+          type: wearout              # Weibull distribution
+          mttf:
+            distribution: weibull
+            shape: 2.5               # Beta > 1 = increasing hazard rate
+            scale: 500               # Characteristic life
+          mttr:
+            distribution: lognormal
+            mean: 15                 # Mean repair time
+            std: 5
+
+        - name: electrical
+          type: random               # Exponential distribution
+          mttf:
+            distribution: exponential
+            mean: 1000               # MTTF in time units
+          mttr:
+            distribution: lognormal
+            mean: 10
+            std: 3
+
+      # Maintenance strategy
+      maintenance_strategy:
+        type: predictive           # corrective | preventive | predictive
+        cbm_threshold: 1           # For predictive: health threshold
+        # pm_interval: 100         # For preventive: time between PM
+```
+
+**OPC UA Variables (Phase 10):**
+
+```
+Station1/
+  FailureModes/
+    ActiveFailureMode            (String)    Current failure mode or "none"
+    MechanicalFailureCount       (Int32)     Total failures for this mode
+    MechanicalTotalDowntime      (Double)    Cumulative downtime (seconds)
+    MechanicalMTBF               (Double)    Mean time between failures (calculated)
+    MechanicalMTTR               (Double)    Mean time to repair (calculated)
+    ElectricalFailureCount       (Int32)
+    ElectricalTotalDowntime      (Double)
+    ElectricalMTBF               (Double)
+    ElectricalMTTR               (Double)
+
+  MaintenanceStrategy/
+    StrategyType                 (String)    "corrective" | "preventive" | "predictive"
+    NextPMScheduled              (Double)    Sim time of next preventive maintenance
+    PMCount                      (Int32)     Preventive maintenance count
+    CMCount                      (Int32)     Corrective maintenance count
+```
+
+**Distribution Types:**
+
+| Distribution | Use Case | Parameters | Example |
+|-------------|----------|------------|---------|
+| **constant** | Deterministic | value | `{distribution: constant, value: 100}` |
+| **exponential** | Random failures (constant hazard) | mean | `{distribution: exponential, mean: 500}` |
+| **weibull** | Wear-out failures (increasing hazard) | shape, scale | `{distribution: weibull, shape: 2.5, scale: 500}` |
+| **lognormal** | Repair times (right-skewed) | mean, std | `{distribution: lognormal, mean: 15, std: 5}` |
+| **normal** | General purpose (truncated at 0) | mean, std | `{distribution: normal, mean: 50, std: 10}` |
+| **uniform** | Bounded variation | min, max | `{distribution: uniform, min: 10, max: 20}` |
+
+**Competing Risks Model:**
+
+When multiple failure modes exist, the failure that occurs first wins:
+
+```python
+time_to_failure = min([mode.sample_time_to_failure() for mode in failure_modes])
+active_mode = mode_with_minimum_time
+```
+
+**Run Advanced Scenario:**
+
+```bash
+python src/opcua_server.py --scenario advanced_failure_line
+```
+
+**Testing:**
+
+```bash
+# Unit tests (29 tests)
+pytest tests/test_failure_modes.py -v
+
+# Configuration validation (39 tests)
+pytest tests/test_config_validation.py -v
+
+# Statistical validation (12 tests, slow)
+pytest tests/test_distribution_validation.py -v -m slow
+
+# Integration tests (5 tests)
+pytest tests/test_advanced_scenarios.py::TestAdvancedFailureScenario -v
+```
+
+**Backward Compatibility:**
+
+All Phase 1-9 scenarios continue to work unchanged. Advanced failures are opt-in via `enable_advanced_failures: true`.
 
 ### Phase 11: Historical Data & Analytics
 - Time-series database integration (InfluxDB/TimescaleDB)

@@ -5,7 +5,10 @@
       "Bash(git push:*)",
       "Bash(python3:*)",
       "Bash(python:*)",
-      "Bash(powershell -Command:*)"
+      "Bash(powershell -Command:*)",
+      "Bash(findstr:*)",
+      "Bash(timeout /T 10 python:*)",
+      "Bash(pip show:*)"
     ]
   }
 }
