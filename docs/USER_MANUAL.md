@@ -1,6 +1,6 @@
 # Simantha OPC UA - Complete User Manual
 
-**Version:** Phase 11 (SPC Quality Analytics)
+**Version:** Phase 12 (Shift Tracking & Management)
 **Last Updated:** 2026-02-08
 **Difficulty:** Beginner to Advanced
 
@@ -38,7 +38,8 @@ Simantha OPC UA is a **manufacturing digital twin** that simulates a production 
 ✅ **Simulate** realistic manufacturing lines with 2-10+ machines
 ✅ **Monitor** real-time KPIs (throughput, OEE, quality, SPC metrics)
 ✅ **Control** the simulation via OPC UA (pause, adjust arrival rate)
-✅ **Experiment** with different scenarios (bottlenecks, failures, quality)
+✅ **Track** shift-based production with automatic rotation and per-shift OEE
+✅ **Experiment** with different scenarios (bottlenecks, failures, quality, shifts)
 ✅ **Learn** about manufacturing systems, OPC UA, and digital twins
 ✅ **Integrate** with SCADA systems, HMIs, Grafana, InfluxDB, etc.
 
@@ -584,6 +585,38 @@ machines:
       enable_western_electric: true
 ```
 
+### Shift Configuration (Phase 12)
+
+Add a `shifts` block to any scenario to enable shift tracking:
+
+```yaml
+shifts:
+  schedule:
+    - name: "Day Shift"
+      duration: 28800        # 8 hours in seconds (sim time units)
+      start_offset: 0
+
+    - name: "Evening Shift"
+      duration: 28800
+      start_offset: 28800
+
+    - name: "Night Shift"
+      duration: 28800
+      start_offset: 57600
+```
+
+**Configuration Options:**
+
+- **duration:** Shift length in simulation time units. Common values:
+  - `28800` = 8 hours (typical 3-shift system)
+  - `43200` = 12 hours (rotating 2-shift system)
+  - Any custom value
+- **schedule:** Repeats cyclically. After the last shift ends, rotates back to the first.
+- **Number of shifts:** Unlimited. Define 2-shift, 3-shift, or any custom rotation.
+- **Custom names:** Use any naming convention ("Shift A", "06:00-14:00", "Morning", etc.)
+
+**Shift tracking is optional.** If the `shifts` block is omitted, the scenario runs without shift tracking (backward compatible with all Phase 1-11 scenarios).
+
 ### Creating Custom Scenarios
 
 **Step 1: Open the configuration file:**
@@ -888,6 +921,67 @@ machines:
 
 ---
 
+### Scenario I: Shift Line
+
+**File:** `shift_line`
+**Complexity:** ⭐⭐ Beginner
+
+```yaml
+machines:
+  - name: M1
+    cycle_time: 1
+    defect_rate: 0.02
+  - name: M2
+    cycle_time: 1
+    defect_rate: 0.01
+
+shifts:
+  schedule:
+    - name: "Day Shift"
+      duration: 28800
+    - name: "Evening Shift"
+      duration: 28800
+    - name: "Night Shift"
+      duration: 28800
+```
+
+**Characteristics:**
+- 2-machine line with 3-shift rotation (8 hours each)
+- Per-shift production metrics (parts, defects, OEE)
+- Automatic shift rotation with console notifications
+- Cumulative totals preserved across shifts
+
+**Observations:**
+- `Shift/CurrentShiftName` changes at each boundary (Day → Evening → Night → Day)
+- `Shift/CurrentShift/PartsProduced` resets to 0 at each shift change
+- `Shift/Totals/TotalPartsProduced` always increases (never resets)
+- `Shift/ShiftTimeRemaining` counts down to next shift change
+
+**Use case:** Learning shift-based production tracking and reporting
+
+---
+
+### Scenario J: Advanced Shift Line
+
+**File:** `advanced_shift_line`
+**Complexity:** ⭐⭐⭐⭐⭐ Expert
+
+**Characteristics:**
+- 2-machine line with shift tracking + advanced failures + SPC + quality
+- All Phase 1-12 features enabled simultaneously
+- Per-shift failure tracking and OEE
+- Predictive maintenance strategy
+
+**Observations:**
+- Shift OEE varies as failures occur within shifts
+- `Shift/CurrentShift/Availability` reflects per-shift uptime
+- Failure counts tracked per machine per shift
+- Previous shift summary available for comparison
+
+**Use case:** Full-featured digital twin with shift management
+
+---
+
 ## 9. OPC UA Address Space Reference
 
 ### Complete Hierarchy
@@ -996,6 +1090,41 @@ Objects/
       MaintenanceActive          [READ]  Boolean   - Maintainer busy
       QueueLength                [READ]  Int32     - Machines waiting
       TotalRepairs               [READ]  Int32     - Total repairs
+
+    Shift/                               (Phase 12 - if shifts configured)
+      CurrentShiftNumber         [READ]  Int32     - Sequential shift counter (1, 2, 3...)
+      CurrentShiftName           [READ]  String    - "Day Shift", "Evening Shift", etc.
+      ShiftStartTime             [READ]  Double    - Sim time when shift started
+      ShiftEndTime               [READ]  Double    - Sim time when shift ends
+      ShiftDuration              [READ]  Double    - Shift length in time units
+      ShiftElapsedTime           [READ]  Double    - Time spent in current shift
+      ShiftTimeRemaining         [READ]  Double    - Countdown to next shift
+
+      CurrentShift/                      (resets at each shift boundary)
+        PartsProduced            [READ]  Int32     - Parts this shift only
+        GoodParts                [READ]  Int32     - Good parts this shift
+        DefectiveParts           [READ]  Int32     - Defects this shift
+        DefectRate               [READ]  Double    - Defect % this shift (0.0-1.0)
+        Availability             [READ]  Double    - Shift availability (0.0-1.0)
+        Performance              [READ]  Double    - Shift performance (0.0-1.0)
+        Quality                  [READ]  Double    - Shift quality (0.0-1.0)
+        OEE                      [READ]  Double    - Shift OEE = A x P x Q
+
+      PreviousShift/                     (snapshot of last completed shift)
+        ShiftNumber              [READ]  Int32     - Number of previous shift
+        ShiftName                [READ]  String    - Name of previous shift
+        PartsProduced            [READ]  Int32     - Parts in previous shift
+        GoodParts                [READ]  Int32     - Good parts in previous shift
+        DefectiveParts           [READ]  Int32     - Defects in previous shift
+        DefectRate               [READ]  Double    - Defect rate of previous shift
+        OEE                      [READ]  Double    - OEE of previous shift
+
+      Totals/                            (cumulative, NEVER reset)
+        TotalPartsProduced       [READ]  Int32     - Sum across all shifts
+        TotalGoodParts           [READ]  Int32     - Sum across all shifts
+        TotalDefectiveParts      [READ]  Int32     - Sum across all shifts
+        TotalDefectRate          [READ]  Double    - Overall defect rate
+        TotalShiftsCompleted     [READ]  Int32     - Number of completed shifts
 
     EventLog/
       TotalEventsGenerated       [READ]  Int32     - Event count
@@ -1123,7 +1252,59 @@ with open('simulation_log.csv', 'w', newline='') as csvfile:
 client.disconnect()
 ```
 
-### Feature 4: Alarm Monitoring
+### Feature 4: Shift Monitoring
+
+**Monitor shift changes and per-shift KPIs:**
+
+```python
+import time
+from opcua import Client
+
+client = Client("opc.tcp://localhost:4840/simantha/")
+client.connect()
+
+try:
+    root = client.get_objects_node()
+    line1 = root.get_child(["2:Line1"])
+    shift = line1.get_child(["2:Shift"])
+
+    # Current shift info
+    shift_name = shift.get_child(["2:CurrentShiftName"])
+    shift_remaining = shift.get_child(["2:ShiftTimeRemaining"])
+    shift_number = shift.get_child(["2:CurrentShiftNumber"])
+
+    # Current shift production
+    current = shift.get_child(["2:CurrentShift"])
+    parts = current.get_child(["2:PartsProduced"])
+    oee = current.get_child(["2:OEE"])
+
+    # Totals across all shifts
+    totals = shift.get_child(["2:Totals"])
+    total_parts = totals.get_child(["2:TotalPartsProduced"])
+    total_shifts = totals.get_child(["2:TotalShiftsCompleted"])
+
+    prev_shift_num = shift_number.get_value()
+
+    while True:
+        current_num = shift_number.get_value()
+        if current_num != prev_shift_num:
+            print(f"\n--- SHIFT CHANGE ---")
+            prev_shift_num = current_num
+
+        print(f"Shift {current_num}: {shift_name.get_value()} | "
+              f"Parts: {parts.get_value()} | "
+              f"OEE: {oee.get_value():.1%} | "
+              f"Remaining: {shift_remaining.get_value():.0f}s | "
+              f"Total: {total_parts.get_value()} ({total_shifts.get_value()} shifts)")
+        time.sleep(5)
+
+except KeyboardInterrupt:
+    pass
+finally:
+    client.disconnect()
+```
+
+### Feature 5: Alarm Monitoring
 
 **Subscribe to alarm changes:**
 
@@ -1324,7 +1505,7 @@ ModuleNotFoundError: No module named 'simantha'
 4. **Documentation:**
    - README.md - Overview and quick start
    - docs/phase11_spc_implementation_summary.md - SPC details
-   - MEMORY.md - Critical lessons learned
+   - docs/USER_MANUAL.md - This comprehensive manual
 
 ---
 
@@ -1448,6 +1629,8 @@ var_custom.set_value(custom_kpi)
 
 **OPC UA:** Open Platform Communications Unified Architecture (industrial protocol)
 
+**Shift:** A defined time period for production (e.g., 8-hour Day/Evening/Night rotation)
+
 **SPC:** Statistical Process Control - using statistics to monitor quality
 
 **Throughput:** Total number of parts completed
@@ -1467,17 +1650,18 @@ Before closing this manual, verify you can:
 ✅ Connect with UA Expert
 ✅ Monitor real-time variables
 ✅ Write control commands (pause, interarrival)
-✅ Load different scenarios
-✅ Understand the OPC UA address space
+✅ Load different scenarios (including shift scenarios)
+✅ Understand the OPC UA address space (including Shift nodes)
+✅ Monitor shift changes and per-shift KPIs
 ✅ Troubleshoot common issues
 
 **Next Steps:**
 
-1. Experiment with different scenarios
-2. Create custom configurations
+1. Experiment with different scenarios (try `shift_line` and `advanced_shift_line`)
+2. Create custom configurations with shift schedules
 3. Integrate with your SCADA/HMI system
 4. Build dashboards in Node-RED or Grafana
-5. Use data for analysis and optimization
+5. Use shift-level data for production analysis and optimization
 
 ---
 
@@ -1489,5 +1673,5 @@ For updates and contributions:
 
 ---
 
-*Document Version: 1.0 (Phase 11)*
+*Document Version: 1.1 (Phase 12)*
 *Last Updated: 2026-02-08*

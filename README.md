@@ -36,22 +36,26 @@ A real-time **digital twin** of a manufacturing production line using [Simantha]
 
 This project creates a **realistic manufacturing digital twin** that:
 
-- **Simulates** a 2-machine serial production line (Source → M1 → Buffer → M2 → Sink)
+- **Simulates** configurable production lines (2-10+ machines in serial topology)
 - **Exposes** real-time KPIs via industry-standard OPC UA protocol
-- **Models** realistic variability through machine health degradation and maintenance
+- **Models** realistic variability through health degradation, advanced failures, and quality defects
+- **Tracks** shift-based production with automatic rotation and per-shift OEE
 - **Responds** to external control inputs (pause/resume, arrival rate adjustment)
-- **Demonstrates** buffer dynamics, bottlenecks, and failure impacts on throughput
+- **Demonstrates** buffer dynamics, bottlenecks, failure impacts, and SPC analytics
 
 ### Real-World Behavior Modeled
 
-✅ **Health Degradation** - Machines degrade over time (1% chance per simulation step)
-✅ **Failure Events** - M1 can fail, triggering maintenance requests
-✅ **Maintenance Intervention** - Maintainer repairs failed machines
+✅ **Health Degradation** - Machines degrade over time with configurable failure rates
+✅ **Advanced Failure Modes** - Weibull, exponential, lognormal distributions with competing risks
+✅ **Maintenance Strategies** - Corrective, preventive, and predictive maintenance
 ✅ **Buffer Dynamics** - WIP accumulates/drains based on machine states
-✅ **Throughput Variability** - Production rate fluctuates during failures
-✅ **Enhanced State Detection** - 6 states: IDLE, PROCESSING, BLOCKED, STARVED, PAUSED, FAILED, UNDER_REPAIR
-✅ **Time Tracking** - Cumulative time in each state (BlockedTime, StarvedTime, DownTime, ProcessingTime, IdleTime)
-✅ **Real Utilization** - Calculated as ProcessingTime / TotalTime (not binary 0/1)
+✅ **Quality Defects** - Health-correlated defect rates with individual part tracking
+✅ **OEE Calculation** - Availability x Performance x Quality per station and line-level
+✅ **SPC Analytics** - X-bar/R control charts, Cp/Cpk capability, Western Electric rules
+✅ **Shift Management** - Configurable shift rotation with per-shift metrics and OEE
+✅ **Alarms & Events** - Machine failure, quality, maintenance, and buffer alerts
+✅ **Enhanced State Detection** - 7 states: IDLE, PROCESSING, BLOCKED, STARVED, PAUSED, FAILED, UNDER_REPAIR
+✅ **Time Tracking** - Cumulative time in each state per machine
 
 ---
 
@@ -84,13 +88,16 @@ pip install -r requirements.txt
 python src/opcua_server.py
 ```
 
-**Choose a scenario (Phase 7):**
+**Choose a scenario:**
 ```bash
 # 3-machine line with degradation
 python src/opcua_server.py --scenario extended_line
 
-# 4-machine scalability test
-python src/opcua_server.py --scenario long_line
+# Quality monitoring with SPC
+python src/opcua_server.py --scenario spc_quality_line
+
+# 3-shift production tracking
+python src/opcua_server.py --scenario shift_line
 ```
 
 **Expected output:**
@@ -114,6 +121,8 @@ Press Ctrl+C to stop.
 - `Maintenance/MaintenanceActive` becomes True during repairs
 - `Buffer1/CurrentLevel` drains when M1 is down
 - `System/Throughput` pauses during failures, resumes after repair
+- `Shift/CurrentShiftName` changes at shift boundaries (if using shift scenarios)
+- `Shift/ShiftTimeRemaining` counts down to next shift change
 
 ---
 
@@ -146,7 +155,7 @@ Press Ctrl+C to stop.
 
 ## 📊 OPC UA Address Space
 
-### Current Structure (Phase 5)
+### Current Structure (Phase 12)
 
 ```
 Objects/
@@ -208,10 +217,27 @@ Objects/
       │         ├─ DefectivePartCount (int, READ-ONLY) # Defective parts (Phase 8 prep)
       │         └─ TheoreticalOutput (double, READ-ONLY) # Diagnostic: max possible output
       │
-      └─ Maintenance/
-           ├─ MaintenanceActive (bool, READ-ONLY)   # True when repairing
-           ├─ QueueLength (int, READ-ONLY)          # Machines waiting for repair
-           └─ TotalRepairs (int, READ-ONLY)         # Completed repairs count
+      ├─ Maintenance/
+      │    ├─ MaintenanceActive (bool, READ-ONLY)   # True when repairing
+      │    ├─ QueueLength (int, READ-ONLY)          # Machines waiting for repair
+      │    └─ TotalRepairs (int, READ-ONLY)         # Completed repairs count
+      │
+      └─ Shift/                                     # Phase 12 (if shifts configured)
+           ├─ CurrentShiftNumber (int, READ-ONLY)   # Sequential counter (1, 2, 3...)
+           ├─ CurrentShiftName (string, READ-ONLY)  # "Day Shift", "Evening Shift", etc.
+           ├─ ShiftElapsedTime (double, READ-ONLY)  # Time in current shift
+           ├─ ShiftTimeRemaining (double, READ-ONLY)# Countdown to next shift
+           ├─ CurrentShift/                          # Resets each shift boundary
+           │    ├─ PartsProduced (int, READ-ONLY)
+           │    ├─ DefectRate (double, READ-ONLY)
+           │    └─ OEE (double, READ-ONLY)
+           ├─ PreviousShift/                         # Last completed shift snapshot
+           │    ├─ ShiftName (string, READ-ONLY)
+           │    ├─ PartsProduced (int, READ-ONLY)
+           │    └─ OEE (double, READ-ONLY)
+           └─ Totals/                                # Cumulative, never reset
+                ├─ TotalPartsProduced (int, READ-ONLY)
+                └─ TotalShiftsCompleted (int, READ-ONLY)
 ```
 
 ### Variable Access Rights
@@ -227,20 +253,47 @@ All KPIs, states, health metrics, buffer levels, maintenance status
 
 ## 🧪 Testing & Scenarios
 
+### Available Scenarios (11 total)
+
+| Scenario | Machines | Features | Complexity |
+|----------|----------|----------|------------|
+| `balanced_line` (default) | 2 | Basic balanced line | Beginner |
+| `bottleneck_line` | 2 | M1 bottleneck (2s cycle) | Beginner |
+| `failure_line` | 2 | M1 degradation + maintenance | Intermediate |
+| `extended_line` | 3 | 3-machine serial line | Intermediate |
+| `long_line` | 4 | 4-machine scalability test | Intermediate |
+| `quality_line` | 2 | Health-correlated defects | Intermediate |
+| `advanced_failure_line` | 2 | Weibull/exponential failures | Advanced |
+| `spc_quality_line` | 2 | SPC control charts + capability | Advanced |
+| `advanced_spc_line` | 2 | Advanced failures + SPC | Expert |
+| `shift_line` | 2 | 3-shift rotation tracking | Beginner |
+| `advanced_shift_line` | 2 | Shifts + failures + SPC | Expert |
+
+### Run Tests
+
+```bash
+# All tests
+pytest tests/ -v
+
+# Specific test suites
+pytest tests/test_spc_analytics.py -v        # SPC (23 tests)
+pytest tests/test_failure_modes.py -v         # Failure modes (29 tests)
+pytest tests/test_config_validation.py -v     # Config validation (39 tests)
+pytest tests/test_opcua_integration.py -v     # OPC UA integration
+pytest tests/test_scenarios.py -v             # Scenario validation
+```
+
 ### Run Baseline Scenarios (Batch Mode)
 
 ```bash
 python src/simantha_baseline.py
 ```
 
-**Generates CSV results in `results/phase4/`:**
-- `scenario_A_balanced.csv` - M1=1s, M2=1s (balanced line)
-- `scenario_B_bottleneck_M1.csv` - M1=2s, M2=1s (M1 bottleneck)
-- `scenario_C_failures_M1.csv` - M1 degrades/fails, maintainer repairs
+Generates CSV results in `results/` for offline analysis.
 
 ### Verify Real-Time OPC UA Server
 
-1. **Start server:** `python src/opcua_server.py`
+1. **Start server:** `python src/opcua_server.py --scenario failure_line`
 2. **Connect UA Expert** to `opc.tcp://localhost:4840/simantha/`
 3. **Test controls:**
    - Set `cmdPauseLine = True` → Simulation freezes
@@ -314,17 +367,36 @@ if current_sink_level > prev_sink_level:
 ```
 simantha-opcua/
 ├─ src/
-│   ├─ simantha_baseline.py     # Phase 1: Baseline scenarios (batch mode)
-│   └─ opcua_server.py           # Phase 2-4: Real-time OPC UA server
+│   ├─ opcua_server.py            # Main OPC UA server (Phase 2-12)
+│   ├─ simantha_baseline.py       # Phase 1: Baseline scenarios (batch mode)
+│   ├─ config_loader.py           # YAML configuration loader
+│   ├─ config_loader_phase10.py   # Advanced failure config validation
+│   ├─ failure_modes.py           # Phase 10: Statistical failure distributions
+│   ├─ advanced_machine.py        # Phase 10: AdvancedMachine class
+│   ├─ spc_analytics.py           # Phase 11: SPC control charts & capability
+│   └─ shift_manager.py           # Phase 12: Shift tracking & rotation
 │
-├─ results/
-│   └─ phase4/                   # CSV outputs from baseline scenarios
+├─ config/
+│   └─ line_models.yaml           # Scenario definitions (11 scenarios)
 │
-├─ tests/                        # Unit tests (to be added)
+├─ tests/
+│   ├─ test_opcua_integration.py  # OPC UA integration tests
+│   ├─ test_scenarios.py          # Scenario validation tests
+│   ├─ test_config_validation.py  # Configuration validation (39 tests)
+│   ├─ test_failure_modes.py      # Failure mode unit tests (29 tests)
+│   ├─ test_distribution_validation.py  # Statistical distribution tests
+│   ├─ test_advanced_scenarios.py # Advanced scenario integration tests
+│   ├─ test_spc_analytics.py      # SPC analytics unit tests (23 tests)
+│   └─ validate_opcua_server.py   # Server validation script
 │
-├─ docs/                         # Additional documentation
+├─ docs/
+│   ├─ USER_MANUAL.md             # Comprehensive user manual
+│   ├─ phase11_spc_implementation_summary.md
+│   └─ address_space.md           # OPC UA address space reference
 │
-├─ requirements.txt              # Python dependencies
+├─ results/                       # CSV outputs from baseline scenarios
+│
+├─ requirements.txt               # Python dependencies
 ├─ LICENSE
 └─ README.md
 ```
@@ -355,429 +427,106 @@ simantha-opcua/
 
 ## 🗺️ Roadmap
 
-### Phase 5: Enhanced State Logic
-- BLOCKED/STARVED detection (machine waiting for buffer space/parts)
-- Event-driven metrics from Simantha internal state
-- Per-station downtime tracking (BlockedTime, StarvedTime, DownTime)
+### Completed Phases
 
-### Phase 6: OEE Calculation ✅
+| Phase | Features |
+|-------|----------|
+| **Phase 5** | Enhanced State Logic - 6-state machine, BLOCKED/STARVED detection, time tracking |
+| **Phase 6** | OEE Calculation - Per-station & line-level Availability x Performance x Quality |
+| **Phase 7** | Multi-Buffer Lines - Config-driven N-machine topologies, YAML scenarios |
+| **Phase 8** | Quality Modeling - Health-correlated defects, individual part tracking, First Pass Yield |
+| **Phase 9** | OPC UA Alarms - Machine failure, maintenance, quality, buffer alerts with edge detection |
+| **Phase 10** | Advanced Failures - Weibull/exponential distributions, competing risks, MTBF/MTTR |
+| **Phase 11** | SPC Analytics - X-bar/R charts, Cp/Cpk capability, Western Electric rules, Six Sigma |
+| **Phase 12** | Shift Tracking - 8-hour shift rotation, per-shift metrics reset, shift-based OEE |
 
-**Status:** Complete (2026-02-06)
+See the [User Manual](docs/USER_MANUAL.md) for detailed documentation of each phase.
 
-Implements industry-standard OEE (Overall Equipment Effectiveness) metrics:
+### Phase 12: Shift Tracking & Management ✅
 
-- **Availability** = (TotalTime - DownTime) / TotalTime (machine uptime)
-- **Performance** = ActualOutput / TheoreticalOutput (processing speed efficiency)
-- **Quality** = GoodParts / TotalParts (Phase 6: 100%, Phase 8: real defect tracking)
-- **OEE** = Availability × Performance × Quality
+**Status:** Complete (2026-02-08)
 
-**Exposed via OPC UA:**
-
-- **Per-Station OEE**: `Station1/OEE/` and `Station2/OEE/` (diagnostics - which machine limits performance?)
-- **Line-Level OEE**: `LineKPIs/LineOEE/` (business metric - overall line effectiveness)
-- **Bottleneck Logic**: Line OEE uses min() of station metrics (weakest link determines line performance)
-
-**Variables per station:**
-
-- Availability, Performance, Quality, OEE (all range 0.0-1.0)
-- GoodPartCount, DefectivePartCount (Phase 8 prep)
-- TheoreticalOutput (diagnostic)
-
-### Phase 7: Multi-Buffer & Extended Topologies ✅
-
-**Status:** Complete (2026-02-07)
-
-Extends the system from hardcoded 2-machine lines to configuration-driven N-machine topologies:
-
-**Key Features:**
-- **Configuration-Driven**: Load line topology from `config/line_models.yaml`
-- **Dynamic Node Creation**: OPC UA nodes (Station1, Station2, Station3...) created automatically
-- **Scalable Architecture**: Supports 2, 3, 4, or more machines in serial topology
-- **Command-Line Selection**: `python src/opcua_server.py --scenario <name>`
-- **Backward Compatible**: Existing 2-machine scenarios still work unchanged
-
-**Available Scenarios:**
-- `balanced_line`: 2 machines, 1 buffer (default)
-- `bottleneck_line`: 2 machines with M1 bottleneck (cycle_time=2s)
-- `failure_line`: 2 machines with M1 degradation/failures
-- `extended_line`: 3 machines, 2 buffers, with M1 degradation (NEW)
-- `long_line`: 4 machines, 3 buffers, scalability test (NEW)
-
-**Code Improvements:**
-- Reduced code from 704 to 570 lines (eliminated ~130 lines of duplication)
-- Extracted 5 reusable helper functions
-- Replaced hardcoded m1/m2 logic with loops over machine dictionaries
-- Added topology validation (N machines require N-1 buffers for serial lines)
-
-**Future Extensions (Phase 8+):**
-- Parallel lines, assembly/disassembly stations
-- Non-serial topologies (merge/split points)
-
-### Phase 8: Quality & Reject Modeling ✅
-
-**Status:** Complete (2026-02-07)
-
-Implements realistic quality tracking with health-correlated defect rates and individual part traceability.
+Production shift management with automatic rotation, per-shift metrics, and cumulative totals.
 
 **Key Features:**
 
-- **Health-Correlated Defects**: Defect rate increases as machine health degrades
-- **Configurable Base Rates**: Set per-machine `defect_rate` in YAML (0.0-1.0)
-- **Real Quality Calculation**: Quality = GoodParts / TotalParts (no longer hardcoded 1.0)
-- **OEE Integration**: Quality metric now reflects actual manufacturing performance
-- **Backward Compatible**: Existing scenarios default to 0.0 defect rate (100% quality)
-- **Individual Part Tracking** (Phase 8b): Per-part attributes enable traceability and First Pass Yield analysis
+- **Automatic Shift Rotation**: Configurable shift schedules (2-shift, 3-shift, custom)
+- **Per-Shift Metrics Reset**: Parts, defects, OEE reset at each shift boundary
+- **Cumulative Totals**: Overall production totals preserved across all shifts
+- **Previous Shift Summary**: Compare current vs. previous shift performance
+- **Time Tracking**: Elapsed time and countdown to next shift change
+- **Per-Machine Tracking**: Failure counts and state time per machine per shift
+- **Backward Compatible**: Optional feature, only enabled when `shifts` block present in config
 
 **Configuration:**
 
 ```yaml
-machines:
-  - name: M1
-    defect_rate: 0.02          # 2% when healthy, 8% when failed
-    health_multiplier: 3.0     # Optional (default 3.0)
-    enable_degradation: true
+# Add to any scenario in config/line_models.yaml
+shifts:
+  schedule:
+    - name: "Day Shift"
+      duration: 28800        # 8 hours in seconds
+      start_offset: 0
+    - name: "Evening Shift"
+      duration: 28800
+      start_offset: 28800
+    - name: "Night Shift"
+      duration: 28800
+      start_offset: 57600
 ```
 
-**Defect Rate Formula:**
+**Available Scenarios:**
 
-- **Without degradation**: `defect_rate` (fixed)
-- **With degradation**: `defect_rate × (1 + multiplier × health_state)`
+- `shift_line`: 2-machine line with 3-shift rotation (beginner)
+- `advanced_shift_line`: Full-featured line with shifts + advanced failures + SPC (expert)
 
-**Example:**
-
-- M1 healthy (state=0): 2% defect rate
-- M1 failed (state=1): 2% × (1 + 3×1) = 8% defect rate
-
-**Usage:**
+**Run:**
 
 ```bash
-# Run quality scenario with reproducible random seed
-python src/opcua_server.py --scenario quality_line --seed 42
-
-# Press Ctrl+C to see quality analysis report
+python src/opcua_server.py --scenario shift_line
+python src/opcua_server.py --scenario advanced_shift_line
 ```
 
-**OPC UA Variables (now functional):**
-
-- `Station1/OEE/Quality` - Good parts / Total parts (0.0-1.0)
-- `Station1/OEE/GoodPartCount` - Parts without defects
-- `Station1/OEE/DefectivePartCount` - Parts with defects
-
-**Phase 8b: Individual Part Tracking**
-
-- Each part has `is_defective`, `failed_at_machine`, `defect_type` attributes
-- End-of-simulation report shows First Pass Yield
-- Enables future scrap/rework routing (Phase 9+)
-- Press Ctrl+C to see quality analysis:
-
-  ```text
-  === Part Quality Analysis ===
-  Total Parts: 287
-  Good Parts: 267
-  Defective Parts: 20
-  First Pass Yield: 93.03%
-
-  Defects by Machine:
-    M1: 15 defects
-    M2: 5 defects
-  ```
-
-**Invariants Maintained:**
-
-- `good_parts + defective_parts == partcount` (always)
-- Counters are monotonic (never decrease)
-- Quality ∈ [0.0, 1.0]
-
-### Phase 9: OPC UA Alarms & Events ✅
-
-**Status:** Complete (2026-02-07)
-
-Implements industry-standard OPC UA alarms and events for proactive monitoring.
-
-**Key Features:**
-
-- **Machine Failure Alarms**: Trigger when health degrades to FAILED state
-- **Maintenance Events**: Notify when maintenance starts/completes
-- **Quality Alerts**: Warn when defect rate exceeds 5% threshold
-- **Buffer Warnings**: Alert when buffers are >90% full or <10% full
-- **Edge Detection**: Alarms only trigger on state transitions (no spam)
-- **Backward Compatible**: All Phase 8 tests pass unchanged
-
-**OPC UA Variables (per station):**
-
-- `Station1/Alarms/ActiveAlarmCount` - Number of active alarms (Int32, READ-ONLY)
-- `Station1/Alarms/LastAlarmTime` - Timestamp of most recent alarm (DateTime, READ-ONLY)
-- `Station1/Alarms/LastAlarmMessage` - Human-readable alarm message (String, READ-ONLY)
-- `Station1/Alarms/LastAlarmSeverity` - Alarm severity level (String, READ-ONLY)
-- `Station1/Alarms/MachineFailureActive` - Boolean flag for failure alarm (Boolean, READ-ONLY)
-- `Station1/Alarms/MaintenanceActive` - Boolean flag for maintenance (Boolean, READ-ONLY)
-- `Station1/Alarms/QualityAlertActive` - Boolean flag for quality alert (Boolean, READ-ONLY)
-
-**Buffer Alarms (per buffer):**
-
-- `Buffer1/Alarms/ActiveAlarmCount` - Number of active buffer alarms
-- `Buffer1/Alarms/HighLevelWarningActive` - Buffer >90% full (Boolean, READ-ONLY)
-- `Buffer1/Alarms/LowLevelWarningActive` - Buffer <10% full (Boolean, READ-ONLY)
-
-**Alarm Severity Levels:**
-
-- **CRITICAL** (1000): Machine failures
-- **MEDIUM** (500): Quality alerts
-- **LOW** (300): Buffer warnings
-- **INFO** (100): State changes, maintenance events
-
-**Usage:**
-
-```bash
-# Run with any scenario - alarms work automatically
-python src/opcua_server.py --scenario failure_line
-
-# Monitor alarms in UA Expert
-# Browse to: Line1/Station1/Alarms/
-# Watch: MachineFailureActive, LastAlarmMessage
-```
-
-**Testing:**
-
-```bash
-# Run alarm tests
-pytest tests/test_opcua_integration.py::TestAlarmsAndEvents -v
-
-# Expected: 4/4 tests passing
-```
-
-**Implementation Details:**
-
-- **Edge Detection**: Tracks previous alarm states to only trigger on transitions
-- **Anti-Spam**: Alarms activate once when entering bad state, clear once when exiting
-- **Metadata Tracking**: Stores timestamp, message, and severity for latest alarm
-- **Active Count**: Reflects current number of active alarms (not cumulative)
-
-**Future Enhancement (Phase 9b):**
-
-- True OPC UA event generation (push notifications to SCADA clients)
-- Event subscriptions for real-time monitoring
-- Event filtering and acknowledgment
-
-### Phase 10: Advanced Failure Modes & Maintenance ✅
-
-Replaces simple degradation matrices with realistic statistical distributions and multiple failure modes per machine.
-
-**Key Features:**
-- **Statistical Distributions:** Weibull (wear-out), Exponential (random), Lognormal (repairs), Normal, Uniform
-- **Multiple Failure Modes:** Competing risks model - multiple failure types compete, minimum time-to-failure wins
-- **MTBF/MTTR Tracking:** Real-time calculation from historical failure data
-- **Maintenance Strategies:** Corrective (reactive), Preventive (time-based), Predictive (condition-based)
-
-**Configuration Example (`config/line_models.yaml`):**
-
-```yaml
-advanced_failure_line:
-  machines:
-    - name: M1
-      cycle_time: 1
-      enable_advanced_failures: true  # Phase 10 flag
-
-      # Multiple failure modes with competing risks
-      failure_modes:
-        - name: mechanical
-          type: wearout              # Weibull distribution
-          mttf:
-            distribution: weibull
-            shape: 2.5               # Beta > 1 = increasing hazard rate
-            scale: 500               # Characteristic life
-          mttr:
-            distribution: lognormal
-            mean: 15                 # Mean repair time
-            std: 5
-
-        - name: electrical
-          type: random               # Exponential distribution
-          mttf:
-            distribution: exponential
-            mean: 1000               # MTTF in time units
-          mttr:
-            distribution: lognormal
-            mean: 10
-            std: 3
-
-      # Maintenance strategy
-      maintenance_strategy:
-        type: predictive           # corrective | preventive | predictive
-        cbm_threshold: 1           # For predictive: health threshold
-        # pm_interval: 100         # For preventive: time between PM
-```
-
-**OPC UA Variables (Phase 10):**
-
-```
-Station1/
-  FailureModes/
-    ActiveFailureMode            (String)    Current failure mode or "none"
-    MechanicalFailureCount       (Int32)     Total failures for this mode
-    MechanicalTotalDowntime      (Double)    Cumulative downtime (seconds)
-    MechanicalMTBF               (Double)    Mean time between failures (calculated)
-    MechanicalMTTR               (Double)    Mean time to repair (calculated)
-    ElectricalFailureCount       (Int32)
-    ElectricalTotalDowntime      (Double)
-    ElectricalMTBF               (Double)
-    ElectricalMTTR               (Double)
-
-  MaintenanceStrategy/
-    StrategyType                 (String)    "corrective" | "preventive" | "predictive"
-    NextPMScheduled              (Double)    Sim time of next preventive maintenance
-    PMCount                      (Int32)     Preventive maintenance count
-    CMCount                      (Int32)     Corrective maintenance count
-```
-
-**Distribution Types:**
-
-| Distribution | Use Case | Parameters | Example |
-|-------------|----------|------------|---------|
-| **constant** | Deterministic | value | `{distribution: constant, value: 100}` |
-| **exponential** | Random failures (constant hazard) | mean | `{distribution: exponential, mean: 500}` |
-| **weibull** | Wear-out failures (increasing hazard) | shape, scale | `{distribution: weibull, shape: 2.5, scale: 500}` |
-| **lognormal** | Repair times (right-skewed) | mean, std | `{distribution: lognormal, mean: 15, std: 5}` |
-| **normal** | General purpose (truncated at 0) | mean, std | `{distribution: normal, mean: 50, std: 10}` |
-| **uniform** | Bounded variation | min, max | `{distribution: uniform, min: 10, max: 20}` |
-
-**Competing Risks Model:**
-
-When multiple failure modes exist, the failure that occurs first wins:
-
-```python
-time_to_failure = min([mode.sample_time_to_failure() for mode in failure_modes])
-active_mode = mode_with_minimum_time
-```
-
-**Run Advanced Scenario:**
-
-```bash
-python src/opcua_server.py --scenario advanced_failure_line
-```
-
-**Testing:**
-
-```bash
-# Unit tests (29 tests)
-pytest tests/test_failure_modes.py -v
-
-# Configuration validation (39 tests)
-pytest tests/test_config_validation.py -v
-
-# Statistical validation (12 tests, slow)
-pytest tests/test_distribution_validation.py -v -m slow
-
-# Integration tests (5 tests)
-pytest tests/test_advanced_scenarios.py::TestAdvancedFailureScenario -v
-```
-
-**Backward Compatibility:**
-
-All Phase 1-9 scenarios continue to work unchanged. Advanced failures are opt-in via `enable_advanced_failures: true`.
-
-### Phase 11: SPC Quality Analytics ✅
-
-**Statistical Process Control (SPC)** for real-time quality monitoring with control charts and capability analysis.
-
-**Features:**
-- **X-bar and R Control Charts** - Monitor process mean and variability
-- **Process Capability Indices** - Cp, Cpk, Pp, Ppk calculations
-- **Western Electric Rules** - Automatic out-of-control detection (4 rules)
-- **Six Sigma Quality Levels** - Sigma level estimation (2σ to 6σ)
-- **Real-Time OPC UA Integration** - All metrics exposed via OPC UA
-
-**Configuration Example:**
-
-```yaml
-# Scenario: spc_quality_line
-machines:
-  - name: M1
-    cycle_time: 1
-    enable_spc: true  # Enable SPC analytics
-
-    spc:
-      characteristic: "cycle_time"      # What to measure
-      subgroup_size: 5                  # Samples per subgroup
-      num_subgroups: 25                 # Subgroups for control limits
-      usl: 1.2                          # Upper specification limit
-      lsl: 0.8                          # Lower specification limit
-      target: 1.0                       # Target value
-      enable_western_electric: true     # Enable out-of-control rules
-
-    defect_rate: 0.02  # 2% base defect rate
-```
-
-**Run SPC Scenarios:**
-
-```bash
-# Basic SPC quality monitoring
-python src/opcua_server.py --scenario spc_quality_line
-
-# Combined advanced failures + SPC
-python src/opcua_server.py --scenario advanced_spc_line
-```
-
-**OPC UA Variables (Phase 11):**
+**OPC UA Variables (Phase 12):**
 
 ```plaintext
-Station1/
-  SPC/
-    XBarChart/
-      XBar           - Current subgroup mean
-      UCL            - Upper control limit (μ + A2×R̄)
-      CL             - Center line (μ)
-      LCL            - Lower control limit (μ - A2×R̄)
+Line1/Shift/
+  CurrentShiftNumber     (Int32)   - Sequential counter (1, 2, 3...)
+  CurrentShiftName       (String)  - "Day Shift", "Evening Shift", etc.
+  ShiftElapsedTime       (Double)  - Time spent in current shift
+  ShiftTimeRemaining     (Double)  - Countdown to next shift
 
-    RChart/
-      Range          - Current subgroup range
-      UCL            - D4 × R̄
-      CL             - R̄
-      LCL            - D3 × R̄
+  CurrentShift/                    - Resets at each shift boundary
+    PartsProduced        (Int32)
+    GoodParts            (Int32)
+    DefectiveParts       (Int32)
+    DefectRate           (Double)
+    Availability         (Double)
+    Performance          (Double)
+    Quality              (Double)
+    OEE                  (Double)
 
-    Capability/
-      Cp             - Process capability
-      Cpk            - Process capability index
-      Pp             - Process performance
-      Ppk            - Process performance index
-      SigmaLevel     - Estimated sigma quality (2σ to 6σ)
+  PreviousShift/                   - Snapshot of last completed shift
+    ShiftNumber          (Int32)
+    ShiftName            (String)
+    PartsProduced        (Int32)
+    OEE                  (Double)
 
-    Status/
-      InControl      - Process in statistical control (bool)
-      Violations     - Active rule violations (string)
-      TotalSamples   - Total measurements collected
-      NumSubgroups   - Complete subgroups analyzed
+  Totals/                          - Cumulative, NEVER reset
+    TotalPartsProduced   (Int32)
+    TotalGoodParts       (Int32)
+    TotalDefectiveParts  (Int32)
+    TotalDefectRate      (Double)
+    TotalShiftsCompleted (Int32)
 ```
-
-**Capability Interpretation:**
-
-| Cpk Value | Sigma Level | Quality     | DPMO    |
-|-----------|-------------|-------------|---------|
-| Cpk ≥ 2.0 | 6σ          | World Class | 3.4     |
-| Cpk ≥ 1.67 | 5σ         | Excellent   | 233     |
-| Cpk ≥ 1.33 | 4σ         | Acceptable  | 6,210   |
-| Cpk ≥ 1.0 | 3σ          | Marginal    | 66,807  |
-| Cpk < 1.0 | <3σ         | Poor        | >66,807 |
-
-**Western Electric Rules:**
-
-- **Rule 1:** Point beyond 3σ control limits (sudden shift/outlier)
-- **Rule 2:** 2 of 3 points beyond 2σ on same side (process mean shift)
-- **Rule 3:** 4 of 5 points beyond 1σ on same side (trending/drift)
-- **Rule 4:** 8 consecutive points on same side of centerline (sustained shift)
-
-**Tests:** 23 unit tests covering control charts, capability analysis, and Western Electric rules (all passing)
-
-**Documentation:** See [docs/phase11_spc_implementation_summary.md](docs/phase11_spc_implementation_summary.md) for complete details.
 
 ---
 
-### Phase 12: Historical Data & Visualization (Future)
-- Time-series database integration (InfluxDB/TimescaleDB)
-- Web dashboard for control chart visualization
-- Grafana dashboards for trend analysis
-- Historical capability studies
-- CSV export for offline analysis
+### Future Phases
+
+- **Phase 13:** Historical Data & Visualization - InfluxDB/TimescaleDB, Grafana dashboards, CSV export
+- **Phase 14:** Scrap & Rework Routing - Non-serial topologies with quality gates
+- **Phase 15:** Parallel Lines & Assembly - Multi-line coordination
 
 ---
 
