@@ -3,6 +3,7 @@ Configuration Loader for Simantha OPC UA Server
 
 Loads and validates line topology configurations from YAML files.
 """
+import os
 import yaml
 from pathlib import Path
 from typing import Dict, List, Any
@@ -21,7 +22,10 @@ def load_line_config(scenario_name: str = "balanced_line") -> Dict[str, Any]:
     Raises:
         ValueError: If scenario not found or config is invalid
     """
-    config_path = Path(__file__).parent.parent / "config" / "line_models.yaml"
+    config_path = Path(os.environ.get(
+        "SIMANTHA_CONFIG_PATH",
+        str(Path(__file__).parent.parent / "config" / "line_models.yaml")
+    ))
 
     if not config_path.exists():
         raise FileNotFoundError(f"Configuration file not found: {config_path}")

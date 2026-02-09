@@ -1,0 +1,130 @@
+###############################################################################
+# Simantha OPC UA Digital Twin - Docker Compose Stack
+#
+# Deploy via Portainer:
+#   Stacks > Add Stack > Repository
+#   URL: https://github.com/paupier/simantha-opcua
+#   Compose path: docker/docker-compose.yml
+#
+# Or locally:
+#   docker compose -f docker/docker-compose.yml up --build -d
+#
+# Services:
+#   - simantha:  Web UI (:8080) + OPC UA server (:4840)
+#   - influxdb:  Time-series historian (:8086)
+#   - grafana:   Dashboards (:3000)
+#
+# Default credentials:
+#   Grafana:  admin / simantha
+#   InfluxDB: admin / simantha123 (token: simantha-dev-token)
+###############################################################################
+
+services:
+  # -------------------------------------------------------------------------
+  # Simantha Digital Twin (Web UI + OPC UA Simulation)
+  # -------------------------------------------------------------------------
+  simantha:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: simantha-sim
+    ports:
+      - "8080:8080"    # Web UI - scenario selection, controls, live KPIs
+      - "4840:4840"    # OPC UA - connect with UA Expert, Node-RED, SCADA
+    environment:
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=simantha-dev-token
+      - INFLUXDB_ORG=simantha
+      - INFLUXDB_BUCKET=manufacturing
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_PASSWORD=simantha123
+    volumes:
+      - sim-data:/app/results
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    networks:
+      - simantha-net
+    restart: unless-stopped
+
+  # -------------------------------------------------------------------------
+  # InfluxDB 2.x - Time-Series Historian Backend
+  # -------------------------------------------------------------------------
+  influxdb:
+    image: influxdb:2.7
+    container_name: simantha-influxdb
+    ports:
+      - "8086:8086"
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=admin
+      - DOCKER_INFLUXDB_INIT_PASSWORD=simantha123
+      - DOCKER_INFLUXDB_INIT_ORG=simantha
+      - DOCKER_INFLUXDB_INIT_BUCKET=manufacturing
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=simantha-dev-token
+    volumes:
+      - influx-data:/var/lib/influxdb2
+    networks:
+      - simantha-net
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # -------------------------------------------------------------------------
+  # Grafana - Dashboards (auto-provisioned with InfluxDB datasource)
+  # -------------------------------------------------------------------------
+  grafana:
+    image: grafana/grafana:latest
+    container_name: simantha-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=simantha
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ../grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    networks:
+      - simantha-net
+    restart: unless-stopped
+
+  # -------------------------------------------------------------------------
+  # Neo4j - Graph Database (OPTIONAL - uncomment to enable)
+  # -------------------------------------------------------------------------
+  # neo4j:
+  #   image: neo4j:5-community
+  #   container_name: simantha-neo4j
+  #   ports:
+  #     - "7474:7474"   # Browser UI
+  #     - "7687:7687"   # Bolt protocol
+  #   environment:
+  #     - NEO4J_AUTH=neo4j/simantha123
+  #   volumes:
+  #     - neo4j-data:/data
+  #   networks:
+  #     - simantha-net
+  #   restart: unless-stopped
+
+volumes:
+  sim-data:
+    name: simantha-sim-data
+  influx-data:
+    name: simantha-influx-data
+  grafana-data:
+    name: simantha-grafana-data
+  # neo4j-data:
+  #   name: simantha-neo4j-data
+
+networks:
+  simantha-net:
+    name: simantha-network
+    driver: bridge
