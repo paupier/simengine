@@ -69,3 +69,7 @@ docs/.doctrees/
 
 # OS
 Thumbs.db
+
+
+# Claude
+claude/

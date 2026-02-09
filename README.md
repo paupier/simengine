@@ -49,21 +49,21 @@ This project creates a **realistic manufacturing digital twin** that:
 
 ### Real-World Behavior Modeled
 
-✅ **Health Degradation** - Machines degrade over time with configurable failure rates
-✅ **Advanced Failure Modes** - Weibull, exponential, lognormal distributions with competing risks
-✅ **Maintenance Strategies** - Corrective, preventive, and predictive maintenance
-✅ **Buffer Dynamics** - WIP accumulates/drains based on machine states
-✅ **Quality Defects** - Health-correlated defect rates with individual part tracking
-✅ **OEE Calculation** - Availability x Performance x Quality per station and line-level
-✅ **SPC Analytics** - X-bar/R control charts, Cp/Cpk capability, Western Electric rules
-✅ **Shift Management** - Configurable shift rotation with per-shift metrics and OEE
-✅ **Alarms & Events** - Machine failure, quality, maintenance, and buffer alerts
-✅ **Enhanced State Detection** - 7 states: IDLE, PROCESSING, BLOCKED, STARVED, PAUSED, FAILED, UNDER_REPAIR
-✅ **Time Tracking** - Cumulative time in each state per machine
-✅ **Event Historian** - CSV, InfluxDB 2.x, Neo4j backends with edge-detection logging
-✅ **Grafana Dashboards** - Manufacturing overview, state timeline, alarm log, shift comparison
-✅ **Scrap & Rework Routing** - Defective parts routed to scrap sinks, virtual rework at station
-✅ **Quality Routing** - Per-part defect decisions inside simulation with health correlation
+- ✅ **Health Degradation** - Machines degrade over time with configurable failure rates
+- ✅ **Advanced Failure Modes** - Weibull, exponential, lognormal distributions with competing risks
+- ✅ **Maintenance Strategies** - Corrective, preventive, and predictive maintenance
+- ✅ **Buffer Dynamics** - WIP accumulates/drains based on machine states
+- ✅ **Quality Defects** - Health-correlated defect rates with individual part tracking
+- ✅ **OEE Calculation** - Availability x Performance x Quality per station and line-level
+- ✅ **SPC Analytics** - X-bar/R control charts, Cp/Cpk capability, Western Electric rules
+- ✅ **Shift Management** - Configurable shift rotation with per-shift metrics and OEE
+- ✅ **Alarms & Events** - Machine failure, quality, maintenance, and buffer alerts
+- ✅ **Enhanced State Detection** - 7 states: IDLE, PROCESSING, BLOCKED, STARVED, PAUSED, FAILED, UNDER_REPAIR
+- ✅ **Time Tracking** - Cumulative time in each state per machine
+- ✅ **Event Historian** - CSV, InfluxDB 2.x, Neo4j backends with edge-detection logging
+- ✅ **Grafana Dashboards** - Manufacturing overview, state timeline, alarm log, shift comparison
+- ✅ **Scrap & Rework Routing** - Defective parts routed to scrap sinks, virtual rework at station
+- ✅ **Quality Routing** - Per-part defect decisions inside simulation with health correlation
 
 ---
 
