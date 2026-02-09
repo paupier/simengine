@@ -510,3 +510,222 @@ historian_line:
       buffer_level_changes: true
       production_summary: true
       production_summary_interval: 60
+
+# Scenario M: Scrap Routing (Phase 14a)
+scrap_line:
+  description: "2-machine line with scrap sinks for defective parts"
+
+  machines:
+    - name: M1
+      cycle_time: 1
+      enable_degradation: true
+      degradation_matrix: [[0.99, 0.01], [0.0, 1.0]]
+      cbm_threshold: 1
+      quality_routing:
+        enabled: true
+        mode: scrap
+        defect_rate: 0.05
+        health_multiplier: 3.0
+        enable_health_correlation: true
+        scrap_sink: ScrapBin1
+
+    - name: M2
+      cycle_time: 1
+      quality_routing:
+        enabled: true
+        mode: scrap
+        defect_rate: 0.02
+        scrap_sink: ScrapBin2
+
+  buffers:
+    - name: B1
+      capacity: 10
+      upstream: M1
+      downstream: M2
+
+  scrap_sinks:
+    - name: ScrapBin1
+    - name: ScrapBin2
+
+  maintainer:
+    enabled: true
+    capacity: 1
+
+# Scenario N: Rework Line (Phase 14b)
+rework_line:
+  description: "2-machine line with virtual rework before scrapping"
+
+  machines:
+    - name: M1
+      cycle_time: 1
+      quality_routing:
+        enabled: true
+        mode: scrap_and_rework
+        defect_rate: 0.08
+        rework_success_rate: 0.7
+        max_rework: 3
+        scrap_sink: ScrapBin1
+
+    - name: M2
+      cycle_time: 1
+      quality_routing:
+        enabled: true
+        mode: scrap
+        defect_rate: 0.02
+        scrap_sink: ScrapBin2
+
+  buffers:
+    - name: B1
+      capacity: 10
+      upstream: M1
+      downstream: M2
+
+  scrap_sinks:
+    - name: ScrapBin1
+    - name: ScrapBin2
+
+  maintainer:
+    enabled: false
+
+# Scenario O: Full Feature Line (All phases combined)
+full_feature_line:
+  description: "2-machine line with ALL features: advanced failures, SPC, shifts, historian, scrap & rework routing"
+
+  machines:
+    - name: M1
+      cycle_time: 1
+      enable_advanced_failures: true
+      enable_spc: true
+
+      # Phase 10: Advanced failure modes
+      failure_modes:
+        - name: mechanical
+          type: wearout
+          mttf:
+            distribution: weibull
+            shape: 2.5
+            scale: 800
+          mttr:
+            distribution: lognormal
+            mean: 15
+            std: 5
+
+        - name: electrical
+          type: random
+          mttf:
+            distribution: exponential
+            mean: 1200
+          mttr:
+            distribution: lognormal
+            mean: 10
+            std: 3
+
+      # Phase 10: Maintenance strategy
+      maintenance_strategy:
+        type: predictive
+        cbm_threshold: 1
+
+      # Phase 11: SPC monitoring
+      spc:
+        characteristic: "cycle_time"
+        subgroup_size: 5
+        num_subgroups: 25
+        usl: 1.2
+        lsl: 0.8
+        target: 1.0
+        enable_western_electric: true
+
+      # Phase 14: Scrap & rework routing
+      quality_routing:
+        enabled: true
+        mode: scrap_and_rework
+        defect_rate: 0.05
+        health_multiplier: 5.0
+        enable_health_correlation: true
+        rework_success_rate: 0.7
+        max_rework: 3
+        scrap_sink: ScrapBin1
+
+    - name: M2
+      cycle_time: 1
+      enable_spc: true
+
+      spc:
+        characteristic: "cycle_time"
+        subgroup_size: 5
+        num_subgroups: 25
+        usl: 1.15
+        lsl: 0.85
+        target: 1.0
+        enable_western_electric: true
+
+      quality_routing:
+        enabled: true
+        mode: scrap
+        defect_rate: 0.02
+        scrap_sink: ScrapBin2
+
+  buffers:
+    - name: B1
+      capacity: 15
+      upstream: M1
+      downstream: M2
+
+  scrap_sinks:
+    - name: ScrapBin1
+    - name: ScrapBin2
+
+  maintainer:
+    enabled: true
+    capacity: 1
+
+  # Phase 12: 3-shift operation
+  shifts:
+    schedule:
+      - name: "Day Shift"
+        duration: 28800
+        start_offset: 0
+
+      - name: "Evening Shift"
+        duration: 28800
+        start_offset: 28800
+
+      - name: "Night Shift"
+        duration: 28800
+        start_offset: 57600
+
+  # Phase 13: Event historian (CSV + all event types)
+  historian:
+    enabled: true
+
+    csv:
+      enabled: true
+      output_dir: "results/historian"
+      max_file_size_mb: 50
+      rotate_on_shift: true
+
+    influxdb:
+      enabled: false
+      url: "http://localhost:8086"
+      token: "${INFLUXDB_TOKEN}"
+      org: "simantha"
+      bucket: "manufacturing"
+      batch_size: 100
+
+    neo4j:
+      enabled: false
+      uri: "bolt://localhost:7687"
+      user: "neo4j"
+      password: "${NEO4J_PASSWORD}"
+      track_parts: true
+      max_parts: 10000
+
+    events:
+      state_changes: true
+      alarms: true
+      shift_changes: true
+      maintenance: true
+      spc_violations: true
+      buffer_level_changes: true
+      production_summary: true
+      production_summary_interval: 60

@@ -1,7 +1,7 @@
 # Simantha OPC UA - Complete User Manual
 
-**Version:** Phase 12 (Shift Tracking & Management)
-**Last Updated:** 2026-02-08
+**Version:** Phase 14 (Scrap & Rework Routing)
+**Last Updated:** 2026-02-09
 **Difficulty:** Beginner to Advanced
 
 ---
@@ -39,7 +39,9 @@ Simantha OPC UA is a **manufacturing digital twin** that simulates a production 
 ✅ **Monitor** real-time KPIs (throughput, OEE, quality, SPC metrics)
 ✅ **Control** the simulation via OPC UA (pause, adjust arrival rate)
 ✅ **Track** shift-based production with automatic rotation and per-shift OEE
-✅ **Experiment** with different scenarios (bottlenecks, failures, quality, shifts)
+✅ **Route** defective parts to scrap sinks or attempt virtual rework
+✅ **Record** event history to CSV, InfluxDB, or Neo4j for post-analysis
+✅ **Experiment** with different scenarios (bottlenecks, failures, quality, scrap/rework)
 ✅ **Learn** about manufacturing systems, OPC UA, and digital twins
 ✅ **Integrate** with SCADA systems, HMIs, Grafana, InfluxDB, etc.
 
@@ -585,6 +587,85 @@ machines:
       enable_western_electric: true
 ```
 
+### Quality Routing Configuration (Phase 14)
+
+Add a `quality_routing` block to any machine to enable scrap/rework routing:
+
+```yaml
+machines:
+  - name: M1
+    cycle_time: 1
+    quality_routing:
+      enabled: true
+      mode: scrap_and_rework       # "scrap", "rework", or "scrap_and_rework"
+      defect_rate: 0.05             # 5% base defect rate
+      health_multiplier: 3.0        # Defect rate multiplier when degraded
+      enable_health_correlation: true
+      rework_success_rate: 0.7      # 70% chance rework fixes the part
+      max_rework: 3                 # Max rework attempts per part
+      scrap_sink: ScrapBin1         # Name of scrap sink to route to
+```
+
+**Scrap Sinks:** Define at the scenario level (not inside machines):
+
+```yaml
+scrap_sinks:
+  - name: ScrapBin1
+  - name: ScrapBin2
+```
+
+**Routing Modes:**
+
+| Mode | Behavior |
+|------|----------|
+| `scrap` | Defective parts go directly to scrap sink |
+| `rework` | Attempt virtual rework; if all attempts fail, part flows normally |
+| `scrap_and_rework` | Attempt rework first; if all attempts fail, route to scrap |
+
+**Architecture:**
+```
+Source → M1 → B1 → M2 → Sink   (main serial chain unchanged)
+              │              │
+              ↓              ↓
+          ScrapBin1      ScrapBin2  (optional scrap sinks)
+```
+
+Scrap sinks are side branches - they do **not** affect the main serial chain. Parts only go to scrap when quality routing explicitly diverts them.
+
+### Event Historian Configuration (Phase 13)
+
+Add a `historian` block to enable event logging to CSV, InfluxDB, or Neo4j:
+
+```yaml
+historian:
+  backend: csv                     # "csv", "influxdb", or "neo4j"
+  output_dir: results/historian    # CSV output directory
+  events:
+    state_changes: true            # Machine state transitions
+    maintenance: true              # Repair start/end events
+    quality: true                  # Quality alerts, scrap, rework
+    buffer_levels: true            # Buffer high/low warnings
+    shift_changes: true            # Shift rotation events
+    spc_violations: true           # SPC rule violations
+```
+
+**Output:** CSV files are written to `results/historian/` relative to the project root. Each run creates a timestamped file.
+
+**Event Types Logged:**
+
+| Event | Description |
+|-------|-------------|
+| STATE_CHANGE | Machine state transitions (IDLE→PROCESSING, etc.) |
+| MAINTENANCE_START | Repair begins on a machine |
+| MAINTENANCE_END | Repair completed |
+| QUALITY_ALERT | Defect rate exceeds threshold |
+| BUFFER_HIGH | Buffer exceeds 90% capacity |
+| BUFFER_LOW | Buffer below 10% capacity |
+| SHIFT_CHANGE | Shift rotation boundary |
+| SPC_VIOLATION | Western Electric rule violation |
+| SCRAP | Part scrapped (Phase 14) |
+| REWORK | Rework attempted on defective part (Phase 14) |
+
 ### Shift Configuration (Phase 12)
 
 Add a `shifts` block to any scenario to enable shift tracking:
@@ -982,6 +1063,116 @@ shifts:
 
 ---
 
+### Scenario K: Scrap Line
+
+**File:** `scrap_line`
+**Complexity:** ⭐⭐⭐ Intermediate
+
+```yaml
+machines:
+  - name: M1
+    cycle_time: 1
+    enable_degradation: true
+    quality_routing:
+      enabled: true
+      mode: scrap
+      defect_rate: 0.05
+      scrap_sink: ScrapBin1
+  - name: M2
+    cycle_time: 1
+    quality_routing:
+      enabled: true
+      mode: scrap
+      defect_rate: 0.02
+      scrap_sink: ScrapBin2
+
+scrap_sinks:
+  - name: ScrapBin1
+  - name: ScrapBin2
+```
+
+**Characteristics:**
+- Defective parts diverted to dedicated scrap sinks
+- Each machine routes to its own scrap bin
+- Main serial chain unaffected by scrap routing
+- Scrap rate visible in OPC UA
+
+**Observations:**
+- `Station1/QualityRouting/ScrapCount` increases as defects occur
+- `LineKPIs/TotalScrap` shows total scrapped parts
+- `LineKPIs/ScrapRate` shows overall scrap percentage
+- Buffer levels unaffected (scrap goes to side bins, not downstream)
+
+**Use case:** Quality-based routing with scrap tracking
+
+---
+
+### Scenario L: Rework Line
+
+**File:** `rework_line`
+**Complexity:** ⭐⭐⭐⭐ Advanced
+
+```yaml
+machines:
+  - name: M1
+    cycle_time: 1
+    quality_routing:
+      enabled: true
+      mode: scrap_and_rework
+      defect_rate: 0.08
+      rework_success_rate: 0.7
+      max_rework: 3
+      scrap_sink: ScrapBin1
+
+scrap_sinks:
+  - name: ScrapBin1
+```
+
+**Characteristics:**
+- Defective parts get rework attempts before scrapping
+- 70% chance each rework attempt fixes the part
+- Up to 3 rework attempts per part
+- Failed rework routes to scrap sink
+
+**Observations:**
+- `Station1/QualityRouting/ReworkCount` shows total rework attempts
+- `Station1/QualityRouting/ReworkSuccessCount` shows successful reworks
+- `Station1/QualityRouting/ReworkSuccessRate` shows success percentage
+- Many defective parts are "saved" by rework, reducing scrap
+
+**Use case:** Virtual rework modeling and scrap reduction analysis
+
+---
+
+### Scenario M: Full Feature Line
+
+**File:** `full_feature_line`
+**Complexity:** ⭐⭐⭐⭐⭐ Expert
+
+**Characteristics:**
+- Combines ALL features from Phase 1-14
+- Advanced failures (Weibull mechanical + exponential electrical)
+- SPC analytics with Western Electric rules
+- Quality routing with scrap and rework
+- 3-shift rotation with per-shift metrics
+- CSV event historian logging all event types
+- Predictive maintenance strategy
+
+**Run it:**
+```bash
+python src/opcua_server.py --scenario full_feature_line --seed 42
+```
+
+**Observations:**
+- Full OPC UA address space with all node types
+- CSV event log at `results/historian/` tracks all events
+- Shift OEE varies as failures and scrap occur within shifts
+- SCRAP and REWORK events appear in historian alongside state changes
+
+**Use case:** Complete digital twin demonstration with every feature enabled
+
+---
+
 ## 9. OPC UA Address Space Reference
 
 ### Top-Level Structure
@@ -991,11 +1182,12 @@ All nodes live under `Objects / Line1 /`:
 | Node | Description |
 |------|-------------|
 | `System/` | Simulation time, throughput, controls |
-| `LineKPIs/` | Line-level WIP and OEE |
-| `Station1/` ... `StationN/` | Per-machine state, time tracking, OEE, alarms, SPC |
+| `LineKPIs/` | Line-level WIP, OEE, scrap metrics |
+| `Station1/` ... `StationN/` | Per-machine state, time tracking, OEE, alarms, SPC, quality routing |
 | `Buffer1/` ... `BufferN/` | Buffer levels and alarms |
 | `Maintenance/` | Maintainer status and repair counts |
 | `Shift/` | Shift tracking and per-shift metrics *(Phase 12, if configured)* |
+| `ScrapBin1/` ... `ScrapBinN/` | Scrap sink levels *(Phase 14, if configured)* |
 | `EventLog/` | Event counter |
 
 ---
@@ -1021,6 +1213,8 @@ All nodes live under `Objects / Line1 /`:
 | Variable | Access | Type | Description |
 |----------|--------|------|-------------|
 | `TotalWIP` | READ | Int32 | Total WIP in all buffers |
+| `TotalScrap` | READ | Int32 | Total parts scrapped across all machines *(Phase 14)* |
+| `ScrapRate` | READ | Double | TotalScrap / (Throughput + TotalScrap) *(Phase 14)* |
 
 **`LineKPIs / LineOEE /`**
 
@@ -1071,6 +1265,16 @@ All nodes live under `Objects / Line1 /`:
 | `MachineFailureActive` | READ | Boolean | Failure alarm active |
 | `MaintenanceActive` | READ | Boolean | Maintenance alarm active |
 | `QualityAlertActive` | READ | Boolean | Quality alert active |
+
+**`StationN / QualityRouting /`** *(Phase 14 - if `quality_routing.enabled: true`)*
+
+| Variable | Access | Type | Description |
+|----------|--------|------|-------------|
+| `ScrapCount` | READ | Int32 | Total parts sent to scrap sink |
+| `ReworkCount` | READ | Int32 | Total rework attempts |
+| `ReworkSuccessCount` | READ | Int32 | Successful reworks (part became good) |
+| `ReworkSuccessRate` | READ | Double | ReworkSuccessCount / ReworkCount |
+| `GoodCount` | READ | Int32 | Total good parts (including successful reworks) |
 
 **`StationN / FailureModes /`** *(Phase 10 - if `enable_advanced_failures: true`)*
 
@@ -1129,6 +1333,14 @@ All nodes live under `Objects / Line1 /`:
 | `ActiveAlarmCount` | READ | Int32 | Number of active alarms |
 | `HighLevelWarningActive` | READ | Boolean | Buffer >90% full |
 | `LowLevelWarningActive` | READ | Boolean | Buffer <10% full |
+
+---
+
+### `Line1 / ScrapBinN /` *(Phase 14, per scrap sink)*
+
+| Variable | Access | Type | Description |
+|----------|--------|------|-------------|
+| `CurrentLevel` | READ | Int32 | Number of scrapped parts in this bin |
 
 ---
 
@@ -1407,6 +1619,91 @@ sub.unsubscribe(handle)
 sub.delete()
 client.disconnect()
 ```
+
+### Feature 6: Event Historian (CSV / InfluxDB / Neo4j)
+
+The built-in event historian records simulation events to files or databases for post-analysis.
+
+**Enable CSV historian** (simplest - no external dependencies):
+
+```yaml
+# In line_models.yaml, add to your scenario:
+full_feature_line:
+  historian:
+    backend: csv
+    output_dir: results/historian
+    events:
+      - STATE_CHANGE
+      - MAINTENANCE_START
+      - MAINTENANCE_END
+      - QUALITY_ALERT
+      - BUFFER_HIGH
+      - BUFFER_LOW
+      - SHIFT_CHANGE
+      - SPC_VIOLATION
+      - SCRAP
+      - REWORK
+```
+
+**Run and find output:**
+
+```bash
+python src/opcua_server.py --scenario full_feature_line --seed 42
+
+# CSV output is stored at:
+#   results/historian/events_YYYYMMDD_HHMMSS.csv
+```
+
+**CSV columns:**
+
+| Column | Description | Example |
+|--------|-------------|---------|
+| `timestamp` | Wall-clock time | 2026-02-09T14:30:00 |
+| `sim_time` | Simulation time (s) | 351.0 |
+| `event_type` | Event category | STATE_CHANGE |
+| `source` | Equipment name | M1 |
+| `source_type` | Equipment type | machine |
+| `severity` | LOW / MEDIUM / HIGH / CRITICAL | CRITICAL |
+| `message` | Human-readable description | M1 failed |
+
+**InfluxDB historian** (for Grafana dashboards):
+
+```yaml
+historian:
+  backend: influxdb
+  influxdb:
+    url: http://localhost:8086
+    token: ${INFLUXDB_TOKEN}   # Reads from environment variable
+    org: my-org
+    bucket: simantha
+  events:
+    - STATE_CHANGE
+    - SCRAP
+```
+
+**Neo4j historian** (for topology graphs):
+
+```yaml
+historian:
+  backend: neo4j
+  neo4j:
+    uri: bolt://localhost:7687
+    user: neo4j
+    password: ${NEO4J_PASSWORD}
+  events:
+    - STATE_CHANGE
+    - MAINTENANCE_START
+```
+
+**Grafana Integration:**
+
+1. Connect Grafana to InfluxDB (or use CSV plugin)
+2. Query events by type: `SELECT * FROM events WHERE event_type = 'SCRAP'`
+3. Build dashboards for:
+   - Scrap rate over time
+   - Maintenance frequency per machine
+   - SPC violation history
+   - Shift-by-shift production comparison
 
 ---
 
@@ -1704,6 +2001,16 @@ var_custom.set_value(custom_kpi)
 
 **Utilization:** Fraction of time a machine spends processing parts
 
+**Event Historian:** System that records simulation events to CSV, InfluxDB, or Neo4j
+
+**First Pass Yield:** Percentage of parts that pass through without rework
+
+**Quality Routing:** Per-part defect detection that diverts bad parts to scrap or rework
+
+**Rework:** Attempting to fix a defective part before scrapping (virtual, probabilistic)
+
+**Scrap Sink:** Destination for parts that fail quality checks and cannot be reworked
+
 **WIP:** Work-In-Progress - parts currently in the system
 
 ---
@@ -1720,15 +2027,20 @@ Before closing this manual, verify you can:
 ✅ Load different scenarios (including shift scenarios)
 ✅ Understand the OPC UA address space (including Shift nodes)
 ✅ Monitor shift changes and per-shift KPIs
+✅ Configure scrap sinks and quality routing for machines
+✅ Enable event historian (CSV, InfluxDB, or Neo4j)
+✅ Run the `full_feature_line` scenario with all features enabled
 ✅ Troubleshoot common issues
 
 **Next Steps:**
 
-1. Experiment with different scenarios (try `shift_line` and `advanced_shift_line`)
-2. Create custom configurations with shift schedules
-3. Integrate with your SCADA/HMI system
-4. Build dashboards in Node-RED or Grafana
-5. Use shift-level data for production analysis and optimization
+1. Try `full_feature_line` scenario - combines all Phase 1-14 features in one run
+2. Experiment with scrap/rework routing (`scrap_line`, `rework_line` scenarios)
+3. Enable CSV historian and analyze event logs in `results/historian/`
+4. Connect InfluxDB + Grafana for real-time dashboards
+5. Create custom configurations with quality routing and shift schedules
+6. Integrate with your SCADA/HMI system
+7. Use shift-level and quality data for production analysis and optimization
 
 ---
 
@@ -1740,5 +2052,5 @@ For updates and contributions:
 
 ---
 
-*Document Version: 1.1 (Phase 12)*
-*Last Updated: 2026-02-08*
+*Document Version: 1.2 (Phase 14)*
+*Last Updated: 2026-02-09*

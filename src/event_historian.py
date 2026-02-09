@@ -33,7 +33,7 @@ class SimEvent:
     timestamp: float          # sim_time when event occurred
     wall_clock: str           # ISO 8601 real-time string
     event_type: str           # STATE_CHANGE, ALARM, SHIFT_CHANGE, MAINTENANCE,
-                              # SPC_VIOLATION, PRODUCTION_SUMMARY
+                              # SPC_VIOLATION, PRODUCTION_SUMMARY, SCRAP, REWORK
     source: str               # Equipment name: "M1", "B1", "Line1"
     source_type: str          # "machine", "buffer", "line", "shift"
     severity: str             # INFO, LOW, MEDIUM, HIGH, CRITICAL
@@ -542,6 +542,54 @@ def collect_step_events(
                     },
                 ))
                 historian_state[f"{machine_name}_spc_in_control"] = spc_metrics.in_control
+
+        # SCRAP events (Phase 14: quality routing)
+        if event_cfg.get("state_changes", True):
+            scrap_count = getattr(machines[machine_name], '_scrap_count', None)
+            if isinstance(scrap_count, (int, float)):
+                prev_scrap = historian_state.get(f"{machine_name}_scrap_count", 0)
+                if scrap_count > prev_scrap:
+                    events.append(SimEvent(
+                        timestamp=sim_time,
+                        wall_clock=wall_clock,
+                        event_type="SCRAP",
+                        source=machine_name,
+                        source_type="machine",
+                        severity="LOW",
+                        message=f"{machine_name} scrapped a part (total: {scrap_count})",
+                        partcount=metrics["partcount"],
+                        good_parts=metrics["good_parts"],
+                        defective_parts=metrics["defective_parts"],
+                        utilisation=utilisation,
+                        shift_number=shift_number,
+                        shift_name=shift_name,
+                        extra={"scrap_count": scrap_count},
+                    ))
+                    historian_state[f"{machine_name}_scrap_count"] = scrap_count
+
+            # REWORK events
+            rework_count = getattr(machines[machine_name], '_rework_count', None)
+            if isinstance(rework_count, (int, float)):
+                prev_rework = historian_state.get(f"{machine_name}_rework_count", 0)
+                if rework_count > prev_rework:
+                    success_count = getattr(machines[machine_name], '_rework_success_count', 0)
+                    events.append(SimEvent(
+                        timestamp=sim_time,
+                        wall_clock=wall_clock,
+                        event_type="REWORK",
+                        source=machine_name,
+                        source_type="machine",
+                        severity="LOW",
+                        message=f"{machine_name} rework attempt (total: {rework_count})",
+                        partcount=metrics["partcount"],
+                        good_parts=metrics["good_parts"],
+                        defective_parts=metrics["defective_parts"],
+                        utilisation=utilisation,
+                        shift_number=shift_number,
+                        shift_name=shift_name,
+                        extra={"rework_count": rework_count, "rework_success_count": success_count},
+                    ))
+                    historian_state[f"{machine_name}_rework_count"] = rework_count
 
     # ---- Buffer events ----
     if event_cfg.get("buffer_level_changes", True):

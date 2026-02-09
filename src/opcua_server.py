@@ -9,6 +9,7 @@ from spc_analytics import ProcessMonitor, SPCConfiguration
 from shift_manager import create_shift_manager_from_config
 from event_historian import create_historian_from_config, collect_step_events, collect_production_summary
 from neo4j_historian import create_neo4j_historian_from_config
+from quality_machine import QualityAwareMachine, QualityAdvancedMachine
 
 
 # Machine health degradation matrix (2-state: healthy → failed)
@@ -23,7 +24,7 @@ DEGRADATION_MATRIX = [
 
 def create_station_node(parent_node, opcua_idx: int, station_name: str, enable_health: bool = False,
                         enable_failure_modes: bool = False, failure_mode_names: list = None,
-                        enable_spc: bool = False):
+                        enable_spc: bool = False, enable_quality_routing: bool = False):
     """
     Create OPC UA variables for a single station.
 
@@ -96,6 +97,15 @@ def create_station_node(parent_node, opcua_idx: int, station_name: str, enable_h
     if enable_spc:
         spc_vars = create_spc_node(station_node, opcua_idx)
         vars_dict.update({f"spc_{k}": v for k, v in spc_vars.items()})
+
+    # QualityRouting sub-node (Phase 14)
+    if enable_quality_routing:
+        qr_node = station_node.add_object(opcua_idx, "QualityRouting")
+        vars_dict["qr_scrap_count"] = qr_node.add_variable(opcua_idx, "ScrapCount", 0)
+        vars_dict["qr_rework_count"] = qr_node.add_variable(opcua_idx, "ReworkCount", 0)
+        vars_dict["qr_rework_success_count"] = qr_node.add_variable(opcua_idx, "ReworkSuccessCount", 0)
+        vars_dict["qr_rework_success_rate"] = qr_node.add_variable(opcua_idx, "ReworkSuccessRate", 0.0)
+        vars_dict["qr_good_count"] = qr_node.add_variable(opcua_idx, "GoodCount", 0)
 
     return vars_dict
 
@@ -661,27 +671,22 @@ def build_simantha_system(config: dict):
 
     Args:
         config: Dict with keys 'machines', 'buffers', 'maintainer'
-                Example:
-                {
-                    "machines": [
-                        {"name": "M1", "cycle_time": 1.0, "enable_degradation": true, ...},
-                        {"name": "M2", "cycle_time": 1.0, "enable_degradation": false},
-                        ...
-                    ],
-                    "buffers": [
-                        {"name": "B1", "capacity": 10, "upstream": "M1", "downstream": "M2"},
-                        ...
-                    ],
-                    "maintainer": {"enabled": true, "capacity": 1}
-                }
 
     Returns:
-        tuple: (system, source, sink, machines_dict, buffers_dict, maintainer)
+        tuple: (system, source, sink, machines_dict, buffers_dict, maintainer, scrap_sinks)
                machines_dict: {"M1": machine_obj, "M2": machine_obj, ...}
                buffers_dict: {"B1": buffer_obj, "B2": buffer_obj, ...}
+               scrap_sinks: {"ScrapBin1": sink_obj, ...} (Phase 14, empty if none)
     """
     source = Source()
     sink = Sink(collect_parts=True)
+
+    # Phase 14: Create scrap sinks
+    scrap_sinks = {}
+    for scrap_cfg in config.get("scrap_sinks", []):
+        scrap_sinks[scrap_cfg["name"]] = Sink(
+            name=scrap_cfg["name"], collect_parts=True
+        )
 
     # Create machines from config
     machines = {}
@@ -691,8 +696,32 @@ def build_simantha_system(config: dict):
         enable_advanced_failures = machine_cfg.get("enable_advanced_failures", False)
         enable_degradation = machine_cfg.get("enable_degradation", False)
 
+        # Phase 14: Check for quality routing
+        quality_cfg = machine_cfg.get("quality_routing", {})
+        has_quality_routing = quality_cfg.get("enabled", False)
+
+        # Build degradation kwargs (shared across machine types)
+        degradation_kwargs = {}
+        if enable_degradation:
+            degradation_kwargs["degradation_matrix"] = machine_cfg.get(
+                "degradation_matrix", DEGRADATION_MATRIX
+            )
+            degradation_kwargs["cbm_threshold"] = machine_cfg.get("cbm_threshold", 1)
+
+        # Build quality routing kwargs
+        quality_kwargs = {}
+        if has_quality_routing:
+            quality_kwargs = {
+                "defect_rate": quality_cfg.get("defect_rate", 0.0),
+                "health_multiplier": quality_cfg.get("health_multiplier", 3.0),
+                "enable_health_correlation": quality_cfg.get("enable_health_correlation", False),
+                "rework_enabled": quality_cfg.get("mode", "scrap") in ("rework", "scrap_and_rework"),
+                "rework_success_rate": quality_cfg.get("rework_success_rate", 0.8),
+                "max_rework": quality_cfg.get("max_rework", 3),
+            }
+
         # Phase 10: Check for advanced failures
-        if enable_advanced_failures:
+        if enable_advanced_failures and has_quality_routing:
             # Parse failure modes
             failure_modes = []
             for fm_cfg in machine_cfg.get("failure_modes", []):
@@ -703,11 +732,27 @@ def build_simantha_system(config: dict):
                     mttr_config=fm_cfg["mttr"]
                 )
                 failure_modes.append(failure_mode)
-
-            # Parse maintenance strategy
             strategy_cfg = machine_cfg.get("maintenance_strategy", {"type": "corrective"})
+            machines[name] = QualityAdvancedMachine(
+                name=name,
+                cycle_time=cycle_time,
+                failure_modes=failure_modes,
+                maintenance_strategy=strategy_cfg,
+                **quality_kwargs
+            )
 
-            # Create AdvancedMachine
+        elif enable_advanced_failures:
+            # Parse failure modes
+            failure_modes = []
+            for fm_cfg in machine_cfg.get("failure_modes", []):
+                failure_mode = FailureMode(
+                    name=fm_cfg["name"],
+                    type=fm_cfg["type"],
+                    mttf_config=fm_cfg["mttf"],
+                    mttr_config=fm_cfg["mttr"]
+                )
+                failure_modes.append(failure_mode)
+            strategy_cfg = machine_cfg.get("maintenance_strategy", {"type": "corrective"})
             machines[name] = AdvancedMachine(
                 name=name,
                 cycle_time=cycle_time,
@@ -715,19 +760,33 @@ def build_simantha_system(config: dict):
                 maintenance_strategy=strategy_cfg
             )
 
+        elif has_quality_routing:
+            # Phase 14: Quality routing (with optional degradation)
+            machines[name] = QualityAwareMachine(
+                name=name,
+                cycle_time=cycle_time,
+                **quality_kwargs,
+                **degradation_kwargs
+            )
+
         elif enable_degradation:
             # Phase 4: Simple degradation (legacy)
-            degradation_matrix = machine_cfg.get("degradation_matrix", DEGRADATION_MATRIX)
-            cbm_threshold = machine_cfg.get("cbm_threshold", 1)
             machines[name] = Machine(
                 name=name,
                 cycle_time=cycle_time,
-                degradation_matrix=degradation_matrix,
-                cbm_threshold=cbm_threshold
+                **degradation_kwargs
             )
         else:
             # No failures
             machines[name] = Machine(name=name, cycle_time=cycle_time)
+
+    # Phase 14: Wire scrap sinks to machines (after all objects created)
+    for machine_cfg in config["machines"]:
+        quality_cfg = machine_cfg.get("quality_routing", {})
+        if quality_cfg.get("enabled", False):
+            scrap_name = quality_cfg.get("scrap_sink")
+            if scrap_name and scrap_name in scrap_sinks:
+                machines[machine_cfg["name"]].set_scrap_sink(scrap_sinks[scrap_name])
 
     # Create buffers from config
     buffers = {}
@@ -765,14 +824,14 @@ def build_simantha_system(config: dict):
 
     sink.define_routing(upstream=[machine_list[-1]])
 
-    # Create System
-    all_objects = [source] + machine_list + buffer_list + [sink]
+    # Create System (include scrap sinks so they get env reference)
+    all_objects = [source] + machine_list + buffer_list + [sink] + list(scrap_sinks.values())
     if maintainer is not None:
         system = System(objects=all_objects, maintainer=maintainer)
     else:
         system = System(objects=all_objects)
 
-    return system, source, sink, machines, buffers, maintainer
+    return system, source, sink, machines, buffers, maintainer, scrap_sinks
 
 
 def build_opcua_server(config: dict):
@@ -820,6 +879,10 @@ def build_opcua_server(config: dict):
     var_line_quality = line_oee_node.add_variable(idx, "Quality", 1.0)
     var_line_oee = line_oee_node.add_variable(idx, "OEE", 0.0)
 
+    # Phase 14: Line-level scrap KPIs
+    var_total_scrap = line_kpi_node.add_variable(idx, "TotalScrap", 0)
+    var_scrap_rate = line_kpi_node.add_variable(idx, "ScrapRate", 0.0)
+
     # Phase 9b: EventLog node (optional - for future event generation)
     event_log_node = line1.add_object(idx, "EventLog")
     var_total_events = event_log_node.add_variable(idx, "TotalEventsGenerated", 0)
@@ -845,10 +908,22 @@ def build_opcua_server(config: dict):
         # Phase 11: Check for SPC analytics
         enable_spc = machine_cfg.get("enable_spc", False)
 
+        # Phase 14: Check for quality routing
+        enable_quality_routing = machine_cfg.get("quality_routing", {}).get("enabled", False)
+
         station_vars = create_station_node(line1, idx, station_name, enable_health,
                                           enable_failure_modes, failure_mode_names,
-                                          enable_spc)
+                                          enable_spc, enable_quality_routing)
         machines_vars[machine_name] = station_vars
+
+    # Phase 14: Scrap sink OPC UA nodes
+    scrap_vars = {}
+    for scrap_cfg in config.get("scrap_sinks", []):
+        scrap_name = scrap_cfg["name"]
+        scrap_node = line1.add_object(idx, scrap_name)
+        scrap_vars[scrap_name] = {
+            "level": scrap_node.add_variable(idx, "CurrentLevel", 0),
+        }
 
     # Dynamic buffer creation (Phase 7)
     buffers_vars = {}
@@ -899,6 +974,11 @@ def build_opcua_server(config: dict):
             "total_repairs": var_total_repairs,
         },
         "shift": shift_vars,  # Phase 12: Shift tracking
+        "scrap_sinks": scrap_vars,  # Phase 14: Scrap sink nodes
+        "scrap_kpis": {
+            "total_scrap": var_total_scrap,
+            "scrap_rate": var_scrap_rate,
+        },
     }
 
     return server, opcua_vars, idx
@@ -926,7 +1006,7 @@ def main(argv=None):
     print(f"Loading scenario: {args.scenario}")
 
     # Build Simantha system from config
-    system, source, sink, machines, buffers, maintainer = build_simantha_system(config)
+    system, source, sink, machines, buffers, maintainer, scrap_sinks = build_simantha_system(config)
 
     # Build OPC UA server from config
     server, opcua_vars, idx = build_opcua_server(config)
@@ -1110,35 +1190,40 @@ def main(argv=None):
                 # Part count (all machines in series produce same total)
                 metrics["partcount"] = total_parts_produced
 
-                # Phase 8: Calculate defects produced this step
-                new_defects = calculate_defects(
-                    prev_partcount=prev_partcount,
-                    current_partcount=metrics["partcount"],
-                    base_defect_rate=metrics["base_defect_rate"],
-                    health_state=health_state,
-                    health_multiplier=metrics["health_multiplier"],
-                    enable_health_correlation=enable_health
-                )
-                metrics["defective_parts"] += new_defects
-                metrics["good_parts"] = metrics["partcount"] - metrics["defective_parts"]
+                # Phase 14: Quality routing machines handle defects internally
+                if isinstance(machine_obj, (QualityAwareMachine, QualityAdvancedMachine)):
+                    # Read actual counts from machine (decided in output_addon_process)
+                    metrics["defective_parts"] = machine_obj._scrap_count + machine_obj._defective_count
+                    metrics["good_parts"] = machine_obj._good_count
+                    metrics["partcount"] = metrics["good_parts"] + metrics["defective_parts"]
+                    new_defects = metrics["defective_parts"] - (prev_partcount - metrics.get("prev_good", 0))
+                    if new_defects < 0:
+                        new_defects = 0
+                else:
+                    # Phase 8: Statistical defect calculation (non-routing machines)
+                    new_defects = calculate_defects(
+                        prev_partcount=prev_partcount,
+                        current_partcount=metrics["partcount"],
+                        base_defect_rate=metrics["base_defect_rate"],
+                        health_state=health_state,
+                        health_multiplier=metrics["health_multiplier"],
+                        enable_health_correlation=enable_health
+                    )
+                    metrics["defective_parts"] += new_defects
+                    metrics["good_parts"] = metrics["partcount"] - metrics["defective_parts"]
+
+                    # Phase 8b: Mark individual parts as defective
+                    if new_defects > 0 and hasattr(sink, 'contents') and len(sink.contents) > 0:
+                        for i in range(1, min(new_defects + 1, len(sink.contents) + 1)):
+                            part = sink.contents[-i]
+                            if not hasattr(part, 'is_defective') or not part.is_defective:
+                                mark_part_defective(part, machine_name, defect_type="quality")
 
                 # Phase 12: Update shift metrics (if shift tracking enabled)
                 if shift_manager and not pause_line:
-                    # Update machine time tracking
                     shift_manager.update_machine_time(machine_name, sim_step, current_state)
-
-                    # Record failures (for shift tracking)
                     if current_state == "FAILED" and metrics["prev_state"] != "FAILED":
                         shift_manager.record_failure(machine_name)
-
-                # Phase 8b: Mark individual parts as defective
-                if new_defects > 0 and hasattr(sink, 'contents') and len(sink.contents) > 0:
-                    # Mark the most recently produced parts as defective
-                    # We mark approximately the last new_defects parts
-                    for i in range(1, min(new_defects + 1, len(sink.contents) + 1)):
-                        part = sink.contents[-i]
-                        if not hasattr(part, 'is_defective') or not part.is_defective:
-                            mark_part_defective(part, machine_name, defect_type="quality")
 
                 # Phase 9: Alarm detection
                 new_parts = metrics["partcount"] - prev_partcount
@@ -1257,6 +1342,17 @@ def main(argv=None):
                 machine_vars["defective_parts"].set_value(oee_result["defective_parts"])
                 machine_vars["theoretical"].set_value(oee_result["theoretical_output"])
 
+                # Phase 14: Quality routing OPC UA updates
+                if isinstance(machine_obj, (QualityAwareMachine, QualityAdvancedMachine)):
+                    if "qr_scrap_count" in machine_vars:
+                        machine_vars["qr_scrap_count"].set_value(machine_obj._scrap_count)
+                        machine_vars["qr_rework_count"].set_value(machine_obj._rework_count)
+                        machine_vars["qr_rework_success_count"].set_value(machine_obj._rework_success_count)
+                        rsr = (machine_obj._rework_success_count / machine_obj._rework_count
+                               if machine_obj._rework_count > 0 else 0.0)
+                        machine_vars["qr_rework_success_rate"].set_value(rsr)
+                        machine_vars["qr_good_count"].set_value(machine_obj._good_count)
+
             # Update buffer levels
             for buffer_name, buffer_obj in buffers.items():
                 buffer_vars = opcua_vars["buffers"][buffer_name]
@@ -1278,6 +1374,20 @@ def main(argv=None):
                 if buffer_alarms:
                     update_alarm_variables(buffer_vars, buffer_alarms)
                     buffer_alarms_map[buffer_name] = buffer_alarms
+
+            # Phase 14: Track scrap sink levels
+            total_scrap = 0
+            for scrap_name, scrap_obj in scrap_sinks.items():
+                scrap_level = scrap_obj.level
+                total_scrap += scrap_level
+                if scrap_name in opcua_vars["scrap_sinks"]:
+                    opcua_vars["scrap_sinks"][scrap_name]["level"].set_value(scrap_level)
+
+            total_output = total_parts_produced + total_scrap
+            opcua_vars["scrap_kpis"]["total_scrap"].set_value(total_scrap)
+            opcua_vars["scrap_kpis"]["scrap_rate"].set_value(
+                total_scrap / total_output if total_output > 0 else 0.0
+            )
 
             # Line-level OEE (bottleneck logic - minimum of all stations)
             all_oee_results = [calculate_oee(machine_metrics[m]["partcount"],

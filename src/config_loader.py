@@ -113,6 +113,11 @@ def validate_serial_topology(config: Dict[str, Any]) -> None:
                 f"got {buffer['upstream']}→{buffer['downstream']}"
             )
 
+    # Validate quality routing (Phase 14)
+    for machine in machines:
+        validate_quality_routing(machine)
+    validate_scrap_sinks(config)
+
     # Validate historian config (Phase 13)
     validate_historian_config(config)
 
@@ -407,3 +412,101 @@ def validate_historian_config(config: Dict[str, Any]) -> None:
     interval = events_cfg.get("production_summary_interval", 60)
     if not isinstance(interval, (int, float)) or interval <= 0:
         raise ValueError("historian.events: 'production_summary_interval' must be a positive number")
+
+
+def validate_quality_routing(machine_cfg: dict) -> None:
+    """
+    Validate quality_routing configuration for a machine (Phase 14).
+
+    Args:
+        machine_cfg: Machine configuration dictionary
+
+    Raises:
+        ValueError: If quality_routing configuration is invalid
+    """
+    qr = machine_cfg.get("quality_routing")
+    if not qr or not qr.get("enabled", False):
+        return
+
+    name = machine_cfg.get("name", "unknown")
+
+    mode = qr.get("mode", "scrap")
+    if mode not in ("scrap", "rework", "scrap_and_rework"):
+        raise ValueError(
+            f"Machine '{name}': quality_routing.mode must be "
+            f"'scrap', 'rework', or 'scrap_and_rework', got '{mode}'"
+        )
+
+    if mode in ("scrap", "scrap_and_rework") and "scrap_sink" not in qr:
+        raise ValueError(
+            f"Machine '{name}': quality_routing mode '{mode}' requires 'scrap_sink'"
+        )
+
+    if "defect_rate" in qr:
+        dr = qr["defect_rate"]
+        if not isinstance(dr, (int, float)) or not (0.0 <= dr <= 1.0):
+            raise ValueError(
+                f"Machine '{name}': quality_routing.defect_rate must be 0.0-1.0, got {dr}"
+            )
+
+    if "health_multiplier" in qr:
+        hm = qr["health_multiplier"]
+        if not isinstance(hm, (int, float)) or hm < 0:
+            raise ValueError(
+                f"Machine '{name}': quality_routing.health_multiplier must be >= 0, got {hm}"
+            )
+
+    if mode in ("rework", "scrap_and_rework"):
+        rsr = qr.get("rework_success_rate", 0.8)
+        if not isinstance(rsr, (int, float)) or not (0.0 <= rsr <= 1.0):
+            raise ValueError(
+                f"Machine '{name}': quality_routing.rework_success_rate must be 0.0-1.0, got {rsr}"
+            )
+
+        mr = qr.get("max_rework", 3)
+        if not isinstance(mr, int) or mr < 1:
+            raise ValueError(
+                f"Machine '{name}': quality_routing.max_rework must be a positive integer, got {mr}"
+            )
+
+
+def validate_scrap_sinks(config: Dict[str, Any]) -> None:
+    """
+    Validate scrap_sinks configuration and cross-references (Phase 14).
+
+    Args:
+        config: Full scenario configuration dictionary
+
+    Raises:
+        ValueError: If scrap_sinks are invalid or referenced sinks don't exist
+    """
+    scrap_sinks = config.get("scrap_sinks", [])
+    if not scrap_sinks:
+        # No scrap sinks - verify no machine references one
+        for m in config.get("machines", []):
+            qr = m.get("quality_routing", {})
+            if qr.get("enabled", False) and qr.get("scrap_sink"):
+                raise ValueError(
+                    f"Machine '{m['name']}' references scrap_sink '{qr['scrap_sink']}' "
+                    f"but no 'scrap_sinks' section defined"
+                )
+        return
+
+    # Validate scrap sink entries
+    scrap_names = set()
+    for i, s in enumerate(scrap_sinks):
+        if "name" not in s:
+            raise ValueError(f"Scrap sink at index {i} missing 'name' field")
+        if s["name"] in scrap_names:
+            raise ValueError(f"Duplicate scrap sink name: '{s['name']}'")
+        scrap_names.add(s["name"])
+
+    # Verify all referenced scrap sinks exist
+    for m in config.get("machines", []):
+        qr = m.get("quality_routing", {})
+        if qr.get("enabled", False):
+            ref = qr.get("scrap_sink")
+            if ref and ref not in scrap_names:
+                raise ValueError(
+                    f"Machine '{m['name']}' references undefined scrap_sink '{ref}'"
+                )

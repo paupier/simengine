@@ -9,6 +9,12 @@ pyyaml>=6.0
 pytest>=7.0.0
 pytest-cov>=3.0.0
 
+# Optional: InfluxDB 2.x historian backend (Phase 13)
+# influxdb-client>=1.30.0
+
+# Optional: Neo4j graph database historian backend (Phase 13)
+# neo4j>=5.0.0
+
 # Optional: async version (for future)
 # asyncua>=1.0.0
 

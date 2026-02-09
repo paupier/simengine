@@ -10,8 +10,8 @@ A real-time **digital twin** of a manufacturing production line using [Simantha]
 
 ## 📋 Project Status
 
-**Current Phase:** Phase 13 Complete – Historical Data & Visualization
-**Last Updated:** 2026-02-08
+**Current Phase:** Phase 14 Complete – Scrap & Rework Routing
+**Last Updated:** 2026-02-09
 
 ### Phase Completion Status
 
@@ -30,6 +30,7 @@ A real-time **digital twin** of a manufacturing production line using [Simantha]
 | **Phase 11:** SPC Quality Analytics | ✅ **Complete** | X-bar/R control charts, Cp/Cpk capability analysis, Western Electric rules, Six Sigma quality levels |
 | **Phase 12:** Shift Tracking | ✅ **Complete** | 8-hour shift patterns, per-shift metrics reset, shift-based OEE, automatic rotation |
 | **Phase 13:** Historical Data & Viz | ✅ **Complete** | Event-based CSV/InfluxDB/Neo4j logging, Grafana dashboards, graph DB topology & part tracing |
+| **Phase 14:** Scrap & Rework Routing | ✅ **Complete** | Quality-based part routing, scrap sinks, virtual rework, health-correlated defects inside simulation |
 
 ---
 
@@ -40,6 +41,7 @@ This project creates a **realistic manufacturing digital twin** that:
 - **Simulates** configurable production lines (2-10+ machines in serial topology)
 - **Exposes** real-time KPIs via industry-standard OPC UA protocol
 - **Models** realistic variability through health degradation, advanced failures, and quality defects
+- **Routes** defective parts to scrap sinks or attempts virtual rework before scrapping
 - **Tracks** shift-based production with automatic rotation and per-shift OEE
 - **Logs** events to CSV, InfluxDB, and Neo4j with Grafana visualization
 - **Responds** to external control inputs (pause/resume, arrival rate adjustment)
@@ -60,6 +62,8 @@ This project creates a **realistic manufacturing digital twin** that:
 ✅ **Time Tracking** - Cumulative time in each state per machine
 ✅ **Event Historian** - CSV, InfluxDB 2.x, Neo4j backends with edge-detection logging
 ✅ **Grafana Dashboards** - Manufacturing overview, state timeline, alarm log, shift comparison
+✅ **Scrap & Rework Routing** - Defective parts routed to scrap sinks, virtual rework at station
+✅ **Quality Routing** - Per-part defect decisions inside simulation with health correlation
 
 ---
 
@@ -102,6 +106,12 @@ python src/opcua_server.py --scenario spc_quality_line
 
 # 3-shift production tracking
 python src/opcua_server.py --scenario shift_line
+
+# Scrap & rework routing with defect sinks
+python src/opcua_server.py --scenario scrap_line
+
+# ALL features combined (failures, SPC, shifts, historian, scrap/rework)
+python src/opcua_server.py --scenario full_feature_line --seed 42
 ```
 
 **Expected output:**
@@ -159,7 +169,7 @@ Press Ctrl+C to stop.
 
 ## 📊 OPC UA Address Space
 
-### Current Structure (Phase 12)
+### Current Structure (Phase 14)
 
 ```
 Objects/
@@ -173,6 +183,8 @@ Objects/
       │
       ├─ LineKPIs/
       │    ├─ TotalWIP (int, READ-ONLY)             # Work-in-process (buffer level)
+      │    ├─ TotalScrap (int, READ-ONLY)           # Phase 14: Total scrapped parts
+      │    ├─ ScrapRate (double, READ-ONLY)         # Phase 14: Scrap / (Output + Scrap)
       │    └─ LineOEE/                              # Phase 6: Line-level OEE metrics
       │         ├─ Availability (double, READ-ONLY) # Min of all stations (bottleneck)
       │         ├─ Performance (double, READ-ONLY)  # Min of all stations (bottleneck)
@@ -198,6 +210,12 @@ Objects/
       │         ├─ GoodPartCount (int, READ-ONLY)   # Parts without defects (Phase 8 prep)
       │         ├─ DefectivePartCount (int, READ-ONLY) # Defective parts (Phase 8 prep)
       │         └─ TheoreticalOutput (double, READ-ONLY) # Diagnostic: max possible output
+      │    └─ QualityRouting/                        # Phase 14 (if quality_routing enabled)
+      │         ├─ ScrapCount (int, READ-ONLY)       # Parts sent to scrap sink
+      │         ├─ ReworkCount (int, READ-ONLY)      # Total rework attempts
+      │         ├─ ReworkSuccessCount (int, READ-ONLY) # Successful reworks
+      │         ├─ ReworkSuccessRate (double, READ-ONLY) # Success / Attempts
+      │         └─ GoodCount (int, READ-ONLY)        # Parts passing quality check
       │
       ├─ Buffer1/
       │    ├─ CurrentLevel (int, READ-ONLY)         # Current WIP count
@@ -225,6 +243,12 @@ Objects/
       │    ├─ MaintenanceActive (bool, READ-ONLY)   # True when repairing
       │    ├─ QueueLength (int, READ-ONLY)          # Machines waiting for repair
       │    └─ TotalRepairs (int, READ-ONLY)         # Completed repairs count
+      │
+      ├─ ScrapBin1/                                  # Phase 14 (if scrap_sinks configured)
+      │    └─ CurrentLevel (int, READ-ONLY)         # Scrapped parts count
+      │
+      ├─ ScrapBin2/                                  # (one node per scrap sink)
+      │    └─ CurrentLevel (int, READ-ONLY)
       │
       └─ Shift/                                     # Phase 12 (if shifts configured)
            ├─ CurrentShiftNumber (int, READ-ONLY)   # Sequential counter (1, 2, 3...)
@@ -257,7 +281,7 @@ All KPIs, states, health metrics, buffer levels, maintenance status
 
 ## 🧪 Testing & Scenarios
 
-### Available Scenarios (11 total)
+### Available Scenarios (16 total)
 
 | Scenario | Machines | Features | Complexity |
 |----------|----------|----------|------------|
@@ -273,6 +297,9 @@ All KPIs, states, health metrics, buffer levels, maintenance status
 | `shift_line` | 2 | 3-shift rotation tracking | Beginner |
 | `advanced_shift_line` | 2 | Shifts + failures + SPC | Expert |
 | `historian_line` | 2 | CSV event logging + failures + shifts | Intermediate |
+| `scrap_line` | 2 | Scrap sinks + health-correlated routing | Intermediate |
+| `rework_line` | 2 | Virtual rework before scrapping | Intermediate |
+| `full_feature_line` | 2 | **All features combined** (failures, SPC, shifts, historian, scrap/rework) | Expert |
 
 ### Run Tests
 
@@ -286,6 +313,7 @@ pytest tests/test_failure_modes.py -v         # Failure modes (29 tests)
 pytest tests/test_config_validation.py -v     # Config validation (48 tests)
 pytest tests/test_event_historian.py -v       # Event historian (38 tests)
 pytest tests/test_neo4j_historian.py -v       # Neo4j historian (23 tests)
+pytest tests/test_quality_routing.py -v      # Scrap & rework routing (30 tests)
 pytest tests/test_opcua_integration.py -v     # OPC UA integration
 pytest tests/test_scenarios.py -v             # Scenario validation
 ```
@@ -375,10 +403,11 @@ simantha-opcua/
 │   ├─ spc_analytics.py           # Phase 11: SPC control charts & capability
 │   ├─ shift_manager.py           # Phase 12: Shift tracking & rotation
 │   ├─ event_historian.py         # Phase 13: CSV/InfluxDB event historian
-│   └─ neo4j_historian.py         # Phase 13: Neo4j graph DB historian
+│   ├─ neo4j_historian.py         # Phase 13: Neo4j graph DB historian
+│   └─ quality_machine.py         # Phase 14: QualityAwareMachine + scrap routing
 │
 ├─ config/
-│   └─ line_models.yaml           # Scenario definitions (12 scenarios)
+│   └─ line_models.yaml           # Scenario definitions (16 scenarios)
 │
 ├─ tests/
 │   ├─ test_opcua_integration.py  # OPC UA integration tests
@@ -390,6 +419,7 @@ simantha-opcua/
 │   ├─ test_spc_analytics.py      # SPC analytics unit tests (23 tests)
 │   ├─ test_event_historian.py    # Event historian tests (38 tests)
 │   ├─ test_neo4j_historian.py    # Neo4j historian tests (23 tests)
+│   ├─ test_quality_routing.py   # Scrap & rework routing tests (30 tests)
 │   └─ validate_opcua_server.py   # Server validation script
 │
 ├─ grafana/
@@ -444,6 +474,8 @@ simantha-opcua/
 | **Phase 10** | Advanced Failures - Weibull/exponential distributions, competing risks, MTBF/MTTR |
 | **Phase 11** | SPC Analytics - X-bar/R charts, Cp/Cpk capability, Western Electric rules, Six Sigma |
 | **Phase 12** | Shift Tracking - 8-hour shift rotation, per-shift metrics reset, shift-based OEE |
+| **Phase 13** | Historical Data - Event-based CSV/InfluxDB/Neo4j logging, Grafana dashboards |
+| **Phase 14** | Scrap & Rework Routing - Quality-based part routing, scrap sinks, virtual rework |
 
 See the [User Manual](docs/USER_MANUAL.md) for detailed documentation of each phase.
 
@@ -579,10 +611,94 @@ See [grafana/README.md](grafana/README.md) for InfluxDB + Grafana setup instruct
 
 ---
 
+### Phase 14: Scrap & Rework Routing ✅
+
+**Status:** Complete (2026-02-09)
+
+Quality-based part routing that diverts defective parts to scrap sinks, with optional virtual rework before scrapping.
+
+**Key Features:**
+
+- **Quality Routing Inside Simulation**: Defect decisions made per-part in `output_addon_process()`, not statistically in the main loop
+- **Scrap Sinks**: Dedicated bins that collect defective parts (not in the main serial chain)
+- **Virtual Rework**: Probabilistic rework at the station — successful rework clears the defect
+- **Health Correlation**: Defect rate increases with machine degradation (`defect_rate * (1 + health_multiplier * health_state)`)
+- **Buffer Reservation Fix**: Proper bookkeeping when redirecting parts mid-flow
+- **Historian Events**: SCRAP and REWORK events logged with edge detection
+- **Full Feature Scenario**: `full_feature_line` combines ALL phases (failures, SPC, shifts, historian, scrap/rework)
+
+**Architecture:**
+```
+Source → M1 → B1 → M2 → Sink    (main serial chain)
+              │           │
+              ↓           ↓
+          ScrapBin1   ScrapBin2   (scrap sinks, NOT in downstream)
+```
+
+**Configuration:**
+```yaml
+machines:
+  - name: M1
+    cycle_time: 1
+    quality_routing:
+      enabled: true
+      mode: scrap_and_rework    # scrap, rework, or scrap_and_rework
+      defect_rate: 0.05
+      health_multiplier: 5.0
+      enable_health_correlation: true
+      rework_success_rate: 0.7
+      max_rework: 3
+      scrap_sink: ScrapBin1
+
+scrap_sinks:
+  - name: ScrapBin1
+```
+
+**Available Scenarios:**
+
+- `scrap_line`: 2-machine line with scrap sinks and health-correlated quality routing
+- `rework_line`: 2-machine line with virtual rework (70% success rate) before scrapping
+- `full_feature_line`: All features combined — advanced failures, SPC, shifts, historian, scrap & rework
+
+**Run:**
+```bash
+python src/opcua_server.py --scenario scrap_line --seed 42
+python src/opcua_server.py --scenario rework_line --seed 42
+python src/opcua_server.py --scenario full_feature_line --seed 42
+```
+
+**OPC UA Variables (Phase 14):**
+```plaintext
+Station1/QualityRouting/           (only for machines with quality_routing)
+  ScrapCount         (Int32)       Parts diverted to scrap sink
+  ReworkCount        (Int32)       Total rework attempts
+  ReworkSuccessCount (Int32)       Successful reworks (part saved)
+  ReworkSuccessRate  (Double)      Success / Attempts
+  GoodCount          (Int32)       Parts passing quality check
+
+LineKPIs/
+  TotalScrap         (Int32)       Total scrapped parts across all sinks
+  ScrapRate          (Double)      Scrap / (Output + Scrap)
+
+ScrapBin1/                         (one node per scrap sink)
+  CurrentLevel       (Int32)       Accumulated scrapped parts
+```
+
+**CSV Historian Output:**
+
+When running with historian enabled, scrap and rework events are logged to CSV:
+```
+results/historian/full_feature_line_20260209_143000_events.csv
+```
+
+Event types include: `STATE_CHANGE`, `ALARM`, `SHIFT_CHANGE`, `SCRAP`, `REWORK`, `PRODUCTION_SUMMARY`
+
+---
+
 ### Future Phases
 
-- **Phase 14:** Scrap & Rework Routing - Non-serial topologies with quality gates
 - **Phase 15:** Parallel Lines & Assembly - Multi-line coordination
+- **Phase 16:** Energy/Sustainability Modeling
 
 ---
 
