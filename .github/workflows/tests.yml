@@ -11,13 +11,13 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ['3.8', '3.9', '3.10', '3.11']
+        python-version: ['3.9', '3.10', '3.11', '3.12']
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
 
@@ -34,19 +34,18 @@ jobs:
         # Warnings (exit-zero treats all errors as warnings)
         flake8 src/ tests/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
-    - name: Run Phase 1 tests
+    - name: Run unit tests
       run: |
-        pytest tests/test_scenarios.py -v
-      continue-on-error: true  # Allow failure until Phase 1 complete
+        pytest tests/ --ignore=tests/test_advanced_scenarios.py --ignore=tests/test_opcua_integration.py -v
 
     - name: Generate coverage report
       run: |
         pip install pytest-cov
-        pytest tests/ --cov=src --cov-report=html
+        pytest tests/ --ignore=tests/test_advanced_scenarios.py --ignore=tests/test_opcua_integration.py --cov=src --cov-report=html
       continue-on-error: true
 
     - name: Upload coverage
       uses: actions/upload-artifact@v4
       with:
-        name: coverage-report
+        name: coverage-report-py${{ matrix.python-version }}
         path: htmlcov/
