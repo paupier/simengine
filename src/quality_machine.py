@@ -5,10 +5,11 @@ Extends Simantha's Machine (and AdvancedMachine) to divert defective parts
 to scrap sinks or attempt virtual rework before scrapping.
 
 Key Design:
-- Overrides output_addon_process(part) to inspect quality before part goes downstream
+- QualityRoutingMixin provides quality routing via output_addon_process(part)
 - Defect decisions happen PER-PART inside simantha's event loop (not statistical in main loop)
 - Scrap sinks are NOT in machine.downstream (avoids random routing to scrap)
 - Buffer reservation bookkeeping is fixed when redirecting parts
+- Adding new axes (e.g., energy) just requires another mixin, no class explosion
 
 Usage:
     machine = QualityAwareMachine(name="M1", cycle_time=1, defect_rate=0.05)
@@ -30,7 +31,7 @@ def _quality_route(machine, part):
     and redirects defective parts to scrap sink if available.
 
     Args:
-        machine: QualityAwareMachine or QualityAdvancedMachine instance
+        machine: QualityRoutingMixin instance
         part: Simantha Part object being output
     """
     # Determine defect using same formula as calculate_defects()
@@ -117,12 +118,19 @@ def _init_quality_attrs(machine, defect_rate, health_multiplier,
     machine._defective_count = 0
 
 
-class QualityAwareMachine(Machine):
-    """Machine with quality-based routing for scrap and rework.
+class QualityRoutingMixin:
+    """Mixin that adds quality-based routing for scrap and rework.
 
     Overrides output_addon_process() to inspect each finished part and
     divert defective parts to a scrap sink. Optionally attempts virtual
     rework before scrapping.
+
+    Use with multiple inheritance:
+        class QualityAwareMachine(QualityRoutingMixin, Machine): pass
+        class QualityAdvancedMachine(QualityRoutingMixin, AdvancedMachine): pass
+
+    Adding a future axis (e.g., EnergyMixin) requires no new class explosion:
+        class EnergyQualityMachine(EnergyMixin, QualityRoutingMixin, Machine): pass
 
     Attributes:
         _scrap_count: Total parts sent to scrap sink
@@ -134,8 +142,7 @@ class QualityAwareMachine(Machine):
 
     def __init__(
         self,
-        name: str,
-        cycle_time: float,
+        *args,
         defect_rate: float = 0.0,
         health_multiplier: float = 3.0,
         enable_health_correlation: bool = False,
@@ -144,7 +151,7 @@ class QualityAwareMachine(Machine):
         max_rework: int = 3,
         **kwargs
     ):
-        super().__init__(name=name, cycle_time=cycle_time, **kwargs)
+        super().__init__(*args, **kwargs)
         _init_quality_attrs(
             self, defect_rate, health_multiplier, enable_health_correlation,
             rework_enabled, rework_success_rate, max_rework
@@ -158,35 +165,16 @@ class QualityAwareMachine(Machine):
         self._scrap_sink = sink
 
 
-class QualityAdvancedMachine(AdvancedMachine):
+class QualityAwareMachine(QualityRoutingMixin, Machine):
+    """Machine with quality-based routing for scrap and rework."""
+    pass
+
+
+class QualityAdvancedMachine(QualityRoutingMixin, AdvancedMachine):
     """AdvancedMachine with quality-based routing for scrap and rework.
 
     Combines advanced failure modes (Phase 10) with quality routing (Phase 14).
     AdvancedMachine overrides get_time_to_degrade/get_time_to_repair/restore;
-    this class adds output_addon_process for quality routing. No method conflicts.
+    the mixin adds output_addon_process for quality routing. No method conflicts.
     """
-
-    def __init__(
-        self,
-        name: str,
-        cycle_time: float,
-        defect_rate: float = 0.0,
-        health_multiplier: float = 3.0,
-        enable_health_correlation: bool = False,
-        rework_enabled: bool = False,
-        rework_success_rate: float = 0.8,
-        max_rework: int = 3,
-        **kwargs
-    ):
-        super().__init__(name=name, cycle_time=cycle_time, **kwargs)
-        _init_quality_attrs(
-            self, defect_rate, health_multiplier, enable_health_correlation,
-            rework_enabled, rework_success_rate, max_rework
-        )
-
-    def output_addon_process(self, part):
-        _quality_route(self, part)
-
-    def set_scrap_sink(self, sink):
-        """Set scrap sink for defective part routing."""
-        self._scrap_sink = sink
+    pass

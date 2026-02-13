@@ -396,20 +396,21 @@ simantha-opcua/
 ├─ src/
 │   ├─ opcua_server.py            # Main OPC UA server (Phase 2-12)
 │   ├─ simantha_baseline.py       # Phase 1: Baseline scenarios (batch mode)
-│   ├─ config_loader.py           # YAML configuration loader
-│   ├─ config_loader_phase10.py   # Advanced failure config validation
+│   ├─ config_loader.py           # YAML configuration loader + failure mode validation
 │   ├─ failure_modes.py           # Phase 10: Statistical failure distributions
 │   ├─ advanced_machine.py        # Phase 10: AdvancedMachine class
 │   ├─ spc_analytics.py           # Phase 11: SPC control charts & capability
 │   ├─ shift_manager.py           # Phase 12: Shift tracking & rotation
 │   ├─ event_historian.py         # Phase 13: CSV/InfluxDB event historian
 │   ├─ neo4j_historian.py         # Phase 13: Neo4j graph DB historian
-│   └─ quality_machine.py         # Phase 14: QualityAwareMachine + scrap routing
+│   └─ quality_machine.py         # Phase 14: QualityRoutingMixin + scrap routing
 │
 ├─ config/
 │   └─ line_models.yaml           # Scenario definitions (16 scenarios)
 │
 ├─ tests/
+│   ├─ conftest.py                # Pytest fixtures (OPC UA server/client)
+│   ├─ factories.py               # Shared test factories (make_event, make_part, etc.)
 │   ├─ test_opcua_integration.py  # OPC UA integration tests
 │   ├─ test_scenarios.py          # Scenario validation tests
 │   ├─ test_config_validation.py  # Configuration validation (48 tests)

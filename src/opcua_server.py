@@ -9,7 +9,7 @@ from spc_analytics import ProcessMonitor, SPCConfiguration
 from shift_manager import create_shift_manager_from_config
 from event_historian import create_historian_from_config, collect_step_events, collect_production_summary
 from neo4j_historian import create_neo4j_historian_from_config
-from quality_machine import QualityAwareMachine, QualityAdvancedMachine
+from quality_machine import QualityAwareMachine, QualityAdvancedMachine, QualityRoutingMixin
 
 
 # Machine health degradation matrix (2-state: healthy → failed)
@@ -663,6 +663,449 @@ def analyze_part_quality(sink) -> dict:
     }
 
 
+# ========== MAIN LOOP STEP FUNCTIONS ==========
+
+
+def read_opcua_controls(opcua_vars):
+    """Read writable control values from OPC UA clients."""
+    pause_line = bool(opcua_vars["system"]["pause_line"].get_value())
+    interarrival = float(opcua_vars["system"]["interarrival_time"].get_value())
+    return pause_line, interarrival
+
+
+def update_part_counter(sink_level, prev_sink_level, total_parts_produced):
+    """Track production monotonically (sink.level can decrease during maintenance).
+
+    Returns:
+        tuple: (delta_parts, total_parts_produced, prev_sink_level)
+    """
+    delta_parts = 0
+    if sink_level > prev_sink_level:
+        delta_parts = sink_level - prev_sink_level
+        total_parts_produced += delta_parts
+        prev_sink_level = sink_level
+    elif sink_level < prev_sink_level:
+        prev_sink_level = sink_level
+    return delta_parts, total_parts_produced, prev_sink_level
+
+
+def check_shift_rotation(shift_manager, sim_time, pause_line):
+    """Check and perform shift rotation if needed. Returns whether shift rotated."""
+    if shift_manager and not pause_line:
+        shift_rotated = shift_manager.check_shift_rotation(sim_time)
+        if shift_rotated:
+            print(f"\n[SHIFT CHANGE] Shift {shift_manager.current_shift_number} started: "
+                  f"{shift_manager.shift_definitions[shift_manager.current_shift_index].name}")
+        return shift_rotated
+    return False
+
+
+def collect_system_metrics(buffers, maintainer):
+    """Collect system-level metrics: WIP, maintenance status.
+
+    Returns:
+        tuple: (total_wip, maint_active, maint_queue_length, total_repairs)
+    """
+    total_wip = sum(buffer.level for buffer in buffers.values())
+
+    if maintainer is not None:
+        try:
+            maint_active = len(maintainer.in_progress) > 0
+            maint_queue_length = len(maintainer.queue)
+            total_repairs = maintainer.total_throughput if hasattr(maintainer, 'total_throughput') else 0
+        except AttributeError:
+            maint_active = False
+            maint_queue_length = 0
+            total_repairs = 0
+    else:
+        maint_active = False
+        maint_queue_length = 0
+        total_repairs = 0
+
+    return total_wip, maint_active, maint_queue_length, total_repairs
+
+
+def process_machine_step(machine_name, machine_obj, metrics, config_machines,
+                         total_parts_produced, pause_line, sim_step, maintainer,
+                         shift_manager, spc_monitors, opcua_vars, sink):
+    """Process one simulation step for a single machine.
+
+    Updates metrics, detects state, calculates OEE, updates alarms, SPC,
+    and writes all OPC UA variables for this machine.
+
+    Returns:
+        list or None: Alarms triggered this step (for historian), or None.
+    """
+    # Store previous partcount for defect calculation
+    prev_partcount = metrics["partcount"]
+
+    # Accumulate time based on previous state
+    if not pause_line:
+        accumulate_time(metrics, metrics["prev_state"], sim_step)
+
+    # Detect current state
+    machine_cfg = next(m for m in config_machines if m["name"] == machine_name)
+    enable_health = machine_cfg.get("enable_degradation", False)
+    health_state = machine_obj.health if enable_health else 0
+
+    # Check if this machine is being repaired
+    machine_maint_active = False
+    if maintainer:
+        try:
+            machine_maint_active = machine_obj in maintainer.in_progress
+        except AttributeError:
+            machine_maint_active = False
+
+    current_state = detect_machine_state(machine_obj, pause_line, health_state, machine_maint_active)
+    metrics["prev_state"] = current_state
+
+    # Part count (all machines in series produce same total)
+    metrics["partcount"] = total_parts_produced
+
+    # Quality routing: defect tracking
+    if isinstance(machine_obj, QualityRoutingMixin):
+        metrics["defective_parts"] = machine_obj._scrap_count + machine_obj._defective_count
+        metrics["good_parts"] = machine_obj._good_count
+        metrics["partcount"] = metrics["good_parts"] + metrics["defective_parts"]
+        new_defects = metrics["defective_parts"] - (prev_partcount - metrics.get("prev_good", 0))
+        if new_defects < 0:
+            new_defects = 0
+    else:
+        # Statistical defect calculation (non-routing machines)
+        new_defects = calculate_defects(
+            prev_partcount=prev_partcount,
+            current_partcount=metrics["partcount"],
+            base_defect_rate=metrics["base_defect_rate"],
+            health_state=health_state,
+            health_multiplier=metrics["health_multiplier"],
+            enable_health_correlation=enable_health
+        )
+        metrics["defective_parts"] += new_defects
+        metrics["good_parts"] = metrics["partcount"] - metrics["defective_parts"]
+
+        # Mark individual parts as defective
+        if new_defects > 0 and hasattr(sink, 'contents') and len(sink.contents) > 0:
+            for i in range(1, min(new_defects + 1, len(sink.contents) + 1)):
+                part = sink.contents[-i]
+                if not hasattr(part, 'is_defective') or not part.is_defective:
+                    mark_part_defective(part, machine_name, defect_type="quality")
+
+    # Shift metrics update
+    if shift_manager and not pause_line:
+        shift_manager.update_machine_time(machine_name, sim_step, current_state)
+        if current_state == "FAILED" and metrics["prev_state"] != "FAILED":
+            shift_manager.record_failure(machine_name)
+
+    # Alarm detection
+    new_parts = metrics["partcount"] - prev_partcount
+    machine_alarms = detect_machine_alarms(
+        machine_name=machine_name,
+        current_state=current_state,
+        metrics=metrics,
+        health_state=health_state,
+        machine_maint_active=machine_maint_active,
+        new_defects=new_defects,
+        new_parts=new_parts
+    )
+
+    machine_vars = opcua_vars["machines"][machine_name]
+    if machine_alarms:
+        update_alarm_variables(machine_vars, machine_alarms)
+
+    # OEE calculation
+    oee_result = calculate_oee(
+        metrics["partcount"],
+        metrics,
+        metrics["cycle_time"],
+        good_parts=metrics["good_parts"],
+        defective_parts=metrics["defective_parts"]
+    )
+
+    # Utilization
+    total_time = sum(
+        metrics[k] for k in ["processing_time", "blocked_time",
+                              "starved_time", "down_time", "idle_time"]
+    )
+    utilisation = metrics["processing_time"] / total_time if total_time > 0 else 0.0
+
+    # Write all OPC UA variables for this machine
+    write_machine_opcua_vars(machine_vars, machine_obj, current_state, metrics,
+                             utilisation, oee_result, health_state,
+                             spc_monitors.get(machine_name), new_parts)
+
+    return machine_alarms
+
+
+def write_machine_opcua_vars(machine_vars, machine_obj, current_state, metrics,
+                             utilisation, oee_result, health_state,
+                             spc_monitor, new_parts):
+    """Write all OPC UA variables for a single machine."""
+    # Core state variables
+    machine_vars["state"].set_value(current_state)
+    machine_vars["partcount"].set_value(metrics["partcount"])
+    machine_vars["utilisation"].set_value(utilisation)
+    machine_vars["blocked_time"].set_value(metrics["blocked_time"])
+    machine_vars["starved_time"].set_value(metrics["starved_time"])
+    machine_vars["down_time"].set_value(metrics["down_time"])
+    machine_vars["processing_time"].set_value(metrics["processing_time"])
+    machine_vars["idle_time"].set_value(metrics["idle_time"])
+
+    # Health (if enabled)
+    if "health" in machine_vars:
+        health_pct = 100.0 * (1 - health_state)
+        machine_vars["health"].set_value(health_state)
+        machine_vars["health_pct"].set_value(health_pct)
+
+    # Failure mode statistics
+    if isinstance(machine_obj, AdvancedMachine):
+        active_mode = machine_obj.get_active_failure_mode()
+        machine_vars["fm_active"].set_value(active_mode)
+
+        fm_stats = machine_obj.get_failure_mode_stats()
+        for fm_name, stats in fm_stats.items():
+            machine_vars[f"fm_{fm_name}_count"].set_value(stats["failure_count"])
+            machine_vars[f"fm_{fm_name}_downtime"].set_value(stats["total_downtime"])
+            machine_vars[f"fm_{fm_name}_mtbf"].set_value(stats["mtbf"])
+            machine_vars[f"fm_{fm_name}_mttr"].set_value(stats["mttr"])
+
+        maint_stats = machine_obj.get_maintenance_stats()
+        machine_vars["ms_type"].set_value(maint_stats["strategy_type"])
+        machine_vars["ms_pm_count"].set_value(maint_stats["pm_count"])
+        machine_vars["ms_cm_count"].set_value(maint_stats["cm_count"])
+        machine_vars["ms_next_pm"].set_value(maint_stats["next_pm_time"])
+
+    # SPC analytics
+    if spc_monitor:
+        if new_parts > 0:
+            for _ in range(new_parts):
+                measurement = metrics["cycle_time"]
+                spc_monitor.add_measurement(measurement)
+
+        spc_metrics = spc_monitor.get_metrics()
+        machine_vars["spc_xbar_current"].set_value(spc_metrics.x_bar)
+        machine_vars["spc_xbar_ucl"].set_value(spc_metrics.x_bar_ucl)
+        machine_vars["spc_xbar_cl"].set_value(spc_metrics.x_bar_cl)
+        machine_vars["spc_xbar_lcl"].set_value(spc_metrics.x_bar_lcl)
+
+        machine_vars["spc_r_current"].set_value(spc_metrics.range)
+        machine_vars["spc_r_ucl"].set_value(spc_metrics.r_ucl)
+        machine_vars["spc_r_cl"].set_value(spc_metrics.r_cl)
+        machine_vars["spc_r_lcl"].set_value(spc_metrics.r_lcl)
+
+        machine_vars["spc_cp"].set_value(spc_metrics.cp)
+        machine_vars["spc_cpk"].set_value(spc_metrics.cpk)
+        machine_vars["spc_pp"].set_value(spc_metrics.pp)
+        machine_vars["spc_ppk"].set_value(spc_metrics.ppk)
+        machine_vars["spc_sigma_level"].set_value(spc_metrics.sigma_level)
+
+        machine_vars["spc_in_control"].set_value(spc_metrics.in_control)
+        violations_str = ", ".join(spc_metrics.violations) if spc_metrics.violations else ""
+        machine_vars["spc_violations"].set_value(violations_str)
+        machine_vars["spc_total_samples"].set_value(spc_metrics.total_samples)
+        machine_vars["spc_num_subgroups"].set_value(spc_metrics.num_subgroups)
+
+    # OEE
+    machine_vars["availability"].set_value(oee_result["availability"])
+    machine_vars["performance"].set_value(oee_result["performance"])
+    machine_vars["quality"].set_value(oee_result["quality"])
+    machine_vars["oee"].set_value(oee_result["oee"])
+    machine_vars["good_parts"].set_value(oee_result["good_parts"])
+    machine_vars["defective_parts"].set_value(oee_result["defective_parts"])
+    machine_vars["theoretical"].set_value(oee_result["theoretical_output"])
+
+    # Quality routing
+    if isinstance(machine_obj, QualityRoutingMixin):
+        if "qr_scrap_count" in machine_vars:
+            machine_vars["qr_scrap_count"].set_value(machine_obj._scrap_count)
+            machine_vars["qr_rework_count"].set_value(machine_obj._rework_count)
+            machine_vars["qr_rework_success_count"].set_value(machine_obj._rework_success_count)
+            rsr = (machine_obj._rework_success_count / machine_obj._rework_count
+                   if machine_obj._rework_count > 0 else 0.0)
+            machine_vars["qr_rework_success_rate"].set_value(rsr)
+            machine_vars["qr_good_count"].set_value(machine_obj._good_count)
+
+
+def update_buffers(buffers, opcua_vars):
+    """Update buffer levels and detect buffer alarms.
+
+    Returns:
+        dict: buffer_alarms_map {buffer_name: [alarm_tuples]}
+    """
+    buffer_alarms_map = {}
+    for buffer_name, buffer_obj in buffers.items():
+        buffer_vars = opcua_vars["buffers"][buffer_name]
+        buffer_vars["level"].set_value(buffer_obj.level)
+
+        if not hasattr(buffer_obj, '_alarm_state'):
+            buffer_obj._alarm_state = {}
+
+        buffer_alarms = detect_buffer_alarms(
+            buffer_name=buffer_name,
+            buffer_level=buffer_obj.level,
+            buffer_capacity=buffer_obj.capacity,
+            alarm_state=buffer_obj._alarm_state
+        )
+
+        if buffer_alarms:
+            update_alarm_variables(buffer_vars, buffer_alarms)
+            buffer_alarms_map[buffer_name] = buffer_alarms
+
+    return buffer_alarms_map
+
+
+def update_scrap_tracking(scrap_sinks, total_parts_produced, opcua_vars):
+    """Update scrap sink levels and compute scrap KPIs. Returns total_scrap."""
+    total_scrap = 0
+    for scrap_name, scrap_obj in scrap_sinks.items():
+        scrap_level = scrap_obj.level
+        total_scrap += scrap_level
+        if scrap_name in opcua_vars["scrap_sinks"]:
+            opcua_vars["scrap_sinks"][scrap_name]["level"].set_value(scrap_level)
+
+    total_output = total_parts_produced + total_scrap
+    opcua_vars["scrap_kpis"]["total_scrap"].set_value(total_scrap)
+    opcua_vars["scrap_kpis"]["scrap_rate"].set_value(
+        total_scrap / total_output if total_output > 0 else 0.0
+    )
+    return total_scrap
+
+
+def calculate_line_level_oee(machines, machine_metrics):
+    """Calculate line-level OEE using bottleneck model (minimum of all stations).
+
+    Returns:
+        tuple: (line_availability, line_performance, line_quality, line_oee)
+    """
+    all_oee_results = [
+        calculate_oee(machine_metrics[m]["partcount"],
+                      machine_metrics[m],
+                      machine_metrics[m]["cycle_time"])
+        for m in machines.keys()
+    ]
+
+    line_availability = min(r["availability"] for r in all_oee_results) if all_oee_results else 0.0
+    line_performance = min(r["performance"] for r in all_oee_results) if all_oee_results else 0.0
+    line_quality = min(r["quality"] for r in all_oee_results) if all_oee_results else 0.0
+    line_oee = line_availability * line_performance * line_quality
+
+    return line_availability, line_performance, line_quality, line_oee
+
+
+def write_system_opcua_vars(opcua_vars, sim_time, total_parts_produced, total_wip,
+                            line_availability, line_performance, line_quality, line_oee,
+                            maint_active, maint_queue_length, total_repairs):
+    """Write system-level and line-level KPIs to OPC UA."""
+    opcua_vars["system"]["simtime"].set_value(sim_time)
+    opcua_vars["system"]["throughput"].set_value(total_parts_produced)
+    opcua_vars["line_kpis"]["total_wip"].set_value(total_wip)
+    opcua_vars["line_kpis"]["line_availability"].set_value(line_availability)
+    opcua_vars["line_kpis"]["line_performance"].set_value(line_performance)
+    opcua_vars["line_kpis"]["line_quality"].set_value(line_quality)
+    opcua_vars["line_kpis"]["line_oee"].set_value(line_oee)
+
+    opcua_vars["maintenance"]["active"].set_value(maint_active)
+    opcua_vars["maintenance"]["queue"].set_value(maint_queue_length)
+    opcua_vars["maintenance"]["total_repairs"].set_value(total_repairs)
+
+
+def update_shift_opcua_vars(shift_manager, opcua_vars, sim_time, delta_parts):
+    """Update shift tracking metrics and OPC UA variables."""
+    if not (shift_manager and opcua_vars.get("shift")):
+        return
+
+    shift_manager.update_production(delta_parts, 0)
+
+    shift_info = shift_manager.get_current_shift_info()
+    shift_metrics = shift_manager.get_current_shift_metrics()
+    total_metrics = shift_manager.get_total_metrics()
+    prev_shift = shift_manager.get_previous_shift_summary()
+
+    sv = opcua_vars["shift"]
+    sv["shift_number"].set_value(shift_info["shift_number"])
+    sv["shift_name"].set_value(shift_info["shift_name"])
+    sv["shift_start_time"].set_value(shift_info["shift_start_time"])
+    sv["shift_end_time"].set_value(shift_info["shift_end_time"])
+    sv["shift_duration"].set_value(shift_info["shift_duration"])
+    sv["shift_elapsed"].set_value(shift_manager.get_shift_elapsed_time(sim_time))
+    sv["shift_remaining"].set_value(shift_manager.get_shift_time_remaining(sim_time))
+
+    sv["current_parts"].set_value(shift_metrics["parts_produced"])
+    sv["current_good"].set_value(shift_metrics["good_parts"])
+    sv["current_defects"].set_value(shift_metrics["defective_parts"])
+    sv["current_defect_rate"].set_value(shift_metrics["defect_rate"])
+    sv["current_availability"].set_value(shift_metrics["availability"])
+    sv["current_performance"].set_value(shift_metrics["performance"])
+    sv["current_quality"].set_value(shift_metrics["quality"])
+    sv["current_oee"].set_value(shift_metrics["oee"])
+
+    if prev_shift:
+        sv["prev_shift_number"].set_value(prev_shift["shift_number"])
+        sv["prev_shift_name"].set_value(prev_shift["shift_name"])
+        sv["prev_parts"].set_value(prev_shift["parts_produced"])
+        sv["prev_good"].set_value(prev_shift["good_parts"])
+        sv["prev_defects"].set_value(prev_shift["defective_parts"])
+        sv["prev_defect_rate"].set_value(prev_shift["defect_rate"])
+        sv["prev_oee"].set_value(prev_shift["oee"])
+
+    sv["total_parts"].set_value(total_metrics["total_parts_produced"])
+    sv["total_good"].set_value(total_metrics["total_good_parts"])
+    sv["total_defects"].set_value(total_metrics["total_defective_parts"])
+    sv["total_defect_rate"].set_value(total_metrics["total_defect_rate"])
+    sv["total_shifts"].set_value(total_metrics["total_shifts_completed"])
+
+
+def record_historian_events(historian, neo4j_hist, sim_time, machines, machine_metrics,
+                            buffers, machine_alarms_map, buffer_alarms_map, shift_manager,
+                            shift_rotated, spc_monitors, historian_state, config,
+                            total_parts_produced, total_wip, line_oee, delta_parts,
+                            production_summary_counter, production_summary_interval, sim_step):
+    """Collect and record historian events. Returns updated production_summary_counter."""
+    if not historian:
+        return production_summary_counter
+
+    step_events = collect_step_events(
+        sim_time=sim_time,
+        machines=machines,
+        machine_metrics=machine_metrics,
+        buffers=buffers,
+        machine_alarms_map=machine_alarms_map,
+        buffer_alarms_map=buffer_alarms_map,
+        shift_manager=shift_manager,
+        shift_rotated=shift_rotated,
+        spc_monitors=spc_monitors,
+        historian_state=historian_state,
+        config=config,
+    )
+
+    if config.get("historian", {}).get("events", {}).get("production_summary", True):
+        production_summary_counter += sim_step
+        if production_summary_counter >= production_summary_interval:
+            step_events.append(collect_production_summary(
+                sim_time=sim_time,
+                total_parts_produced=total_parts_produced,
+                total_wip=total_wip,
+                line_oee=line_oee,
+                shift_manager=shift_manager,
+            ))
+            production_summary_counter = 0.0
+
+    if step_events:
+        historian.record_events(step_events)
+        if neo4j_hist:
+            neo4j_hist.record_events(step_events)
+
+    if neo4j_hist and delta_parts > 0:
+        machine_name_list = list(machines.keys())
+        neo4j_hist.record_parts(
+            delta_parts=delta_parts,
+            machine_names=machine_name_list,
+            defective_count=0,
+            sim_time=sim_time,
+        )
+
+    return production_summary_counter
+
+
 # ========== SYSTEM BUILDING ==========
 
 def build_simantha_system(config: dict):
@@ -720,65 +1163,38 @@ def build_simantha_system(config: dict):
                 "max_rework": quality_cfg.get("max_rework", 3),
             }
 
-        # Phase 10: Check for advanced failures
+        # Build advanced failure kwargs (shared across AdvancedMachine variants)
+        advanced_kwargs = {}
+        if enable_advanced_failures:
+            failure_modes = [
+                FailureMode(
+                    name=fm_cfg["name"],
+                    type=fm_cfg["type"],
+                    mttf_config=fm_cfg["mttf"],
+                    mttr_config=fm_cfg["mttr"]
+                )
+                for fm_cfg in machine_cfg.get("failure_modes", [])
+            ]
+            strategy_cfg = machine_cfg.get("maintenance_strategy", {"type": "corrective"})
+            advanced_kwargs = {"failure_modes": failure_modes, "maintenance_strategy": strategy_cfg}
+
+        # Select machine class based on feature axes
         if enable_advanced_failures and has_quality_routing:
-            # Parse failure modes
-            failure_modes = []
-            for fm_cfg in machine_cfg.get("failure_modes", []):
-                failure_mode = FailureMode(
-                    name=fm_cfg["name"],
-                    type=fm_cfg["type"],
-                    mttf_config=fm_cfg["mttf"],
-                    mttr_config=fm_cfg["mttr"]
-                )
-                failure_modes.append(failure_mode)
-            strategy_cfg = machine_cfg.get("maintenance_strategy", {"type": "corrective"})
-            machines[name] = QualityAdvancedMachine(
-                name=name,
-                cycle_time=cycle_time,
-                failure_modes=failure_modes,
-                maintenance_strategy=strategy_cfg,
-                **quality_kwargs
-            )
-
+            machine_cls = QualityAdvancedMachine
         elif enable_advanced_failures:
-            # Parse failure modes
-            failure_modes = []
-            for fm_cfg in machine_cfg.get("failure_modes", []):
-                failure_mode = FailureMode(
-                    name=fm_cfg["name"],
-                    type=fm_cfg["type"],
-                    mttf_config=fm_cfg["mttf"],
-                    mttr_config=fm_cfg["mttr"]
-                )
-                failure_modes.append(failure_mode)
-            strategy_cfg = machine_cfg.get("maintenance_strategy", {"type": "corrective"})
-            machines[name] = AdvancedMachine(
-                name=name,
-                cycle_time=cycle_time,
-                failure_modes=failure_modes,
-                maintenance_strategy=strategy_cfg
-            )
-
+            machine_cls = AdvancedMachine
         elif has_quality_routing:
-            # Phase 14: Quality routing (with optional degradation)
-            machines[name] = QualityAwareMachine(
-                name=name,
-                cycle_time=cycle_time,
-                **quality_kwargs,
-                **degradation_kwargs
-            )
-
-        elif enable_degradation:
-            # Phase 4: Simple degradation (legacy)
-            machines[name] = Machine(
-                name=name,
-                cycle_time=cycle_time,
-                **degradation_kwargs
-            )
+            machine_cls = QualityAwareMachine
         else:
-            # No failures
-            machines[name] = Machine(name=name, cycle_time=cycle_time)
+            machine_cls = Machine
+
+        machines[name] = machine_cls(
+            name=name,
+            cycle_time=cycle_time,
+            **advanced_kwargs,
+            **quality_kwargs,
+            **degradation_kwargs
+        )
 
     # Phase 14: Wire scrap sinks to machines (after all objects created)
     for machine_cfg in config["machines"]:
@@ -1103,407 +1519,60 @@ def main(argv=None):
     try:
         while True:
             # Read controls from OPC UA
-            pause_line = bool(opcua_vars["system"]["pause_line"].get_value())
-            interarrival = float(opcua_vars["system"]["interarrival_time"].get_value())
-
-            # Push interarrival time into Simantha source
+            pause_line, interarrival = read_opcua_controls(opcua_vars)
             source.interarrival_time = interarrival
 
-            # Step simulation
+            # Step simulation (CRITICAL: increment sim_time BEFORE simulate)
             if not pause_line:
                 sim_time += sim_step
                 system.simulate(simulation_time=sim_time)
 
-            # Monotonic part counter
-            current_sink_level = sink.level
-            delta_parts_this_step = 0
-            if current_sink_level > prev_sink_level:
-                delta_parts_this_step = current_sink_level - prev_sink_level
-                total_parts_produced += delta_parts_this_step
-                prev_sink_level = current_sink_level
-            elif current_sink_level < prev_sink_level:
-                prev_sink_level = current_sink_level
+            # Monotonic part counter (handles sink.level decreasing during maintenance)
+            delta_parts, total_parts_produced, prev_sink_level = update_part_counter(
+                sink.level, prev_sink_level, total_parts_produced)
 
-            # Phase 12: Shift tracking and rotation
-            shift_rotated = False
-            if shift_manager and not pause_line:
-                # Check if shift should rotate
-                shift_rotated = shift_manager.check_shift_rotation(sim_time)
-                if shift_rotated:
-                    print(f"\n[SHIFT CHANGE] Shift {shift_manager.current_shift_number} started: {shift_manager.shift_definitions[shift_manager.current_shift_index].name}")
+            # Shift rotation check
+            shift_rotated = check_shift_rotation(shift_manager, sim_time, pause_line)
 
-            # Total WIP (sum of all buffer levels)
-            total_wip = sum(buffer.level for buffer in buffers.values())
+            # System-level metrics (WIP, maintenance)
+            total_wip, maint_active, maint_queue_length, total_repairs = \
+                collect_system_metrics(buffers, maintainer)
 
-            # Maintenance status
-            if maintainer is not None:
-                try:
-                    # Check if maintainer is currently repairing
-                    maint_active = len(maintainer.in_progress) > 0
-                    # Queue length (machines waiting for maintenance)
-                    maint_queue_length = len(maintainer.queue)
-                    # Total repairs completed (rough estimate from maintainer stats)
-                    total_repairs = maintainer.total_throughput if hasattr(maintainer, 'total_throughput') else 0
-                except AttributeError:
-                    # Fallback if Simantha Maintainer API differs
-                    maint_active = False
-                    maint_queue_length = 0
-                    total_repairs = 0
-            else:
-                maint_active = False
-                maint_queue_length = 0
-                total_repairs = 0
-
-            # Phase 13: Collect alarm maps for historian
+            # Per-machine: state detection, metrics, defects, alarms, OEE, SPC, OPC UA writes
             machine_alarms_map = {}
-            buffer_alarms_map = {}
-
-            # Update machine states and metrics (LOOP instead of m1/m2 specific)
             for machine_name, machine_obj in machines.items():
-                metrics = machine_metrics[machine_name]
+                alarms = process_machine_step(
+                    machine_name, machine_obj, machine_metrics[machine_name],
+                    config["machines"], total_parts_produced, pause_line, sim_step,
+                    maintainer, shift_manager, spc_monitors, opcua_vars, sink)
+                if alarms:
+                    machine_alarms_map[machine_name] = alarms
 
-                # Store previous partcount for defect calculation (Phase 8)
-                prev_partcount = metrics["partcount"]
+            # Buffer levels and alarms
+            buffer_alarms_map = update_buffers(buffers, opcua_vars)
 
-                # Accumulate time based on previous state
-                if not pause_line:
-                    accumulate_time(metrics, metrics["prev_state"], sim_step)
+            # Scrap tracking
+            update_scrap_tracking(scrap_sinks, total_parts_produced, opcua_vars)
 
-                # Detect current state
-                machine_cfg = next(m for m in config["machines"] if m["name"] == machine_name)
-                enable_health = machine_cfg.get("enable_degradation", False)
-                health_state = machine_obj.health if enable_health else 0
+            # Line-level OEE (bottleneck model)
+            line_avail, line_perf, line_qual, line_oee = \
+                calculate_line_level_oee(machines, machine_metrics)
 
-                # Check if this machine is being repaired
-                machine_maint_active = False
-                if maintainer:
-                    try:
-                        machine_maint_active = machine_obj in maintainer.in_progress
-                    except AttributeError:
-                        machine_maint_active = False
+            # Write system KPIs to OPC UA
+            write_system_opcua_vars(opcua_vars, sim_time, total_parts_produced, total_wip,
+                                    line_avail, line_perf, line_qual, line_oee,
+                                    maint_active, maint_queue_length, total_repairs)
 
-                current_state = detect_machine_state(machine_obj, pause_line, health_state, machine_maint_active)
+            # Shift OPC UA updates
+            update_shift_opcua_vars(shift_manager, opcua_vars, sim_time, delta_parts)
 
-                # Update state
-                metrics["prev_state"] = current_state
-
-                # Part count (all machines in series produce same total)
-                metrics["partcount"] = total_parts_produced
-
-                # Phase 14: Quality routing machines handle defects internally
-                if isinstance(machine_obj, (QualityAwareMachine, QualityAdvancedMachine)):
-                    # Read actual counts from machine (decided in output_addon_process)
-                    metrics["defective_parts"] = machine_obj._scrap_count + machine_obj._defective_count
-                    metrics["good_parts"] = machine_obj._good_count
-                    metrics["partcount"] = metrics["good_parts"] + metrics["defective_parts"]
-                    new_defects = metrics["defective_parts"] - (prev_partcount - metrics.get("prev_good", 0))
-                    if new_defects < 0:
-                        new_defects = 0
-                else:
-                    # Phase 8: Statistical defect calculation (non-routing machines)
-                    new_defects = calculate_defects(
-                        prev_partcount=prev_partcount,
-                        current_partcount=metrics["partcount"],
-                        base_defect_rate=metrics["base_defect_rate"],
-                        health_state=health_state,
-                        health_multiplier=metrics["health_multiplier"],
-                        enable_health_correlation=enable_health
-                    )
-                    metrics["defective_parts"] += new_defects
-                    metrics["good_parts"] = metrics["partcount"] - metrics["defective_parts"]
-
-                    # Phase 8b: Mark individual parts as defective
-                    if new_defects > 0 and hasattr(sink, 'contents') and len(sink.contents) > 0:
-                        for i in range(1, min(new_defects + 1, len(sink.contents) + 1)):
-                            part = sink.contents[-i]
-                            if not hasattr(part, 'is_defective') or not part.is_defective:
-                                mark_part_defective(part, machine_name, defect_type="quality")
-
-                # Phase 12: Update shift metrics (if shift tracking enabled)
-                if shift_manager and not pause_line:
-                    shift_manager.update_machine_time(machine_name, sim_step, current_state)
-                    if current_state == "FAILED" and metrics["prev_state"] != "FAILED":
-                        shift_manager.record_failure(machine_name)
-
-                # Phase 9: Alarm detection
-                new_parts = metrics["partcount"] - prev_partcount
-                machine_alarms = detect_machine_alarms(
-                    machine_name=machine_name,
-                    current_state=current_state,
-                    metrics=metrics,
-                    health_state=health_state,
-                    machine_maint_active=machine_maint_active,
-                    new_defects=new_defects,
-                    new_parts=new_parts
-                )
-
-                # Update alarm variables
-                if machine_alarms:
-                    update_alarm_variables(opcua_vars["machines"][machine_name], machine_alarms)
-                    machine_alarms_map[machine_name] = machine_alarms
-
-                # Calculate OEE (Phase 8: pass quality data)
-                oee_result = calculate_oee(
-                    metrics["partcount"],
-                    metrics,
-                    metrics["cycle_time"],
-                    good_parts=metrics["good_parts"],
-                    defective_parts=metrics["defective_parts"]
-                )
-
-                # Calculate utilization
-                total_time = sum([metrics[k] for k in ["processing_time", "blocked_time",
-                                                        "starved_time", "down_time", "idle_time"]])
-                utilisation = metrics["processing_time"] / total_time if total_time > 0 else 0.0
-
-                # Write to OPC UA
-                machine_vars = opcua_vars["machines"][machine_name]
-                machine_vars["state"].set_value(current_state)
-                machine_vars["partcount"].set_value(metrics["partcount"])
-                machine_vars["utilisation"].set_value(utilisation)
-                machine_vars["blocked_time"].set_value(metrics["blocked_time"])
-                machine_vars["starved_time"].set_value(metrics["starved_time"])
-                machine_vars["down_time"].set_value(metrics["down_time"])
-                machine_vars["processing_time"].set_value(metrics["processing_time"])
-                machine_vars["idle_time"].set_value(metrics["idle_time"])
-
-                # Health (if enabled)
-                if "health" in machine_vars:
-                    health_pct = 100.0 * (1 - health_state)
-                    machine_vars["health"].set_value(health_state)
-                    machine_vars["health_pct"].set_value(health_pct)
-
-                # Phase 10: Failure mode statistics (if enabled)
-                if isinstance(machine_obj, AdvancedMachine):
-                    # Get active failure mode
-                    active_mode = machine_obj.get_active_failure_mode()
-                    machine_vars["fm_active"].set_value(active_mode)
-
-                    # Get statistics for all failure modes
-                    fm_stats = machine_obj.get_failure_mode_stats()
-                    for fm_name, stats in fm_stats.items():
-                        machine_vars[f"fm_{fm_name}_count"].set_value(stats["failure_count"])
-                        machine_vars[f"fm_{fm_name}_downtime"].set_value(stats["total_downtime"])
-                        machine_vars[f"fm_{fm_name}_mtbf"].set_value(stats["mtbf"])
-                        machine_vars[f"fm_{fm_name}_mttr"].set_value(stats["mttr"])
-
-                    # Get maintenance statistics
-                    maint_stats = machine_obj.get_maintenance_stats()
-                    machine_vars["ms_type"].set_value(maint_stats["strategy_type"])
-                    machine_vars["ms_pm_count"].set_value(maint_stats["pm_count"])
-                    machine_vars["ms_cm_count"].set_value(maint_stats["cm_count"])
-                    machine_vars["ms_next_pm"].set_value(maint_stats["next_pm_time"])
-
-                # Phase 11: SPC analytics (if enabled)
-                if machine_name in spc_monitors:
-                    spc_monitor = spc_monitors[machine_name]
-
-                    # Add measurement when machine completes a part (partcount increased)
-                    if new_parts > 0:
-                        # For each completed part, add a cycle time measurement
-                        # Use actual cycle_time as the measurement (in real system, would be measured)
-                        for _ in range(new_parts):
-                            measurement = metrics["cycle_time"]
-                            spc_monitor.add_measurement(measurement)
-
-                    # Get current SPC metrics
-                    spc_metrics = spc_monitor.get_metrics()
-
-                    # Update OPC UA variables
-                    machine_vars["spc_xbar_current"].set_value(spc_metrics.x_bar)
-                    machine_vars["spc_xbar_ucl"].set_value(spc_metrics.x_bar_ucl)
-                    machine_vars["spc_xbar_cl"].set_value(spc_metrics.x_bar_cl)
-                    machine_vars["spc_xbar_lcl"].set_value(spc_metrics.x_bar_lcl)
-
-                    machine_vars["spc_r_current"].set_value(spc_metrics.range)
-                    machine_vars["spc_r_ucl"].set_value(spc_metrics.r_ucl)
-                    machine_vars["spc_r_cl"].set_value(spc_metrics.r_cl)
-                    machine_vars["spc_r_lcl"].set_value(spc_metrics.r_lcl)
-
-                    machine_vars["spc_cp"].set_value(spc_metrics.cp)
-                    machine_vars["spc_cpk"].set_value(spc_metrics.cpk)
-                    machine_vars["spc_pp"].set_value(spc_metrics.pp)
-                    machine_vars["spc_ppk"].set_value(spc_metrics.ppk)
-                    machine_vars["spc_sigma_level"].set_value(spc_metrics.sigma_level)
-
-                    machine_vars["spc_in_control"].set_value(spc_metrics.in_control)
-                    # Join violations list into comma-separated string
-                    violations_str = ", ".join(spc_metrics.violations) if spc_metrics.violations else ""
-                    machine_vars["spc_violations"].set_value(violations_str)
-                    machine_vars["spc_total_samples"].set_value(spc_metrics.total_samples)
-                    machine_vars["spc_num_subgroups"].set_value(spc_metrics.num_subgroups)
-
-                # OEE
-                machine_vars["availability"].set_value(oee_result["availability"])
-                machine_vars["performance"].set_value(oee_result["performance"])
-                machine_vars["quality"].set_value(oee_result["quality"])
-                machine_vars["oee"].set_value(oee_result["oee"])
-                machine_vars["good_parts"].set_value(oee_result["good_parts"])
-                machine_vars["defective_parts"].set_value(oee_result["defective_parts"])
-                machine_vars["theoretical"].set_value(oee_result["theoretical_output"])
-
-                # Phase 14: Quality routing OPC UA updates
-                if isinstance(machine_obj, (QualityAwareMachine, QualityAdvancedMachine)):
-                    if "qr_scrap_count" in machine_vars:
-                        machine_vars["qr_scrap_count"].set_value(machine_obj._scrap_count)
-                        machine_vars["qr_rework_count"].set_value(machine_obj._rework_count)
-                        machine_vars["qr_rework_success_count"].set_value(machine_obj._rework_success_count)
-                        rsr = (machine_obj._rework_success_count / machine_obj._rework_count
-                               if machine_obj._rework_count > 0 else 0.0)
-                        machine_vars["qr_rework_success_rate"].set_value(rsr)
-                        machine_vars["qr_good_count"].set_value(machine_obj._good_count)
-
-            # Update buffer levels
-            for buffer_name, buffer_obj in buffers.items():
-                buffer_vars = opcua_vars["buffers"][buffer_name]
-                buffer_vars["level"].set_value(buffer_obj.level)
-
-                # Phase 9: Buffer alarm detection
-                # Initialize buffer alarm state if needed
-                if not hasattr(buffer_obj, '_alarm_state'):
-                    buffer_obj._alarm_state = {}
-
-                buffer_alarms = detect_buffer_alarms(
-                    buffer_name=buffer_name,
-                    buffer_level=buffer_obj.level,
-                    buffer_capacity=buffer_obj.capacity,
-                    alarm_state=buffer_obj._alarm_state
-                )
-
-                # Update alarm variables
-                if buffer_alarms:
-                    update_alarm_variables(buffer_vars, buffer_alarms)
-                    buffer_alarms_map[buffer_name] = buffer_alarms
-
-            # Phase 14: Track scrap sink levels
-            total_scrap = 0
-            for scrap_name, scrap_obj in scrap_sinks.items():
-                scrap_level = scrap_obj.level
-                total_scrap += scrap_level
-                if scrap_name in opcua_vars["scrap_sinks"]:
-                    opcua_vars["scrap_sinks"][scrap_name]["level"].set_value(scrap_level)
-
-            total_output = total_parts_produced + total_scrap
-            opcua_vars["scrap_kpis"]["total_scrap"].set_value(total_scrap)
-            opcua_vars["scrap_kpis"]["scrap_rate"].set_value(
-                total_scrap / total_output if total_output > 0 else 0.0
-            )
-
-            # Line-level OEE (bottleneck logic - minimum of all stations)
-            all_oee_results = [calculate_oee(machine_metrics[m]["partcount"],
-                                             machine_metrics[m],
-                                             machine_metrics[m]["cycle_time"])
-                              for m in machines.keys()]
-
-            line_availability = min(result["availability"] for result in all_oee_results) if all_oee_results else 0.0
-            line_performance = min(result["performance"] for result in all_oee_results) if all_oee_results else 0.0
-            line_quality = min(result["quality"] for result in all_oee_results) if all_oee_results else 0.0
-            line_oee = line_availability * line_performance * line_quality
-
-            # Write system and line-level KPIs to OPC UA
-            opcua_vars["system"]["simtime"].set_value(sim_time)
-            opcua_vars["system"]["throughput"].set_value(total_parts_produced)
-            opcua_vars["line_kpis"]["total_wip"].set_value(total_wip)
-            opcua_vars["line_kpis"]["line_availability"].set_value(line_availability)
-            opcua_vars["line_kpis"]["line_performance"].set_value(line_performance)
-            opcua_vars["line_kpis"]["line_quality"].set_value(line_quality)
-            opcua_vars["line_kpis"]["line_oee"].set_value(line_oee)
-
-            # Write maintenance status
-            opcua_vars["maintenance"]["active"].set_value(maint_active)
-            opcua_vars["maintenance"]["queue"].set_value(maint_queue_length)
-            opcua_vars["maintenance"]["total_repairs"].set_value(total_repairs)
-
-            # Phase 12: Update shift metrics and OPC UA variables
-            if shift_manager and opcua_vars["shift"]:
-                # Update shift production metrics (defects tracked per-machine in shift_manager)
-                shift_manager.update_production(delta_parts_this_step, 0)
-
-                # Get shift information
-                shift_info = shift_manager.get_current_shift_info()
-                shift_metrics = shift_manager.get_current_shift_metrics()
-                total_metrics = shift_manager.get_total_metrics()
-                prev_shift = shift_manager.get_previous_shift_summary()
-
-                # Update current shift info
-                opcua_vars["shift"]["shift_number"].set_value(shift_info["shift_number"])
-                opcua_vars["shift"]["shift_name"].set_value(shift_info["shift_name"])
-                opcua_vars["shift"]["shift_start_time"].set_value(shift_info["shift_start_time"])
-                opcua_vars["shift"]["shift_end_time"].set_value(shift_info["shift_end_time"])
-                opcua_vars["shift"]["shift_duration"].set_value(shift_info["shift_duration"])
-                opcua_vars["shift"]["shift_elapsed"].set_value(shift_manager.get_shift_elapsed_time(sim_time))
-                opcua_vars["shift"]["shift_remaining"].set_value(shift_manager.get_shift_time_remaining(sim_time))
-
-                # Update current shift metrics
-                opcua_vars["shift"]["current_parts"].set_value(shift_metrics["parts_produced"])
-                opcua_vars["shift"]["current_good"].set_value(shift_metrics["good_parts"])
-                opcua_vars["shift"]["current_defects"].set_value(shift_metrics["defective_parts"])
-                opcua_vars["shift"]["current_defect_rate"].set_value(shift_metrics["defect_rate"])
-                opcua_vars["shift"]["current_availability"].set_value(shift_metrics["availability"])
-                opcua_vars["shift"]["current_performance"].set_value(shift_metrics["performance"])
-                opcua_vars["shift"]["current_quality"].set_value(shift_metrics["quality"])
-                opcua_vars["shift"]["current_oee"].set_value(shift_metrics["oee"])
-
-                # Update previous shift summary (if available)
-                if prev_shift:
-                    opcua_vars["shift"]["prev_shift_number"].set_value(prev_shift["shift_number"])
-                    opcua_vars["shift"]["prev_shift_name"].set_value(prev_shift["shift_name"])
-                    opcua_vars["shift"]["prev_parts"].set_value(prev_shift["parts_produced"])
-                    opcua_vars["shift"]["prev_good"].set_value(prev_shift["good_parts"])
-                    opcua_vars["shift"]["prev_defects"].set_value(prev_shift["defective_parts"])
-                    opcua_vars["shift"]["prev_defect_rate"].set_value(prev_shift["defect_rate"])
-                    opcua_vars["shift"]["prev_oee"].set_value(prev_shift["oee"])
-
-                # Update total metrics
-                opcua_vars["shift"]["total_parts"].set_value(total_metrics["total_parts_produced"])
-                opcua_vars["shift"]["total_good"].set_value(total_metrics["total_good_parts"])
-                opcua_vars["shift"]["total_defects"].set_value(total_metrics["total_defective_parts"])
-                opcua_vars["shift"]["total_defect_rate"].set_value(total_metrics["total_defect_rate"])
-                opcua_vars["shift"]["total_shifts"].set_value(total_metrics["total_shifts_completed"])
-
-            # Phase 13: Record historian events
-            if historian:
-                step_events = collect_step_events(
-                    sim_time=sim_time,
-                    machines=machines,
-                    machine_metrics=machine_metrics,
-                    buffers=buffers,
-                    machine_alarms_map=machine_alarms_map,
-                    buffer_alarms_map=buffer_alarms_map,
-                    shift_manager=shift_manager,
-                    shift_rotated=shift_rotated,
-                    spc_monitors=spc_monitors,
-                    historian_state=historian_state,
-                    config=config,
-                )
-
-                # Periodic production summary
-                if config.get("historian", {}).get("events", {}).get("production_summary", True):
-                    production_summary_counter += sim_step
-                    if production_summary_counter >= production_summary_interval:
-                        step_events.append(collect_production_summary(
-                            sim_time=sim_time,
-                            total_parts_produced=total_parts_produced,
-                            total_wip=total_wip,
-                            line_oee=line_oee,
-                            shift_manager=shift_manager,
-                        ))
-                        production_summary_counter = 0.0
-
-                if step_events:
-                    historian.record_events(step_events)
-                    if neo4j_hist:
-                        neo4j_hist.record_events(step_events)
-
-                # Phase 13c: Part tracking in Neo4j
-                if neo4j_hist and delta_parts_this_step > 0:
-                    machine_name_list = list(machines.keys())
-                    neo4j_hist.record_parts(
-                        delta_parts=delta_parts_this_step,
-                        machine_names=machine_name_list,
-                        defective_count=0,
-                        sim_time=sim_time,
-                    )
+            # Historian events
+            production_summary_counter = record_historian_events(
+                historian, neo4j_hist, sim_time, machines, machine_metrics,
+                buffers, machine_alarms_map, buffer_alarms_map, shift_manager,
+                shift_rotated, spc_monitors, historian_state, config,
+                total_parts_produced, total_wip, line_oee, delta_parts,
+                production_summary_counter, production_summary_interval, sim_step)
 
             time.sleep(real_step)
 

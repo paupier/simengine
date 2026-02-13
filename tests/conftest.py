@@ -2,6 +2,7 @@
 Pytest fixtures for OPC UA testing.
 
 This module provides fixtures to start/stop the OPC UA server for integration tests.
+Shared factory functions are in tests/factories.py.
 """
 import pytest
 import threading

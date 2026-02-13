@@ -151,12 +151,9 @@ def validate_machine_quality_config(machine_cfg: dict) -> None:
             raise ValueError(
                 f"Machine '{machine_cfg['name']}': health_multiplier must be >= 0, got {mult}"
             )
-"""
-Phase 10 Configuration Validation Extensions
 
-Additional validation functions for advanced failure modes.
-These will be integrated into config_loader.py.
-"""
+
+# ========== Advanced Failure Mode Validation (Phase 10) ==========
 
 
 def validate_failure_modes(machine_cfg: dict) -> None:

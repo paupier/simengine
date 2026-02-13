@@ -14,21 +14,7 @@ from neo4j_historian import (
     create_neo4j_historian_from_config,
     _source_type_to_label,
 )
-
-
-def make_event(**kwargs):
-    """Helper to create a SimEvent with defaults."""
-    defaults = {
-        "timestamp": 10.0,
-        "wall_clock": "2026-02-08T12:00:00",
-        "event_type": "STATE_CHANGE",
-        "source": "M1",
-        "source_type": "machine",
-        "severity": "INFO",
-        "message": "M1: IDLE -> PROCESSING",
-    }
-    defaults.update(kwargs)
-    return SimEvent(**defaults)
+from factories import make_event
 
 
 # ========== Source Type Mapping ==========

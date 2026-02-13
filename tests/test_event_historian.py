@@ -74,19 +74,7 @@ class TestSimEvent:
 # ========== CSVHistorian Tests ==========
 
 
-def _make_event(timestamp=1.0, event_type="STATE_CHANGE", source="M1",
-                message="test event", **kwargs):
-    """Helper to create test events."""
-    return SimEvent(
-        timestamp=timestamp,
-        wall_clock="2026-02-08T10:00:00",
-        event_type=event_type,
-        source=source,
-        source_type=kwargs.pop("source_type", "machine"),
-        severity=kwargs.pop("severity", "INFO"),
-        message=message,
-        **kwargs,
-    )
+from factories import make_event as _make_event, make_machine_metrics as _make_machine_metrics
 
 
 class TestCSVHistorian:
@@ -368,30 +356,6 @@ class TestEnvVarResolution:
 
 
 # ========== Event Collection Tests ==========
-
-
-def _make_machine_metrics(state="IDLE", partcount=0, **kwargs):
-    """Create a minimal machine_metrics dict for testing."""
-    return {
-        "partcount": partcount,
-        "blocked_time": 0.0,
-        "starved_time": 0.0,
-        "down_time": 0.0,
-        "processing_time": kwargs.get("processing_time", 0.0),
-        "idle_time": kwargs.get("idle_time", 0.0),
-        "prev_state": state,
-        "cycle_time": 1.0,
-        "good_parts": kwargs.get("good_parts", partcount),
-        "defective_parts": kwargs.get("defective_parts", 0),
-        "base_defect_rate": 0.0,
-        "health_multiplier": 3.0,
-        "prev_health_state": 0,
-        "prev_maint_active": False,
-        "prev_defect_rate": 0.0,
-        "alarm_machine_failed_active": False,
-        "alarm_maintenance_active": False,
-        "alarm_quality_alert_active": False,
-    }
 
 
 class TestCollectStepEvents:

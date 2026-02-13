@@ -34,44 +34,67 @@ flake8 src/ tests/ --count --exit-zero --max-complexity=10 --max-line-length=127
 docker compose -f docker/docker-compose.yml up --build -d
 ```
 
-**pytest.ini** sets `pythonpath = src`, so imports resolve from `src/` automatically.
+**pytest.ini** sets `pythonpath = src tests`, so imports resolve from `src/` and `tests/` automatically.
 
 ## Architecture
 
 ### Entry Point
 
-`src/opcua_server.py` (~1600 lines) is the main entry point. It:
+`src/opcua_server.py` is the main entry point. It:
 1. Parses CLI args (`--scenario`, `--seed`)
 2. Loads config via `config_loader.py` from `config/line_models.yaml`
 3. Creates Simantha objects (Source → Buffer → Machine → Buffer → ... → Sink)
 4. Builds the OPC UA address space with per-machine/buffer/alarm nodes
-5. Runs the simulation loop, updating OPC UA variables each step
+5. Runs the simulation loop via extracted step functions, updating OPC UA variables each step
 
-### Machine Inheritance Hierarchy
+### Main Loop Architecture
+
+The simulation loop in `main()` delegates to extracted functions for each concern:
+- `read_opcua_controls()` — read pause/interarrival from OPC UA clients
+- `update_part_counter()` — monotonic sink tracking
+- `check_shift_rotation()` — shift boundary detection
+- `collect_system_metrics()` — WIP, maintenance status
+- `process_machine_step()` — per-machine state, metrics, defects, alarms, OEE, SPC
+- `write_machine_opcua_vars()` — per-machine OPC UA variable writes
+- `update_buffers()` — buffer levels and alarms
+- `update_scrap_tracking()` — scrap sink levels and KPIs
+- `calculate_line_level_oee()` — bottleneck OEE model
+- `write_system_opcua_vars()` — system/line KPIs
+- `update_shift_opcua_vars()` — shift metrics
+- `record_historian_events()` — event collection and recording
+
+### Machine Class Hierarchy (Mixin Pattern)
 
 ```
+QualityRoutingMixin (src/quality_machine.py) — scrap/rework via output_addon_process()
+  + simantha.Machine → QualityAwareMachine
+  + AdvancedMachine  → QualityAdvancedMachine
+
 simantha.Machine
   └── AdvancedMachine (src/advanced_machine.py) — failure modes, scipy distributions
-        ├── QualityAdvancedMachine (src/quality_machine.py) — scrap/rework routing
-        └── (plain AdvancedMachine for lines without quality routing)
-
-simantha.Machine
-  └── QualityAwareMachine (src/quality_machine.py) — scrap/rework without advanced failures
 ```
 
-Each subclass adds features via `output_addon_process(part)` hooks without modifying Simantha internals.
+Features are composed via mixins. Adding a new axis (e.g., EnergyMixin) requires only the mixin class plus one-line combinations, not a class explosion. Use `isinstance(obj, QualityRoutingMixin)` to check for quality routing capability.
 
 ### Key Modules
 
 | Module | Purpose |
 |--------|---------|
-| `config_loader.py` + `config_loader_phase10.py` | YAML validation, topology construction |
+| `config_loader.py` | YAML validation, topology construction, failure mode validation |
 | `failure_modes.py` | `FailureModeManager`, `DistributionFactory` (Weibull, exponential, lognormal) |
 | `spc_analytics.py` | X-bar/R control charts, Cp/Cpk capability, Western Electric rules |
 | `shift_manager.py` | Shift rotation, per-shift metric reset |
 | `event_historian.py` | `EventHistorian` ABC → `CSVHistorian`, `InfluxDBHistorian`, `CompositeHistorian` |
 | `neo4j_historian.py` | `Neo4jHistorian` (optional graph DB backend) |
-| `quality_machine.py` | Scrap sinks, rework routing, `_redirect_to()` buffer bookkeeping fix |
+| `quality_machine.py` | `QualityRoutingMixin`, scrap/rework routing, `_redirect_to()` buffer bookkeeping |
+
+### Test Infrastructure
+
+Shared test factories live in `tests/factories.py`:
+- `make_event()` — SimEvent with sensible defaults
+- `make_part()` — Mock Part with quality routing attributes
+- `make_machine_metrics()` — Machine metrics dict
+- `make_quality_machine()` — QualityAwareMachine with mocked internals
 
 ### Configuration
 

@@ -14,41 +14,9 @@ from quality_machine import (
     QualityAdvancedMachine,
     _quality_route,
     _redirect_to,
-    _init_quality_attrs,
 )
 from simantha import Sink, Buffer, Machine
-
-
-# ========== Helper ==========
-
-
-def make_part(is_defective=False, rework_count=0):
-    """Create a mock Part with optional defect attributes."""
-    part = MagicMock()
-    part.is_defective = is_defective
-    part.rework_count = rework_count
-    part.routing_history = []
-    part.scrapped = False
-    part.scrapped_at_machine = None
-    part.failed_at_machine = None
-    part.defect_type = None
-    return part
-
-
-def make_quality_machine(defect_rate=0.05, scrap_sink=None, rework_enabled=False,
-                         rework_success_rate=0.8, max_rework=3,
-                         enable_health_correlation=False, health_multiplier=3.0):
-    """Create a QualityAwareMachine with mocked internals."""
-    m = object.__new__(QualityAwareMachine)
-    _init_quality_attrs(
-        m, defect_rate, health_multiplier, enable_health_correlation,
-        rework_enabled, rework_success_rate, max_rework
-    )
-    m._scrap_sink = scrap_sink
-    m.name = "M1"
-    m.target_receiver = MagicMock()  # Original target (a buffer)
-    m.target_receiver.reserved_vacancy = 1
-    return m
+from factories import make_part, make_quality_machine
 
 
 # ========== _quality_route Tests ==========
