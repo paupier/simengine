@@ -1,5 +1,11 @@
+import logging
 import random
 import time
+
+# Suppress noisy OPC UA library warnings
+logging.getLogger("opcua").setLevel(logging.WARNING)
+logging.getLogger("opcua.server.internal_server").setLevel(logging.ERROR)
+logging.getLogger("opcua.server.address_space").setLevel(logging.ERROR)
 
 from opcua import Server
 from simantha import Source, Machine, Buffer, Sink, System, Maintainer

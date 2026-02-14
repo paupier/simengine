@@ -27,8 +27,12 @@ pytest tests/test_quality_routing.py::test_scrap_routing_basic -v
 pytest tests/ --ignore=tests/test_advanced_scenarios.py --ignore=tests/test_opcua_integration.py --cov=src --cov-report=html
 
 # Lint (CI uses two passes: errors-only then warnings)
-flake8 src/ tests/ --count --select=E9,F63,F7,F82 --show-source --statistics
-flake8 src/ tests/ --count --exit-zero --max-complexity=10 --max-line-length=127
+# Exclude backup file: --exclude=src/opcua_server_backup_phase7.py
+flake8 src/ tests/ --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=src/opcua_server_backup_phase7.py
+flake8 src/ tests/ --count --exit-zero --max-complexity=10 --max-line-length=127 --exclude=src/opcua_server_backup_phase7.py
+
+# Run Flask web UI locally (no Docker needed)
+python docker/webui/app.py
 
 # Docker stack (Web UI + InfluxDB + Grafana)
 docker compose -f docker/docker-compose.yml up --build -d
@@ -80,13 +84,33 @@ Features are composed via mixins. Adding a new axis (e.g., EnergyMixin) requires
 
 | Module | Purpose |
 |--------|---------|
-| `config_loader.py` | YAML validation, topology construction, failure mode validation |
+| `config_loader.py` | YAML validation, topology construction, failure mode validation, `target_ppm` support |
 | `failure_modes.py` | `FailureModeManager`, `DistributionFactory` (Weibull, exponential, lognormal) |
 | `spc_analytics.py` | X-bar/R control charts, Cp/Cpk capability, Western Electric rules |
 | `shift_manager.py` | Shift rotation, per-shift metric reset |
 | `event_historian.py` | `EventHistorian` ABC → `CSVHistorian`, `InfluxDBHistorian`, `CompositeHistorian` |
 | `neo4j_historian.py` | `Neo4jHistorian` (optional graph DB backend) |
 | `quality_machine.py` | `QualityRoutingMixin`, scrap/rework routing, `_redirect_to()` buffer bookkeeping |
+
+### Flask Web UI (`docker/webui/`)
+
+The web UI runs both locally and in Docker via environment variable defaults:
+
+| Env Var | Default (local) | Docker Override |
+|---------|-----------------|-----------------|
+| `SIMANTHA_CONFIG_PATH` | `<project>/config/line_models.yaml` | `/app/config/line_models_runtime.yaml` |
+| `SIMANTHA_SERVER_SCRIPT` | `<project>/src/opcua_server.py` | `/app/src/opcua_server.py` |
+| `SIMANTHA_OPCUA_ENDPOINT` | `opc.tcp://localhost:4840/simantha/` | (same) |
+
+Routes:
+- `/` — Main dashboard with live KPIs, per-machine OEE/PPM/SPC, shift progress
+- `/config` — Visual scenario editor with CRUD and YAML preview
+- `/api/scenarios` — List scenarios
+- `/api/scenario/<name>` — GET/PUT single scenario config
+- `/api/scenario` — POST to create new scenario
+- `/api/start`, `/api/stop`, `/api/control` — Simulation lifecycle
+- `/api/status` — Live status with OPC UA values (OEE, PPM, SPC, shifts, scrap)
+- `/api/logs` — Recent simulation log lines
 
 ### Test Infrastructure
 
@@ -99,6 +123,11 @@ Shared test factories live in `tests/factories.py`:
 ### Configuration
 
 `config/line_models.yaml` defines 16 scenarios (balanced, bottleneck, failure, SPC, shifts, historian, scrap, rework, full_feature, etc.). Each scenario specifies machines, buffers, optional maintainer, failure_modes, quality_routing, shifts, historian backends, and SPC config.
+
+Per-machine options include:
+- `cycle_time` — direct cycle time in seconds
+- `target_ppm` — parts per minute target (derives `cycle_time = 60 / target_ppm`; takes precedence if both given)
+- `spc.measurement_noise` — coefficient of variation for SPC measurement noise (default: 0.02)
 
 ### Event Historian Design
 
@@ -148,11 +177,35 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(script_dir)
 ```
 
-## OPC UA Writable Controls
+## OPC UA Address Space
+
+OPC UA node names use `Machine{i}` (e.g., `Machine1`, `Machine2`). The address space tree:
+
+```
+Line1/
+  Machine{i}/              State, PartCount, Utilisation, TargetPPM, ActualPPM
+    OEE/                   Availability, Performance, Quality, OEE, GoodPartCount, DefectivePartCount
+    Alarms/                MachineFailedActive, MaintenanceActive, QualityAlertActive
+    SPC/Capability/        Cp, Cpk (if enable_spc)
+    FailureModes/          ActiveFailureMode (if enable_advanced_failures)
+    QualityRouting/        ScrapCount, ReworkCount (if quality_routing enabled)
+  Buffer{i}/               Level, Capacity
+  System/
+    Controls/              cmdPauseLine (writable), setInterarrivalTime (writable)
+    SimTime, Throughput, WIP
+  LineKPIs/
+    LineOEE/               Availability, Performance, Quality, OEE
+    TotalScrap, ScrapRate
+  Shift/CurrentShift/      CurrentShiftName, ShiftElapsedTime, ShiftDuration
+```
 
 Only two variables are writable by OPC UA clients:
-- `PauseLine` (bool) — global pause/resume
-- `InterarrivalTime` (float) — part arrival rate on the source
+- `cmdPauseLine` (bool) — global pause/resume
+- `setInterarrivalTime` (float) — part arrival rate on the source
+
+## Randomness and Reproducibility
+
+The `--seed` CLI argument seeds both `random` (Python stdlib) and `numpy.random` (used by scipy distributions). This makes defect generation, SPC measurement noise, quality routing decisions, and MTTF/MTTR distributions reproducible. Simantha's internal RNG is not controllable.
 
 ## CI
 

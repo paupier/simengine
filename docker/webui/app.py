@@ -7,6 +7,7 @@ for scenario selection, simulation control, and live KPI monitoring.
 import os
 import signal
 import subprocess
+import sys
 import threading
 import time
 from collections import deque
@@ -152,16 +153,19 @@ def start_simulation(scenario, seed=None):
 
 
 def stop_simulation():
-    """Send SIGINT for graceful shutdown (flushes historians)."""
+    """Gracefully stop the simulation subprocess."""
     global sim_process, sim_scenario, sim_start_time, _opcua_client
 
     _disconnect_opcua()
 
     if sim_process and sim_process.poll() is None:
         try:
-            sim_process.send_signal(signal.SIGINT)
+            if sys.platform == "win32":
+                sim_process.terminate()
+            else:
+                sim_process.send_signal(signal.SIGINT)
             sim_process.wait(timeout=10)
-        except (ProcessLookupError, subprocess.TimeoutExpired):
+        except (ProcessLookupError, subprocess.TimeoutExpired, ValueError):
             sim_process.kill()
             sim_process.wait(timeout=5)
     sim_process = None
