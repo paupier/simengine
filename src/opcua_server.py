@@ -1,3 +1,4 @@
+import random
 import time
 
 from opcua import Server
@@ -820,6 +821,7 @@ def process_machine_step(machine_name, machine_obj, metrics, config_machines,
         good_parts=metrics["good_parts"],
         defective_parts=metrics["defective_parts"]
     )
+    metrics["oee"] = oee_result["oee"]
 
     # Utilization
     total_time = sum(
@@ -878,7 +880,8 @@ def write_machine_opcua_vars(machine_vars, machine_obj, current_state, metrics,
     if spc_monitor:
         if new_parts > 0:
             for _ in range(new_parts):
-                measurement = metrics["cycle_time"]
+                # Simulate real measurement with natural process variation (~2% CV)
+                measurement = metrics["cycle_time"] * (1.0 + random.gauss(0, 0.02))
                 spc_monitor.add_measurement(measurement)
 
         spc_metrics = spc_monitor.get_metrics()
@@ -979,7 +982,9 @@ def calculate_line_level_oee(machines, machine_metrics):
     all_oee_results = [
         calculate_oee(machine_metrics[m]["partcount"],
                       machine_metrics[m],
-                      machine_metrics[m]["cycle_time"])
+                      machine_metrics[m]["cycle_time"],
+                      good_parts=machine_metrics[m]["good_parts"],
+                      defective_parts=machine_metrics[m]["defective_parts"])
         for m in machines.keys()
     ]
 
@@ -1306,7 +1311,8 @@ def build_opcua_server(config: dict):
     # System controls (writable inputs to control simulation)
     controls_node = system_node.add_object(idx, "Controls")
     var_pause_line = controls_node.add_variable(idx, "cmdPauseLine", False)
-    var_interarrival = controls_node.add_variable(idx, "setInterarrivalTime", 0.0)
+    default_interarrival = config.get("source", {}).get("interarrival_time", 1.0)
+    var_interarrival = controls_node.add_variable(idx, "setInterarrivalTime", default_interarrival)
 
     # Dynamic station creation (Phase 7)
     machines_vars = {}
@@ -1520,7 +1526,8 @@ def main(argv=None):
         while True:
             # Read controls from OPC UA
             pause_line, interarrival = read_opcua_controls(opcua_vars)
-            source.interarrival_time = interarrival
+            # interarrival_time=0 means "use Simantha default" (unlimited supply, no flooding)
+            source.interarrival_time = interarrival if interarrival > 0 else None
 
             # Step simulation (CRITICAL: increment sim_time BEFORE simulate)
             if not pause_line:
@@ -1600,10 +1607,10 @@ def main(argv=None):
         if historian:
             historian.flush()
             historian.close()
-            print(f"Event historian closed ({historian.event_count} events recorded)")
+            print(f"Event historian closed ({historian.get_event_count()} events recorded)")
         if neo4j_hist:
             neo4j_hist.close()
-            print(f"Neo4j historian closed ({neo4j_hist.event_count} events, {neo4j_hist._part_counter} parts)")
+            print(f"Neo4j historian closed ({neo4j_hist.get_event_count()} events, {neo4j_hist._part_counter} parts)")
         server.stop()
         print("Server stopped.")
 
