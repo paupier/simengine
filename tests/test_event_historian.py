@@ -1,4 +1,4 @@
-"""Tests for Phase 13: Event Historian module."""
+"""Tests for Event Historian module."""
 
 import csv
 import json

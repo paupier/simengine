@@ -10,7 +10,7 @@ A real-time **digital twin** of a manufacturing production line using [Simantha]
 
 ## 📋 Project Status
 
-**Current Phase:** Phase 14 Complete – Scrap & Rework Routing
+**Status:** All 14 development phases complete
 **Last Updated:** 2026-02-09
 
 ### Phase Completion Status
@@ -22,7 +22,7 @@ A real-time **digital twin** of a manufacturing production line using [Simantha]
 | **Phase 3:** Bidirectional Control | ✅ **Complete** | Global pause, arrival rate control |
 | **Phase 4:** Health & Degradation | ✅ **Complete** | Machine health tracking, maintenance modeling, failure events |
 | **Phase 5:** Enhanced State Logic | ✅ **Complete** | 6-state machine (IDLE/PROCESSING/BLOCKED/STARVED/FAILED/UNDER_REPAIR/PAUSED), real utilization, time tracking |
-| **Phase 6:** OEE Calculation | ✅ **Complete** | Per-station and line-level OEE (Availability × Performance × Quality) |
+| **Phase 6:** OEE Calculation | ✅ **Complete** | Per-machine and line-level OEE (Availability × Performance × Quality) |
 | **Phase 7:** Multi-Buffer Lines | ✅ **Complete** | 3+ machines, config-driven topologies |
 | **Phase 8:** Quality Modeling | ✅ **Complete** | Health-correlated defect tracking, real Quality OEE |
 | **Phase 9:** OPC UA Alarms & Events | ✅ **Complete** | Real-time alarm generation (failure, maintenance, quality alerts) |
@@ -54,7 +54,7 @@ This project creates a **realistic manufacturing digital twin** that:
 - ✅ **Maintenance Strategies** - Corrective, preventive, and predictive maintenance
 - ✅ **Buffer Dynamics** - WIP accumulates/drains based on machine states
 - ✅ **Quality Defects** - Health-correlated defect rates with individual part tracking
-- ✅ **OEE Calculation** - Availability x Performance x Quality per station and line-level
+- ✅ **OEE Calculation** - Availability x Performance x Quality per machine and line-level
 - ✅ **SPC Analytics** - X-bar/R control charts, Cp/Cpk capability, Western Electric rules
 - ✅ **Shift Management** - Configurable shift rotation with per-shift metrics and OEE
 - ✅ **Alarms & Events** - Machine failure, quality, maintenance, and buffer alerts
@@ -62,7 +62,7 @@ This project creates a **realistic manufacturing digital twin** that:
 - ✅ **Time Tracking** - Cumulative time in each state per machine
 - ✅ **Event Historian** - CSV, InfluxDB 2.x, Neo4j backends with edge-detection logging
 - ✅ **Grafana Dashboards** - Manufacturing overview, state timeline, alarm log, shift comparison
-- ✅ **Scrap & Rework Routing** - Defective parts routed to scrap sinks, virtual rework at station
+- ✅ **Scrap & Rework Routing** - Defective parts routed to scrap sinks, virtual rework at machine
 - ✅ **Quality Routing** - Per-part defect decisions inside simulation with health correlation
 
 ---
@@ -131,7 +131,7 @@ Press Ctrl+C to stop.
 4. Drag variables to Data Access View to monitor live values
 
 **What to watch:**
-- `Station1/HealthPercent` drops from 100 → 0 when M1 fails
+- `Machine1/HealthPercent` drops from 100 → 0 when M1 fails
 - `Maintenance/MaintenanceActive` becomes True during repairs
 - `Buffer1/CurrentLevel` drains when M1 is down
 - `System/Throughput` pauses during failures, resumes after repair
@@ -169,7 +169,7 @@ Press Ctrl+C to stop.
 
 ## 📊 OPC UA Address Space
 
-### Current Structure (Phase 14)
+### Current Structure
 
 ```
 Objects/
@@ -183,15 +183,15 @@ Objects/
       │
       ├─ LineKPIs/
       │    ├─ TotalWIP (int, READ-ONLY)             # Work-in-process (buffer level)
-      │    ├─ TotalScrap (int, READ-ONLY)           # Phase 14: Total scrapped parts
-      │    ├─ ScrapRate (double, READ-ONLY)         # Phase 14: Scrap / (Output + Scrap)
-      │    └─ LineOEE/                              # Phase 6: Line-level OEE metrics
-      │         ├─ Availability (double, READ-ONLY) # Min of all stations (bottleneck)
-      │         ├─ Performance (double, READ-ONLY)  # Min of all stations (bottleneck)
-      │         ├─ Quality (double, READ-ONLY)      # Min of all stations (1.0 in Phase 6)
+      │    ├─ TotalScrap (int, READ-ONLY)           # Total scrapped parts
+      │    ├─ ScrapRate (double, READ-ONLY)         # Scrap / (Output + Scrap)
+      │    └─ LineOEE/                              # Line-level OEE metrics
+      │         ├─ Availability (double, READ-ONLY) # Min of all machines (bottleneck)
+      │         ├─ Performance (double, READ-ONLY)  # Min of all machines (bottleneck)
+      │         ├─ Quality (double, READ-ONLY)      # Min of all machines (1.0 when no defects)
       │         └─ OEE (double, READ-ONLY)          # Availability × Performance × Quality
       │
-      ├─ Station1/ (M1)
+      ├─ Machine1/ (M1)
       │    ├─ State (string, READ-ONLY)             # IDLE, PROCESSING, BLOCKED, STARVED, PAUSED, FAILED, UNDER_REPAIR
       │    ├─ PartCount (int, READ-ONLY)            # Parts processed (monotonic)
       │    ├─ Utilisation (double, READ-ONLY)       # ProcessingTime / TotalTime (range: 0.0-1.0)
@@ -202,15 +202,15 @@ Objects/
       │    ├─ DownTime (double, READ-ONLY)          # Time spent failed or under repair
       │    ├─ ProcessingTime (double, READ-ONLY)    # Time spent actively processing parts
       │    ├─ IdleTime (double, READ-ONLY)          # Time spent idle (waiting for work)
-      │    └─ OEE/                                  # Phase 6: OEE metrics
+      │    └─ OEE/                                  # OEE metrics
       │         ├─ Availability (double, READ-ONLY) # (TotalTime - DownTime) / TotalTime
       │         ├─ Performance (double, READ-ONLY)  # ActualOutput / TheoreticalOutput
-      │         ├─ Quality (double, READ-ONLY)      # GoodParts / TotalParts (1.0 in Phase 6)
+      │         ├─ Quality (double, READ-ONLY)      # GoodParts / TotalParts (1.0 when no defects)
       │         ├─ OEE (double, READ-ONLY)          # Availability × Performance × Quality
-      │         ├─ GoodPartCount (int, READ-ONLY)   # Parts without defects (Phase 8 prep)
-      │         ├─ DefectivePartCount (int, READ-ONLY) # Defective parts (Phase 8 prep)
+      │         ├─ GoodPartCount (int, READ-ONLY)   # Parts without defects (quality tracking)
+      │         ├─ DefectivePartCount (int, READ-ONLY) # Defective parts (quality tracking)
       │         └─ TheoreticalOutput (double, READ-ONLY) # Diagnostic: max possible output
-      │    └─ QualityRouting/                        # Phase 14 (if quality_routing enabled)
+      │    └─ QualityRouting/                        # (if quality_routing enabled)
       │         ├─ ScrapCount (int, READ-ONLY)       # Parts sent to scrap sink
       │         ├─ ReworkCount (int, READ-ONLY)      # Total rework attempts
       │         ├─ ReworkSuccessCount (int, READ-ONLY) # Successful reworks
@@ -221,7 +221,7 @@ Objects/
       │    ├─ CurrentLevel (int, READ-ONLY)         # Current WIP count
       │    └─ Capacity (int, READ-ONLY)             # Max buffer capacity (10)
       │
-      ├─ Station2/ (M2)
+      ├─ Machine2/ (M2)
       │    ├─ State (string, READ-ONLY)             # IDLE, PROCESSING, BLOCKED, STARVED, PAUSED
       │    ├─ PartCount (int, READ-ONLY)            # Parts processed (monotonic)
       │    ├─ Utilisation (double, READ-ONLY)       # ProcessingTime / TotalTime (range: 0.0-1.0)
@@ -230,13 +230,13 @@ Objects/
       │    ├─ DownTime (double, READ-ONLY)          # Time spent down (M2 has no degradation, so always 0)
       │    ├─ ProcessingTime (double, READ-ONLY)    # Time spent actively processing parts
       │    ├─ IdleTime (double, READ-ONLY)          # Time spent idle (waiting for work)
-      │    └─ OEE/                                  # Phase 6: OEE metrics
+      │    └─ OEE/                                  # OEE metrics
       │         ├─ Availability (double, READ-ONLY) # (TotalTime - DownTime) / TotalTime
       │         ├─ Performance (double, READ-ONLY)  # ActualOutput / TheoreticalOutput
-      │         ├─ Quality (double, READ-ONLY)      # GoodParts / TotalParts (1.0 in Phase 6)
+      │         ├─ Quality (double, READ-ONLY)      # GoodParts / TotalParts (1.0 when no defects)
       │         ├─ OEE (double, READ-ONLY)          # Availability × Performance × Quality
-      │         ├─ GoodPartCount (int, READ-ONLY)   # Parts without defects (Phase 8 prep)
-      │         ├─ DefectivePartCount (int, READ-ONLY) # Defective parts (Phase 8 prep)
+      │         ├─ GoodPartCount (int, READ-ONLY)   # Parts without defects (quality tracking)
+      │         ├─ DefectivePartCount (int, READ-ONLY) # Defective parts (quality tracking)
       │         └─ TheoreticalOutput (double, READ-ONLY) # Diagnostic: max possible output
       │
       ├─ Maintenance/
@@ -244,13 +244,13 @@ Objects/
       │    ├─ QueueLength (int, READ-ONLY)          # Machines waiting for repair
       │    └─ TotalRepairs (int, READ-ONLY)         # Completed repairs count
       │
-      ├─ ScrapBin1/                                  # Phase 14 (if scrap_sinks configured)
+      ├─ ScrapBin1/                                  # (if scrap_sinks configured)
       │    └─ CurrentLevel (int, READ-ONLY)         # Scrapped parts count
       │
       ├─ ScrapBin2/                                  # (one node per scrap sink)
       │    └─ CurrentLevel (int, READ-ONLY)
       │
-      └─ Shift/                                     # Phase 12 (if shifts configured)
+      └─ Shift/                                     # (if shifts configured)
            ├─ CurrentShiftNumber (int, READ-ONLY)   # Sequential counter (1, 2, 3...)
            ├─ CurrentShiftName (string, READ-ONLY)  # "Day Shift", "Evening Shift", etc.
            ├─ ShiftElapsedTime (double, READ-ONLY)  # Time in current shift
@@ -326,7 +326,7 @@ pytest tests/test_scenarios.py -v             # Scenario validation
    - Set `cmdPauseLine = True` → Simulation freezes
    - Set `setInterarrivalTime = 5.0` → Parts arrive every 5 seconds (slower)
 4. **Observe failures:**
-   - Watch `Station1/HealthPercent` drop to 0 when M1 fails
+   - Watch `Machine1/HealthPercent` drop to 0 when M1 fails
    - See `Maintenance/MaintenanceActive = True` during repair
    - Buffer drains while M1 is down
 
@@ -348,7 +348,7 @@ Real machines don't have their "ideal" cycle time change dynamically. Instead, *
 
 - ✅ Health degradation (wear, fouling, calibration drift)
 - ✅ Unplanned downtime (failures, jams)
-- ✅ Quality issues (rework, scrap) - *Phase 8*
+- ✅ Quality issues (rework, scrap)
 - ✅ Speed losses (running below design speed)
 
 This naturally creates bottlenecks, buffer utilization, and WIP fluctuations.
@@ -394,16 +394,16 @@ if current_sink_level > prev_sink_level:
 ```
 simantha-opcua/
 ├─ src/
-│   ├─ opcua_server.py            # Main OPC UA server (Phase 2-12)
-│   ├─ simantha_baseline.py       # Phase 1: Baseline scenarios (batch mode)
-│   ├─ config_loader.py           # YAML configuration loader + failure mode validation
-│   ├─ failure_modes.py           # Phase 10: Statistical failure distributions
-│   ├─ advanced_machine.py        # Phase 10: AdvancedMachine class
-│   ├─ spc_analytics.py           # Phase 11: SPC control charts & capability
-│   ├─ shift_manager.py           # Phase 12: Shift tracking & rotation
-│   ├─ event_historian.py         # Phase 13: CSV/InfluxDB event historian
-│   ├─ neo4j_historian.py         # Phase 13: Neo4j graph DB historian
-│   └─ quality_machine.py         # Phase 14: QualityRoutingMixin + scrap routing
+│   ├─ opcua_server.py            # Main OPC UA server
+│   ├─ simantha_baseline.py       # Baseline scenarios (batch mode)
+│   ├─ config_loader.py           # YAML configuration loader + validation
+│   ├─ failure_modes.py           # Statistical failure distributions
+│   ├─ advanced_machine.py        # AdvancedMachine class
+│   ├─ spc_analytics.py           # SPC control charts & capability
+│   ├─ shift_manager.py           # Shift tracking & rotation
+│   ├─ event_historian.py         # CSV/InfluxDB event historian
+│   ├─ neo4j_historian.py         # Neo4j graph DB historian
+│   └─ quality_machine.py         # QualityRoutingMixin + scrap routing
 │
 ├─ config/
 │   └─ line_models.yaml           # Scenario definitions (16 scenarios)
@@ -468,7 +468,7 @@ simantha-opcua/
 | Phase | Features |
 |-------|----------|
 | **Phase 5** | Enhanced State Logic - 6-state machine, BLOCKED/STARVED detection, time tracking |
-| **Phase 6** | OEE Calculation - Per-station & line-level Availability x Performance x Quality |
+| **Phase 6** | OEE Calculation - Per-machine & line-level Availability x Performance x Quality |
 | **Phase 7** | Multi-Buffer Lines - Config-driven N-machine topologies, YAML scenarios |
 | **Phase 8** | Quality Modeling - Health-correlated defects, individual part tracking, First Pass Yield |
 | **Phase 9** | OPC UA Alarms - Machine failure, maintenance, quality, buffer alerts with edge detection |
@@ -525,7 +525,7 @@ python src/opcua_server.py --scenario shift_line
 python src/opcua_server.py --scenario advanced_shift_line
 ```
 
-**OPC UA Variables (Phase 12):**
+**OPC UA Variables (Shift Tracking):**
 
 ```plaintext
 Line1/Shift/
@@ -668,9 +668,9 @@ python src/opcua_server.py --scenario rework_line --seed 42
 python src/opcua_server.py --scenario full_feature_line --seed 42
 ```
 
-**OPC UA Variables (Phase 14):**
+**OPC UA Variables (Scrap & Rework):**
 ```plaintext
-Station1/QualityRouting/           (only for machines with quality_routing)
+Machine1/QualityRouting/           (only for machines with quality_routing)
   ScrapCount         (Int32)       Parts diverted to scrap sink
   ReworkCount        (Int32)       Total rework attempts
   ReworkSuccessCount (Int32)       Successful reworks (part saved)
@@ -698,8 +698,8 @@ Event types include: `STATE_CHANGE`, `ALARM`, `SHIFT_CHANGE`, `SCRAP`, `REWORK`,
 
 ### Future Phases
 
-- **Phase 15:** Parallel Lines & Assembly - Multi-line coordination
-- **Phase 16:** Energy/Sustainability Modeling
+- **Parallel Lines & Assembly** - Multi-line coordination
+- **Energy/Sustainability Modeling**
 
 ---
 

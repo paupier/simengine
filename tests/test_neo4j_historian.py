@@ -1,4 +1,4 @@
-"""Tests for Phase 13c: Neo4j Graph Database Historian (all mocked)."""
+"""Tests for Neo4j Graph Database Historian (all mocked)."""
 
 import os
 import sys

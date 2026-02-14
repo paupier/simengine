@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simantha - Config Editor</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background: #f8f9fa; }
+        .yaml-preview {
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 12px;
+            border-radius: 6px;
+            white-space: pre-wrap;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        .machine-section, .buffer-section {
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 10px;
+        }
+        .remove-btn { cursor: pointer; color: #dc3545; }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a href="/" class="navbar-brand mb-0 h1">Simantha Digital Twin</a>
+            <span class="navbar-text text-light">Scenario Config Editor</span>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-3">
+        <div class="row">
+            <!-- Left: Form -->
+            <div class="col-md-7">
+                <div class="card mb-3">
+                    <div class="card-header d-flex justify-content-between">
+                        <strong>Scenario Editor</strong>
+                        <div>
+                            <select id="scenario-select" class="form-select form-select-sm d-inline-block" style="width:auto;"
+                                    onchange="loadScenario(this.value)"></select>
+                            <button class="btn btn-sm btn-outline-primary ms-2" onclick="newScenario()">New</button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div id="alert-area"></div>
+
+                        <!-- Scenario name (for new scenarios) -->
+                        <div class="mb-3" id="name-group" style="display:none;">
+                            <label class="form-label">Scenario Name</label>
+                            <input type="text" id="scenario-name" class="form-control" placeholder="my_custom_line">
+                        </div>
+
+                        <!-- Machines -->
+                        <h6>Machines</h6>
+                        <div id="machines-container"></div>
+                        <button class="btn btn-sm btn-outline-success mb-3" onclick="addMachine()">+ Add Machine</button>
+
+                        <!-- Buffers (auto-generated info) -->
+                        <h6>Buffers</h6>
+                        <div id="buffers-container"></div>
+
+                        <!-- Features -->
+                        <h6>Features</h6>
+                        <div class="row mb-3">
+                            <div class="col-md-4">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="feat-maintainer">
+                                    <label class="form-check-label" for="feat-maintainer">Maintainer</label>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="feat-shifts">
+                                    <label class="form-check-label" for="feat-shifts">Shifts</label>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="feat-historian">
+                                    <label class="form-check-label" for="feat-historian">Historian</label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Actions -->
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-primary" id="btn-save" onclick="saveScenario()">Save</button>
+                            <button class="btn btn-outline-secondary" onclick="previewYaml()">Preview YAML</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right: YAML Preview -->
+            <div class="col-md-5">
+                <div class="card">
+                    <div class="card-header"><strong>YAML Preview</strong></div>
+                    <div class="card-body">
+                        <div class="yaml-preview" id="yaml-preview">Select a scenario or click "Preview YAML" to see the config.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let isNewScenario = false;
+        let currentScenario = null;
+        let scenarioData = null;
+
+        // --- Load scenario list ---
+        async function loadScenarioList() {
+            const resp = await fetch('/api/scenarios');
+            const scenarios = await resp.json();
+            const select = document.getElementById('scenario-select');
+            select.innerHTML = '<option value="">-- Select --</option>';
+            for (const name of Object.keys(scenarios)) {
+                const opt = document.createElement('option');
+                opt.value = name;
+                opt.textContent = name;
+                select.appendChild(opt);
+            }
+        }
+
+        // --- Load a scenario into the form ---
+        async function loadScenario(name) {
+            if (!name) return;
+            isNewScenario = false;
+            currentScenario = name;
+            document.getElementById('name-group').style.display = 'none';
+
+            const resp = await fetch(`/api/scenario/${name}`);
+            scenarioData = await resp.json();
+            populateForm(scenarioData);
+            loadYamlPreview(name);
+        }
+
+        function newScenario() {
+            isNewScenario = true;
+            currentScenario = null;
+            document.getElementById('name-group').style.display = '';
+            document.getElementById('scenario-name').value = '';
+            document.getElementById('scenario-select').value = '';
+
+            // Default: 2 machines, 1 buffer
+            scenarioData = {
+                machines: [
+                    {name: 'M1', cycle_time: 1.0, failure_rate: 0.0, repair_time: 10.0},
+                    {name: 'M2', cycle_time: 1.0, failure_rate: 0.0, repair_time: 10.0}
+                ],
+                buffers: [
+                    {name: 'B1', capacity: 10, upstream: 'M1', downstream: 'M2'}
+                ]
+            };
+            populateForm(scenarioData);
+            document.getElementById('yaml-preview').textContent = 'Click "Preview YAML" to see the config.';
+        }
+
+        // --- Populate form from config data ---
+        function populateForm(cfg) {
+            const mc = document.getElementById('machines-container');
+            mc.innerHTML = '';
+            (cfg.machines || []).forEach((m, i) => {
+                mc.innerHTML += buildMachineForm(m, i);
+            });
+
+            rebuildBuffers();
+
+            document.getElementById('feat-maintainer').checked =
+                cfg.maintainer && cfg.maintainer.enabled;
+            document.getElementById('feat-shifts').checked = !!cfg.shifts;
+            document.getElementById('feat-historian').checked = !!cfg.historian;
+        }
+
+        function buildMachineForm(m, idx) {
+            return `
+            <div class="machine-section" id="machine-${idx}">
+                <div class="d-flex justify-content-between mb-2">
+                    <strong>Machine ${idx + 1}</strong>
+                    <span class="remove-btn" onclick="removeMachine(${idx})">&times; Remove</span>
+                </div>
+                <div class="row g-2">
+                    <div class="col-md-3">
+                        <label class="form-label small">Name</label>
+                        <input type="text" class="form-control form-control-sm m-name" value="${m.name || ''}">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small">Cycle Time</label>
+                        <input type="number" class="form-control form-control-sm m-cycle" value="${m.cycle_time || 1}" step="0.1" min="0.1">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small">Target PPM</label>
+                        <input type="number" class="form-control form-control-sm m-ppm" value="${m.target_ppm || ''}" step="1" min="0" placeholder="optional">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small">Defect Rate</label>
+                        <input type="number" class="form-control form-control-sm m-defect" value="${m.defect_rate || 0}" step="0.01" min="0" max="1">
+                    </div>
+                </div>
+                <div class="row g-2 mt-1">
+                    <div class="col-md-4">
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input m-spc" type="checkbox" ${m.enable_spc ? 'checked' : ''}>
+                            <label class="form-check-label small">SPC</label>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input m-failures" type="checkbox" ${m.enable_advanced_failures ? 'checked' : ''}>
+                            <label class="form-check-label small">Adv. Failures</label>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input m-qr" type="checkbox" ${m.quality_routing && m.quality_routing.enabled ? 'checked' : ''}>
+                            <label class="form-check-label small">Quality Routing</label>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+        }
+
+        function addMachine() {
+            const mc = document.getElementById('machines-container');
+            const count = mc.querySelectorAll('.machine-section').length;
+            const name = `M${count + 1}`;
+            const m = {name: name, cycle_time: 1.0, defect_rate: 0};
+            mc.insertAdjacentHTML('beforeend', buildMachineForm(m, count));
+            rebuildBuffers();
+        }
+
+        function removeMachine(idx) {
+            const sections = document.querySelectorAll('.machine-section');
+            if (sections.length <= 2) {
+                showAlert('Minimum 2 machines required', 'warning');
+                return;
+            }
+            sections[idx].remove();
+            // Re-index remaining machines
+            document.querySelectorAll('.machine-section').forEach((s, i) => {
+                s.id = `machine-${i}`;
+                s.querySelector('strong').textContent = `Machine ${i + 1}`;
+            });
+            rebuildBuffers();
+        }
+
+        function rebuildBuffers() {
+            const names = Array.from(document.querySelectorAll('.m-name')).map(el => el.value);
+            const bc = document.getElementById('buffers-container');
+            if (names.length < 2) {
+                bc.innerHTML = '<p class="text-muted small">Need at least 2 machines for buffers</p>';
+                return;
+            }
+            let html = '';
+            for (let i = 0; i < names.length - 1; i++) {
+                html += `
+                <div class="buffer-section">
+                    <div class="row g-2 align-items-center">
+                        <div class="col-md-3">
+                            <label class="form-label small">Name</label>
+                            <input type="text" class="form-control form-control-sm b-name" value="B${i + 1}">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small">Capacity</label>
+                            <input type="number" class="form-control form-control-sm b-cap" value="10" min="1">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small">Routing</label>
+                            <div class="form-control-plaintext small">${names[i]} &rarr; ${names[i + 1]}</div>
+                        </div>
+                    </div>
+                </div>`;
+            }
+            bc.innerHTML = html;
+        }
+
+        // --- Collect form data into config object ---
+        function collectFormData() {
+            const machineEls = document.querySelectorAll('.machine-section');
+            const machines = [];
+            machineEls.forEach(el => {
+                const m = {
+                    name: el.querySelector('.m-name').value,
+                    cycle_time: parseFloat(el.querySelector('.m-cycle').value) || 1.0,
+                    defect_rate: parseFloat(el.querySelector('.m-defect').value) || 0,
+                };
+                const ppm = el.querySelector('.m-ppm').value;
+                if (ppm) {
+                    m.target_ppm = parseInt(ppm);
+                    delete m.cycle_time;  // PPM takes precedence
+                }
+                if (el.querySelector('.m-spc').checked) m.enable_spc = true;
+                if (el.querySelector('.m-failures').checked) m.enable_advanced_failures = true;
+                if (el.querySelector('.m-qr').checked) {
+                    m.quality_routing = {enabled: true};
+                }
+                machines.push(m);
+            });
+
+            const bufferEls = document.querySelectorAll('.buffer-section');
+            const buffers = [];
+            bufferEls.forEach((el, i) => {
+                buffers.push({
+                    name: el.querySelector('.b-name').value,
+                    capacity: parseInt(el.querySelector('.b-cap').value) || 10,
+                    upstream: machines[i].name,
+                    downstream: machines[i + 1].name,
+                });
+            });
+
+            const cfg = {machines, buffers};
+            if (document.getElementById('feat-maintainer').checked) {
+                cfg.maintainer = {enabled: true};
+            }
+            return cfg;
+        }
+
+        // --- Save ---
+        async function saveScenario() {
+            const cfg = collectFormData();
+            let url, method;
+
+            if (isNewScenario) {
+                const name = document.getElementById('scenario-name').value.trim();
+                if (!name) {
+                    showAlert('Please enter a scenario name', 'warning');
+                    return;
+                }
+                cfg._name = name;
+                url = '/api/scenario';
+                method = 'POST';
+            } else {
+                url = `/api/scenario/${currentScenario}`;
+                method = 'PUT';
+            }
+
+            const resp = await fetch(url, {
+                method: method,
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(cfg)
+            });
+            const result = await resp.json();
+            if (resp.ok) {
+                showAlert(`Scenario saved: ${result.scenario}`, 'success');
+                await loadScenarioList();
+                if (isNewScenario) {
+                    document.getElementById('scenario-select').value = result.scenario;
+                    isNewScenario = false;
+                    currentScenario = result.scenario;
+                    document.getElementById('name-group').style.display = 'none';
+                }
+            } else {
+                showAlert(result.error, 'danger');
+            }
+        }
+
+        // --- YAML Preview ---
+        async function previewYaml() {
+            const cfg = collectFormData();
+            // Generate client-side YAML-like preview
+            const name = isNewScenario
+                ? (document.getElementById('scenario-name').value.trim() || 'new_scenario')
+                : currentScenario;
+            let lines = [`${name}:`];
+            lines.push('  machines:');
+            for (const m of cfg.machines) {
+                lines.push(`    - name: ${m.name}`);
+                if (m.target_ppm) lines.push(`      target_ppm: ${m.target_ppm}`);
+                else lines.push(`      cycle_time: ${m.cycle_time}`);
+                if (m.defect_rate) lines.push(`      defect_rate: ${m.defect_rate}`);
+                if (m.enable_spc) lines.push(`      enable_spc: true`);
+                if (m.enable_advanced_failures) lines.push(`      enable_advanced_failures: true`);
+                if (m.quality_routing) lines.push(`      quality_routing:\n        enabled: true`);
+            }
+            lines.push('  buffers:');
+            for (const b of cfg.buffers) {
+                lines.push(`    - name: ${b.name}`);
+                lines.push(`      capacity: ${b.capacity}`);
+                lines.push(`      upstream: ${b.upstream}`);
+                lines.push(`      downstream: ${b.downstream}`);
+            }
+            if (cfg.maintainer) lines.push('  maintainer:\n    enabled: true');
+            document.getElementById('yaml-preview').textContent = lines.join('\n');
+        }
+
+        async function loadYamlPreview(name) {
+            const resp = await fetch(`/api/scenario/${name}/yaml`);
+            const data = await resp.json();
+            document.getElementById('yaml-preview').textContent = data.yaml || 'Error loading YAML';
+        }
+
+        function showAlert(msg, type) {
+            const area = document.getElementById('alert-area');
+            area.innerHTML = `<div class="alert alert-${type} alert-dismissible fade show py-2" role="alert">
+                ${msg}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>`;
+            setTimeout(() => { area.innerHTML = ''; }, 5000);
+        }
+
+        // --- Init ---
+        loadScenarioList();
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

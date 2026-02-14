@@ -1,5 +1,5 @@
 """
-Integration Tests for Advanced Failure Modes (Phase 10c)
+Integration Tests for Advanced Failure Modes
 
 Tests OPC UA server integration with AdvancedMachine and failure modes.
 """
@@ -41,13 +41,13 @@ class TestAdvancedFailureScenario:
         assert opcua_client_advanced is not None
 
     def test_failure_mode_variables_exist(self, opcua_client_advanced):
-        """FailureModes OPC UA nodes exist for Station1."""
+        """FailureModes OPC UA nodes exist for Machine1."""
         root = opcua_client_advanced.get_objects_node()
         line1 = root.get_child(["2:Line1"])
-        station1 = line1.get_child(["2:Station1"])
+        machine1 = line1.get_child(["2:Machine1"])
 
         # Should have FailureModes node
-        fm_node = station1.get_child(["2:FailureModes"])
+        fm_node = machine1.get_child(["2:FailureModes"])
         assert fm_node is not None
 
         # Should have ActiveFailureMode variable
@@ -71,13 +71,13 @@ class TestAdvancedFailureScenario:
         assert mtbf_value >= 0.0
 
     def test_maintenance_strategy_variables_exist(self, opcua_client_advanced):
-        """MaintenanceStrategy OPC UA nodes exist for Station1."""
+        """MaintenanceStrategy OPC UA nodes exist for Machine1."""
         root = opcua_client_advanced.get_objects_node()
         line1 = root.get_child(["2:Line1"])
-        station1 = line1.get_child(["2:Station1"])
+        machine1 = line1.get_child(["2:Machine1"])
 
         # Should have MaintenanceStrategy node
-        ms_node = station1.get_child(["2:MaintenanceStrategy"])
+        ms_node = machine1.get_child(["2:MaintenanceStrategy"])
         assert ms_node is not None
 
         # Should have StrategyType variable
@@ -97,8 +97,8 @@ class TestAdvancedFailureScenario:
         """ElectricalFailureCount exists (second failure mode from config)."""
         root = opcua_client_advanced.get_objects_node()
         line1 = root.get_child(["2:Line1"])
-        station1 = line1.get_child(["2:Station1"])
-        fm_node = station1.get_child(["2:FailureModes"])
+        machine1 = line1.get_child(["2:Machine1"])
+        fm_node = machine1.get_child(["2:FailureModes"])
 
         # Should have ElectricalFailureCount
         elec_count = fm_node.get_child(["2:ElectricalFailureCount"])
@@ -106,23 +106,23 @@ class TestAdvancedFailureScenario:
         count_value = elec_count.get_value()
         assert isinstance(count_value, int)
 
-    def test_station2_no_failure_modes(self, opcua_client_advanced):
-        """Station2 (M2) has no FailureModes node (not configured in advanced_failure_line)."""
+    def test_machine2_no_failure_modes(self, opcua_client_advanced):
+        """Machine2 (M2) has no FailureModes node (not configured in advanced_failure_line)."""
         root = opcua_client_advanced.get_objects_node()
         line1 = root.get_child(["2:Line1"])
-        station2 = line1.get_child(["2:Station2"])
+        machine2 = line1.get_child(["2:Machine2"])
 
         # Attempt to get FailureModes node - should raise exception
         with pytest.raises(Exception):  # OPC UA raises BadNoMatch or similar
-            fm_node = station2.get_child(["2:FailureModes"])
+            fm_node = machine2.get_child(["2:FailureModes"])
 
 
 class TestBackwardCompatibility:
-    """Test that legacy scenarios still work with Phase 10 changes."""
+    """Test that legacy scenarios still work with advanced failure changes."""
 
     @pytest.fixture(scope="class")
     def opcua_client_legacy(self):
-        """Start server with failure_line (Phase 4 scenario) and connect client."""
+        """Start server with failure_line scenario and connect client."""
         import threading
         from src.opcua_server import main
 
@@ -149,13 +149,13 @@ class TestBackwardCompatibility:
         assert opcua_client_legacy is not None
 
     def test_legacy_health_variables_still_work(self, opcua_client_legacy):
-        """Legacy health variables (Phase 4) still exist and work."""
+        """Legacy health variables still exist and work."""
         root = opcua_client_legacy.get_objects_node()
         line1 = root.get_child(["2:Line1"])
-        station1 = line1.get_child(["2:Station1"])
+        machine1 = line1.get_child(["2:Machine1"])
 
         # Should have health variables (enable_degradation=true in failure_line)
-        health_state = station1.get_child(["2:HealthState"])
+        health_state = machine1.get_child(["2:HealthState"])
         assert health_state is not None
         health_value = health_state.get_value()
         assert isinstance(health_value, int)
@@ -165,35 +165,35 @@ class TestBackwardCompatibility:
         """Legacy scenarios don't have FailureModes nodes."""
         root = opcua_client_legacy.get_objects_node()
         line1 = root.get_child(["2:Line1"])
-        station1 = line1.get_child(["2:Station1"])
+        machine1 = line1.get_child(["2:Machine1"])
 
         # Attempt to get FailureModes node - should raise exception
         with pytest.raises(Exception):  # OPC UA raises BadNoMatch or similar
-            fm_node = station1.get_child(["2:FailureModes"])
+            fm_node = machine1.get_child(["2:FailureModes"])
 
     def test_legacy_all_standard_variables_exist(self, opcua_client_legacy):
-        """All standard Phase 1-9 variables still exist in legacy scenarios."""
+        """All standard variables still exist in legacy scenarios."""
         root = opcua_client_legacy.get_objects_node()
         line1 = root.get_child(["2:Line1"])
-        station1 = line1.get_child(["2:Station1"])
+        machine1 = line1.get_child(["2:Machine1"])
 
-        # Phase 1 variables
-        state = station1.get_child(["2:State"])
+        # Core variables
+        state = machine1.get_child(["2:State"])
         assert state is not None
 
-        partcount = station1.get_child(["2:PartCount"])
+        partcount = machine1.get_child(["2:PartCount"])
         assert partcount is not None
 
-        # Phase 5 time variables
-        blocked_time = station1.get_child(["2:BlockedTime"])
+        # Time tracking variables
+        blocked_time = machine1.get_child(["2:BlockedTime"])
         assert blocked_time is not None
 
-        # Phase 6 OEE
-        oee_node = station1.get_child(["2:OEE"])
+        # OEE
+        oee_node = machine1.get_child(["2:OEE"])
         assert oee_node is not None
         oee_value = oee_node.get_child(["2:OEE"])
         assert oee_value is not None
 
-        # Phase 9 Alarms
-        alarms_node = station1.get_child(["2:Alarms"])
+        # Alarms
+        alarms_node = machine1.get_child(["2:Alarms"])
         assert alarms_node is not None

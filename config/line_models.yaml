@@ -4,7 +4,7 @@
 balanced_line:
   machines:
     - name: M1
-      cycle_time: 1.0        # seconds
+      cycle_time: 1.0        # seconds (or use target_ppm: 60 to derive cycle_time)
       failure_rate: 0.0      # failures per hour
       repair_time: 10.0      # seconds
 
@@ -57,7 +57,7 @@ failure_line:
       upstream: M1
       downstream: M2
 
-# Scenario D: Extended 3-Machine Line (Phase 7)
+# Scenario D: Extended 3-Machine Line
 extended_line:
   description: "3-machine serial line with 2 buffers and degradation on M1"
   machines:
@@ -90,7 +90,7 @@ extended_line:
     enabled: true
     capacity: 1
 
-# Scenario E: 4-Machine Long Line (Phase 7 - Scalability Test)
+# Scenario E: 4-Machine Long Line (Scalability Test)
 long_line:
   description: "4-machine serial line for stress testing"
   machines:
@@ -129,7 +129,7 @@ long_line:
   maintainer:
     enabled: false
 
-# Scenario F: Quality Line (Phase 8 - Quality Modeling)
+# Scenario F: Quality Line
 quality_line:
   description: "2-machine line with health-correlated quality degradation"
   machines:
@@ -138,13 +138,13 @@ quality_line:
       enable_degradation: true
       degradation_matrix: [[0.99, 0.01], [0.0, 1.0]]
       cbm_threshold: 1
-      defect_rate: 0.02          # Phase 8: 2% base defect rate (8% when failed)
-      health_multiplier: 3.0     # Phase 8: 3x defect rate multiplier
+      defect_rate: 0.02          # 2% base defect rate (8% when failed)
+      health_multiplier: 3.0     # 3x defect rate multiplier
 
     - name: M2
       cycle_time: 1.0
       enable_degradation: false
-      defect_rate: 0.01          # Phase 8: 1% fixed defect rate
+      defect_rate: 0.01          # 1% fixed defect rate
 
   buffers:
     - name: B1
@@ -156,13 +156,13 @@ quality_line:
     enabled: true
     capacity: 1
 
-# Scenario G: Advanced Failure Modes (Phase 10 - Multiple Failure Types)
+# Scenario G: Advanced Failure Modes (Multiple Failure Types)
 advanced_failure_line:
   description: "2-machine line with realistic MTTF/MTTR distributions and multiple failure types"
   machines:
     - name: M1
       cycle_time: 1
-      enable_advanced_failures: true  # Phase 10: Advanced failure modeling
+      enable_advanced_failures: true  # Advanced failure modeling
 
       # Multiple failure modes with competing risks
       failure_modes:
@@ -207,14 +207,14 @@ advanced_failure_line:
     capacity: 1
 
 
-# Scenario H: SPC Quality Analytics (Phase 11)
+# Scenario H: SPC Quality Analytics
 spc_quality_line:
   description: "2-machine line with Statistical Process Control (SPC) analytics for quality monitoring"
 
   machines:
     - name: M1
       cycle_time: 1
-      enable_spc: true  # Phase 11: Enable SPC analytics
+      enable_spc: true  # Enable SPC analytics
 
       # SPC configuration
       spc:
@@ -225,6 +225,7 @@ spc_quality_line:
         lsl: 0.8                          # Lower specification limit (20% below nominal)
         target: 1.0                       # Target value (nominal cycle time)
         enable_western_electric: true     # Enable out-of-control detection rules
+        measurement_noise: 0.02          # Coefficient of variation for measurement noise
 
       # Optional: Add defect rate for quality tracking
       defect_rate: 0.02                   # 2% base defect rate
@@ -241,6 +242,7 @@ spc_quality_line:
         lsl: 0.7
         target: 1.0
         enable_western_electric: true
+        measurement_noise: 0.02
 
       defect_rate: 0.01  # 1% base defect rate (better quality)
 
@@ -254,15 +256,15 @@ spc_quality_line:
     enabled: false  # No failures in this scenario (focus on quality)
 
 
-# Scenario I: Combined Advanced Failures + SPC (Phase 11)
+# Scenario I: Combined Advanced Failures + SPC
 advanced_spc_line:
   description: "2-machine line combining advanced failure modes with SPC quality analytics"
 
   machines:
     - name: M1
       cycle_time: 1
-      enable_advanced_failures: true  # Phase 10: Advanced failures
-      enable_spc: true                # Phase 11: SPC analytics
+      enable_advanced_failures: true  # Advanced failures
+      enable_spc: true                # SPC analytics
 
       # Multiple failure modes
       failure_modes:
@@ -332,7 +334,7 @@ advanced_spc_line:
     capacity: 1
 
 
-# Scenario J: Shift Tracking (Phase 12)
+# Scenario J: Shift Tracking
 shift_line:
   description: "2-machine line with 8-hour shift tracking - production resets per shift"
 
@@ -354,7 +356,7 @@ shift_line:
   maintainer:
     enabled: false
 
-  # Phase 12: Shift configuration
+  # Shift configuration
   shifts:
     schedule:
       - name: "Day Shift"
@@ -370,7 +372,7 @@ shift_line:
         start_offset: 57600
 
 
-# Scenario K: Shift Tracking with Advanced Features (Phase 12)
+# Scenario K: Shift Tracking with Advanced Features
 advanced_shift_line:
   description: "2-machine line with shift tracking, failures, SPC, and quality modeling"
 
@@ -426,7 +428,7 @@ advanced_shift_line:
     enabled: true
     capacity: 1
 
-  # Phase 12: 3-shift operation (24/7 coverage)
+  # 3-shift operation (24/7 coverage)
   shifts:
     schedule:
       - name: "Day Shift"
@@ -475,7 +477,7 @@ historian_line:
         duration: 28800
         start_offset: 28800
 
-  # Phase 13: Event historian configuration
+  # Event historian configuration
   historian:
     enabled: true
 
@@ -511,7 +513,7 @@ historian_line:
       production_summary: true
       production_summary_interval: 60
 
-# Scenario M: Scrap Routing (Phase 14a)
+# Scenario M: Scrap Routing
 scrap_line:
   description: "2-machine line with scrap sinks for defective parts"
 
@@ -551,7 +553,7 @@ scrap_line:
     enabled: true
     capacity: 1
 
-# Scenario N: Rework Line (Phase 14b)
+# Scenario N: Rework Line
 rework_line:
   description: "2-machine line with virtual rework before scrapping"
 
@@ -597,7 +599,7 @@ full_feature_line:
       enable_advanced_failures: true
       enable_spc: true
 
-      # Phase 10: Advanced failure modes
+      # Advanced failure modes
       failure_modes:
         - name: mechanical
           type: wearout
@@ -620,12 +622,12 @@ full_feature_line:
             mean: 10
             std: 3
 
-      # Phase 10: Maintenance strategy
+      # Maintenance strategy
       maintenance_strategy:
         type: predictive
         cbm_threshold: 1
 
-      # Phase 11: SPC monitoring
+      # SPC monitoring
       spc:
         characteristic: "cycle_time"
         subgroup_size: 5
@@ -635,7 +637,7 @@ full_feature_line:
         target: 1.0
         enable_western_electric: true
 
-      # Phase 14: Scrap & rework routing
+      # Scrap & rework routing
       quality_routing:
         enabled: true
         mode: scrap_and_rework
@@ -679,7 +681,7 @@ full_feature_line:
     enabled: true
     capacity: 1
 
-  # Phase 12: 3-shift operation
+  # 3-shift operation
   shifts:
     schedule:
       - name: "Day Shift"
@@ -694,7 +696,7 @@ full_feature_line:
         duration: 28800
         start_offset: 57600
 
-  # Phase 13: Event historian (CSV + all event types)
+  # Event historian (CSV + all event types)
   historian:
     enabled: true
 

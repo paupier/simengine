@@ -1,5 +1,5 @@
 """
-Shift Management Module (Phase 12)
+Shift Management Module
 
 Tracks manufacturing shifts with automatic rotation and per-shift metrics.
 Production counts, defects, and other metrics reset at shift boundaries.
@@ -37,7 +37,7 @@ class ShiftMetrics:
     starved_time: Dict[str, float] = field(default_factory=dict)
     idle_time: Dict[str, float] = field(default_factory=dict)
 
-    # Failure tracking (Phase 10)
+    # Failure tracking
     failure_count: Dict[str, int] = field(default_factory=dict)
 
     # Quality tracking

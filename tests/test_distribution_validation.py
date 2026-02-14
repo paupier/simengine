@@ -1,5 +1,5 @@
 """
-Statistical Validation Tests for Distributions (Phase 10d)
+Statistical Validation Tests for Distributions
 
 Tests that scipy distributions converge to expected statistical properties.
 These tests use large sample sizes and are marked as slow.

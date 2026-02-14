@@ -1,5 +1,5 @@
 """
-Advanced Machine with Multiple Failure Modes (Phase 10)
+Advanced Machine with Multiple Failure Modes
 
 Extends Simantha's Machine class to support realistic MTTF/MTTR distributions
 and multiple failure modes instead of simple degradation matrices.
@@ -191,7 +191,7 @@ class AdvancedMachine(Machine):
 
         Note:
             Not yet integrated with Simantha's event scheduling.
-            Phase 10c will add PM scheduling to main simulation loop.
+            PM scheduling will be added in a future update.
         """
         self.total_pm_count += 1
         # TODO: Reset health state or adjust failure distributions

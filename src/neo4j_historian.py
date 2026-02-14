@@ -1,5 +1,5 @@
 """
-Phase 13c: Neo4j Graph Database Historian
+Neo4j Graph Database Historian
 
 Stores manufacturing line topology, events, and part traceability in a Neo4j
 graph database.

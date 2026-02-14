@@ -1,5 +1,5 @@
 """
-Phase 13: Event-based historical data logging.
+Event-based historical data logging.
 
 Provides event capture and storage backends for the Simantha OPC UA server.
 Events are only recorded on meaningful changes (state transitions, alarms,
@@ -493,7 +493,7 @@ def collect_step_events(
                 ))
                 historian_state[f"{machine_name}_state"] = current_state
 
-        # ALARM events (reuse alarm tuples from Phase 9)
+        # ALARM events (reuse alarm tuples from alarm detection)
         if event_cfg.get("alarms", True):
             alarms = machine_alarms_map.get(machine_name, [])
             for alarm in alarms:
@@ -543,7 +543,7 @@ def collect_step_events(
                 ))
                 historian_state[f"{machine_name}_spc_in_control"] = spc_metrics.in_control
 
-        # SCRAP events (Phase 14: quality routing)
+        # SCRAP events (quality routing)
         if event_cfg.get("state_changes", True):
             scrap_count = getattr(machines[machine_name], '_scrap_count', None)
             if isinstance(scrap_count, (int, float)):

@@ -4,7 +4,7 @@ opcua:
   endpoint: "opc.tcp://0.0.0.0:4840/simantha/"
   namespace: "http://simantha.nist.gov/"
   server_name: "Simantha Manufacturing Simulation"
-  security_policy: None  # Options: None, Basic256Sha256 (Phase 7+)
+  security_policy: None  # Options: None, Basic256Sha256
 
 simulation:
   real_time_factor: 0.1  # 0.1s real time = 1s simulation time

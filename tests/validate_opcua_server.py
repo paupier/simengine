@@ -52,19 +52,19 @@ def validate_opcua_server():
         print(f"  setInterarrivalTime: {interarrival.get_value()} seconds")
         print("[OK] Control variables OK")
 
-        # Test Station1 (M1)
-        print("\n[4/9] Testing Station1 (M1) variables...")
-        station1 = line1.get_child(["2:Station1"])
-        m1_state = station1.get_child(["2:State"])
-        m1_parts = station1.get_child(["2:PartCount"])
-        m1_util = station1.get_child(["2:Utilisation"])
-        m1_health = station1.get_child(["2:HealthState"])
-        m1_health_pct = station1.get_child(["2:HealthPercent"])
-        m1_blocked_time = station1.get_child(["2:BlockedTime"])
-        m1_starved_time = station1.get_child(["2:StarvedTime"])
-        m1_down_time = station1.get_child(["2:DownTime"])
-        m1_processing_time = station1.get_child(["2:ProcessingTime"])
-        m1_idle_time = station1.get_child(["2:IdleTime"])
+        # Test Machine1 (M1)
+        print("\n[4/9] Testing Machine1 (M1) variables...")
+        machine1 = line1.get_child(["2:Machine1"])
+        m1_state = machine1.get_child(["2:State"])
+        m1_parts = machine1.get_child(["2:PartCount"])
+        m1_util = machine1.get_child(["2:Utilisation"])
+        m1_health = machine1.get_child(["2:HealthState"])
+        m1_health_pct = machine1.get_child(["2:HealthPercent"])
+        m1_blocked_time = machine1.get_child(["2:BlockedTime"])
+        m1_starved_time = machine1.get_child(["2:StarvedTime"])
+        m1_down_time = machine1.get_child(["2:DownTime"])
+        m1_processing_time = machine1.get_child(["2:ProcessingTime"])
+        m1_idle_time = machine1.get_child(["2:IdleTime"])
 
         print(f"  State: {m1_state.get_value()}")
         print(f"  PartCount: {m1_parts.get_value()}")
@@ -76,7 +76,7 @@ def validate_opcua_server():
         print(f"  DownTime: {m1_down_time.get_value()}s")
         print(f"  ProcessingTime: {m1_processing_time.get_value()}s")
         print(f"  IdleTime: {m1_idle_time.get_value()}s")
-        print("[OK] Station1 variables OK")
+        print("[OK] Machine1 variables OK")
 
         # Test Buffer1
         print("\n[5/9] Testing Buffer1 variables...")
@@ -88,17 +88,17 @@ def validate_opcua_server():
         print(f"  Capacity: {b1_capacity.get_value()}")
         print("[OK] Buffer1 variables OK")
 
-        # Test Station2 (M2)
-        print("\n[6/9] Testing Station2 (M2) variables...")
-        station2 = line1.get_child(["2:Station2"])
-        m2_state = station2.get_child(["2:State"])
-        m2_parts = station2.get_child(["2:PartCount"])
-        m2_util = station2.get_child(["2:Utilisation"])
-        m2_blocked_time = station2.get_child(["2:BlockedTime"])
-        m2_starved_time = station2.get_child(["2:StarvedTime"])
-        m2_down_time = station2.get_child(["2:DownTime"])
-        m2_processing_time = station2.get_child(["2:ProcessingTime"])
-        m2_idle_time = station2.get_child(["2:IdleTime"])
+        # Test Machine2 (M2)
+        print("\n[6/9] Testing Machine2 (M2) variables...")
+        machine2 = line1.get_child(["2:Machine2"])
+        m2_state = machine2.get_child(["2:State"])
+        m2_parts = machine2.get_child(["2:PartCount"])
+        m2_util = machine2.get_child(["2:Utilisation"])
+        m2_blocked_time = machine2.get_child(["2:BlockedTime"])
+        m2_starved_time = machine2.get_child(["2:StarvedTime"])
+        m2_down_time = machine2.get_child(["2:DownTime"])
+        m2_processing_time = machine2.get_child(["2:ProcessingTime"])
+        m2_idle_time = machine2.get_child(["2:IdleTime"])
 
         print(f"  State: {m2_state.get_value()}")
         print(f"  PartCount: {m2_parts.get_value()}")
@@ -108,7 +108,7 @@ def validate_opcua_server():
         print(f"  DownTime: {m2_down_time.get_value()}s")
         print(f"  ProcessingTime: {m2_processing_time.get_value()}s")
         print(f"  IdleTime: {m2_idle_time.get_value()}s")
-        print("[OK] Station2 variables OK")
+        print("[OK] Machine2 variables OK")
 
         # Test Maintenance
         print("\n[7/9] Testing Maintenance variables...")
@@ -148,8 +148,8 @@ def validate_opcua_server():
         # Test OEE Metrics
         print("\n[9/9] Testing OEE metrics...")
 
-        # Station 1 OEE
-        oee1_node = station1.get_child(["2:OEE"])
+        # Machine 1 OEE
+        oee1_node = machine1.get_child(["2:OEE"])
         m1_avail = oee1_node.get_child(["2:Availability"])
         m1_perf = oee1_node.get_child(["2:Performance"])
         m1_qual = oee1_node.get_child(["2:Quality"])
@@ -166,8 +166,8 @@ def validate_opcua_server():
         print(f"  M1 DefectivePartCount: {m1_defective.get_value()}")
         print(f"  M1 TheoreticalOutput: {m1_theoretical.get_value():.1f}")
 
-        # Station 2 OEE
-        oee2_node = station2.get_child(["2:OEE"])
+        # Machine 2 OEE
+        oee2_node = machine2.get_child(["2:OEE"])
         m2_avail = oee2_node.get_child(["2:Availability"])
         m2_perf = oee2_node.get_child(["2:Performance"])
         m2_qual = oee2_node.get_child(["2:Quality"])

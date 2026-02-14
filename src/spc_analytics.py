@@ -4,7 +4,6 @@ Statistical Process Control (SPC) Analytics Module
 Implements control charts (X-bar, R), capability indices (Cp/Cpk/Pp/Ppk),
 and Western Electric rules for out-of-control detection.
 
-Phase 11: Advanced Quality Analytics
 """
 import numpy as np
 from collections import deque

@@ -1,5 +1,5 @@
 """
-Failure Mode Management for Advanced Machine Failures (Phase 10)
+Failure Mode Management for Advanced Machine Failures
 
 This module provides realistic MTTF/MTTR distributions and multiple failure
 types to replace the simple 2-state degradation matrix.

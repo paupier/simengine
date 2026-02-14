@@ -21,47 +21,49 @@ DEGRADATION_MATRIX = [
 ]
 
 
-# ========== HELPER FUNCTIONS (Phase 7) ==========
+# ========== HELPER FUNCTIONS ==========
 
-def create_station_node(parent_node, opcua_idx: int, station_name: str, enable_health: bool = False,
+def create_machine_node(parent_node, opcua_idx: int, machine_node_name: str, enable_health: bool = False,
                         enable_failure_modes: bool = False, failure_mode_names: list = None,
                         enable_spc: bool = False, enable_quality_routing: bool = False):
     """
-    Create OPC UA variables for a single station.
+    Create OPC UA variables for a single machine.
 
     Args:
         parent_node: Parent OPC UA node
         opcua_idx: OPC UA namespace index
-        station_name: Station node name (e.g., "Station1", "Station2")
+        machine_node_name: Machine node name (e.g., "Machine1", "Machine2")
         enable_health: Whether to create health variables
-        enable_failure_modes: Whether to create FailureModes/MaintenanceStrategy subnodes (Phase 10)
+        enable_failure_modes: Whether to create FailureModes/MaintenanceStrategy subnodes
         failure_mode_names: List of failure mode names (e.g., ["mechanical", "electrical"])
-        enable_spc: Whether to create SPC (Statistical Process Control) subnode (Phase 11)
+        enable_spc: Whether to create SPC subnode
 
     Returns:
         dict: Dictionary of variable objects
     """
-    station_node = parent_node.add_object(opcua_idx, station_name)
+    machine_node = parent_node.add_object(opcua_idx, machine_node_name)
 
     vars_dict = {}
-    vars_dict["state"] = station_node.add_variable(opcua_idx, "State", "IDLE")
-    vars_dict["partcount"] = station_node.add_variable(opcua_idx, "PartCount", 0)
-    vars_dict["utilisation"] = station_node.add_variable(opcua_idx, "Utilisation", 0.0)
+    vars_dict["state"] = machine_node.add_variable(opcua_idx, "State", "IDLE")
+    vars_dict["partcount"] = machine_node.add_variable(opcua_idx, "PartCount", 0)
+    vars_dict["utilisation"] = machine_node.add_variable(opcua_idx, "Utilisation", 0.0)
+    vars_dict["target_ppm"] = machine_node.add_variable(opcua_idx, "TargetPPM", 0.0)
+    vars_dict["actual_ppm"] = machine_node.add_variable(opcua_idx, "ActualPPM", 0.0)
 
     # Time tracking (5 variables)
-    vars_dict["blocked_time"] = station_node.add_variable(opcua_idx, "BlockedTime", 0.0)
-    vars_dict["starved_time"] = station_node.add_variable(opcua_idx, "StarvedTime", 0.0)
-    vars_dict["down_time"] = station_node.add_variable(opcua_idx, "DownTime", 0.0)
-    vars_dict["processing_time"] = station_node.add_variable(opcua_idx, "ProcessingTime", 0.0)
-    vars_dict["idle_time"] = station_node.add_variable(opcua_idx, "IdleTime", 0.0)
+    vars_dict["blocked_time"] = machine_node.add_variable(opcua_idx, "BlockedTime", 0.0)
+    vars_dict["starved_time"] = machine_node.add_variable(opcua_idx, "StarvedTime", 0.0)
+    vars_dict["down_time"] = machine_node.add_variable(opcua_idx, "DownTime", 0.0)
+    vars_dict["processing_time"] = machine_node.add_variable(opcua_idx, "ProcessingTime", 0.0)
+    vars_dict["idle_time"] = machine_node.add_variable(opcua_idx, "IdleTime", 0.0)
 
     # Health (optional - only for machines with degradation)
     if enable_health:
-        vars_dict["health"] = station_node.add_variable(opcua_idx, "HealthState", 0)
-        vars_dict["health_pct"] = station_node.add_variable(opcua_idx, "HealthPercent", 100.0)
+        vars_dict["health"] = machine_node.add_variable(opcua_idx, "HealthState", 0)
+        vars_dict["health_pct"] = machine_node.add_variable(opcua_idx, "HealthPercent", 100.0)
 
     # OEE sub-node (7 variables)
-    oee_node = station_node.add_object(opcua_idx, "OEE")
+    oee_node = machine_node.add_object(opcua_idx, "OEE")
     vars_dict["availability"] = oee_node.add_variable(opcua_idx, "Availability", 0.0)
     vars_dict["performance"] = oee_node.add_variable(opcua_idx, "Performance", 0.0)
     vars_dict["quality"] = oee_node.add_variable(opcua_idx, "Quality", 1.0)
@@ -70,13 +72,13 @@ def create_station_node(parent_node, opcua_idx: int, station_name: str, enable_h
     vars_dict["defective_parts"] = oee_node.add_variable(opcua_idx, "DefectivePartCount", 0)
     vars_dict["theoretical"] = oee_node.add_variable(opcua_idx, "TheoreticalOutput", 0.0)
 
-    # Alarms sub-node (Phase 9)
-    alarm_vars = create_alarms_node(station_node, opcua_idx, alarm_type="station")
+    # Alarms sub-node
+    alarm_vars = create_alarms_node(machine_node, opcua_idx, alarm_type="machine")
     vars_dict.update({f"alarm_{k}": v for k, v in alarm_vars.items()})
 
-    # FailureModes sub-node (Phase 10)
+    # FailureModes sub-node
     if enable_failure_modes and failure_mode_names:
-        fm_node = station_node.add_object(opcua_idx, "FailureModes")
+        fm_node = machine_node.add_object(opcua_idx, "FailureModes")
         vars_dict["fm_active"] = fm_node.add_variable(opcua_idx, "ActiveFailureMode", "none")
 
         # Create variables for each failure mode
@@ -88,20 +90,20 @@ def create_station_node(parent_node, opcua_idx: int, station_name: str, enable_h
             vars_dict[f"fm_{fm_name}_mttr"] = fm_node.add_variable(opcua_idx, f"{prefix}MTTR", 0.0)
 
         # MaintenanceStrategy sub-node
-        ms_node = station_node.add_object(opcua_idx, "MaintenanceStrategy")
+        ms_node = machine_node.add_object(opcua_idx, "MaintenanceStrategy")
         vars_dict["ms_type"] = ms_node.add_variable(opcua_idx, "StrategyType", "corrective")
         vars_dict["ms_next_pm"] = ms_node.add_variable(opcua_idx, "NextPMScheduled", -1.0)
         vars_dict["ms_pm_count"] = ms_node.add_variable(opcua_idx, "PMCount", 0)
         vars_dict["ms_cm_count"] = ms_node.add_variable(opcua_idx, "CMCount", 0)
 
-    # SPC sub-node (Phase 11)
+    # SPC sub-node
     if enable_spc:
-        spc_vars = create_spc_node(station_node, opcua_idx)
+        spc_vars = create_spc_node(machine_node, opcua_idx)
         vars_dict.update({f"spc_{k}": v for k, v in spc_vars.items()})
 
-    # QualityRouting sub-node (Phase 14)
+    # QualityRouting sub-node
     if enable_quality_routing:
-        qr_node = station_node.add_object(opcua_idx, "QualityRouting")
+        qr_node = machine_node.add_object(opcua_idx, "QualityRouting")
         vars_dict["qr_scrap_count"] = qr_node.add_variable(opcua_idx, "ScrapCount", 0)
         vars_dict["qr_rework_count"] = qr_node.add_variable(opcua_idx, "ReworkCount", 0)
         vars_dict["qr_rework_success_count"] = qr_node.add_variable(opcua_idx, "ReworkSuccessCount", 0)
@@ -130,21 +132,21 @@ def create_buffer_node(parent_node, opcua_idx: int, buffer_name: str, capacity: 
     vars_dict["level"] = buffer_node.add_variable(opcua_idx, "CurrentLevel", 0)
     vars_dict["capacity"] = buffer_node.add_variable(opcua_idx, "Capacity", capacity)
 
-    # Alarms sub-node (Phase 9)
+    # Alarms sub-node
     alarm_vars = create_alarms_node(buffer_node, opcua_idx, alarm_type="buffer")
     vars_dict.update({f"alarm_{k}": v for k, v in alarm_vars.items()})
 
     return vars_dict
 
 
-def create_alarms_node(parent_node, opcua_idx: int, alarm_type: str = "station"):
+def create_alarms_node(parent_node, opcua_idx: int, alarm_type: str = "machine"):
     """
-    Create Alarms sub-node for a station or buffer.
+    Create Alarms sub-node for a machine or buffer.
 
     Args:
-        parent_node: Parent OPC UA node (station or buffer)
+        parent_node: Parent OPC UA node (machine or buffer)
         opcua_idx: OPC UA namespace index
-        alarm_type: "station" or "buffer"
+        alarm_type: "machine" or "buffer"
 
     Returns:
         dict: Dictionary of alarm variable objects
@@ -159,7 +161,7 @@ def create_alarms_node(parent_node, opcua_idx: int, alarm_type: str = "station")
     vars_dict["last_alarm_message"] = alarms_node.add_variable(opcua_idx, "LastAlarmMessage", "")
     vars_dict["last_alarm_severity"] = alarms_node.add_variable(opcua_idx, "LastAlarmSeverity", "")
 
-    if alarm_type == "station":
+    if alarm_type == "machine":
         vars_dict["alarm_failure"] = alarms_node.add_variable(opcua_idx, "MachineFailureActive", False)
         vars_dict["alarm_maintenance"] = alarms_node.add_variable(opcua_idx, "MaintenanceActive", False)
         vars_dict["alarm_quality"] = alarms_node.add_variable(opcua_idx, "QualityAlertActive", False)
@@ -172,10 +174,10 @@ def create_alarms_node(parent_node, opcua_idx: int, alarm_type: str = "station")
 
 def create_spc_node(parent_node, opcua_idx: int):
     """
-    Create SPC (Statistical Process Control) sub-node for a station (Phase 11).
+    Create SPC (Statistical Process Control) sub-node for a machine.
 
     Args:
-        parent_node: Parent OPC UA node (station)
+        parent_node: Parent OPC UA node (machine)
         opcua_idx: OPC UA namespace index
 
     Returns:
@@ -219,7 +221,7 @@ def create_spc_node(parent_node, opcua_idx: int):
 
 def create_shift_node(parent_node, opcua_idx: int):
     """
-    Create Shift tracking sub-node (Phase 12).
+    Create Shift tracking sub-node.
 
     Args:
         parent_node: Parent OPC UA node (usually Line1)
@@ -507,8 +509,8 @@ def calculate_oee(
         partcount: Total parts produced by this machine
         metrics: Dictionary with time counters
         cycle_time: Nominal cycle time
-        good_parts: Parts without defects (Phase 8 - optional)
-        defective_parts: Parts with defects (Phase 8 - optional)
+        good_parts: Parts without defects (optional)
+        defective_parts: Parts with defects (optional)
 
     Returns:
         dict: OEE metrics (availability, performance, quality, oee, good_parts, defective_parts, theoretical_output)
@@ -533,14 +535,14 @@ def calculate_oee(
         theoretical_output = 0.0
         performance = 0.0
 
-    # Quality = GoodParts / TotalParts (Phase 8: real tracking)
+    # Quality = GoodParts / TotalParts
     if good_parts is None:
-        # Fallback to Phase 7 behavior (backward compatibility)
+        # Fallback behavior when no defect data provided
         good_parts = partcount
         defective_parts = 0
         quality = 1.0 if partcount > 0 else 0.0
     else:
-        # Phase 8: Use actual defect data
+        # Use actual defect data
         if partcount > 0:
             quality = max(0.0, min(1.0, good_parts / partcount))
         else:
@@ -608,7 +610,7 @@ def calculate_defects(
 
 def mark_part_defective(part, machine_name: str, defect_type: str = "quality"):
     """
-    Mark a part as defective with traceability information (Phase 8b).
+    Mark a part as defective with traceability information.
 
     Args:
         part: Simantha Part object
@@ -622,7 +624,7 @@ def mark_part_defective(part, machine_name: str, defect_type: str = "quality"):
 
 def analyze_part_quality(sink) -> dict:
     """
-    Analyze quality of individual parts in sink (Phase 8b).
+    Analyze quality of individual parts in sink.
 
     Args:
         sink: Simantha Sink object with collect_parts=True
@@ -852,6 +854,15 @@ def write_machine_opcua_vars(machine_vars, machine_obj, current_state, metrics,
     machine_vars["processing_time"].set_value(metrics["processing_time"])
     machine_vars["idle_time"].set_value(metrics["idle_time"])
 
+    # PPM (parts per minute)
+    machine_vars["target_ppm"].set_value(metrics.get("target_ppm", 0.0))
+    total_time = (metrics["processing_time"] + metrics["blocked_time"]
+                  + metrics["starved_time"] + metrics["down_time"]
+                  + metrics["idle_time"])
+    total_time_min = total_time / 60.0
+    actual_ppm = metrics["partcount"] / total_time_min if total_time_min > 0 else 0.0
+    machine_vars["actual_ppm"].set_value(round(actual_ppm, 2))
+
     # Health (if enabled)
     if "health" in machine_vars:
         health_pct = 100.0 * (1 - health_state)
@@ -880,8 +891,9 @@ def write_machine_opcua_vars(machine_vars, machine_obj, current_state, metrics,
     if spc_monitor:
         if new_parts > 0:
             for _ in range(new_parts):
-                # Simulate real measurement with natural process variation (~2% CV)
-                measurement = metrics["cycle_time"] * (1.0 + random.gauss(0, 0.02))
+                # Simulate real measurement with natural process variation
+                noise_cv = metrics.get("spc_measurement_noise", 0.02)
+                measurement = metrics["cycle_time"] * (1.0 + random.gauss(0, noise_cv))
                 spc_monitor.add_measurement(measurement)
 
         spc_metrics = spc_monitor.get_metrics()
@@ -974,7 +986,7 @@ def update_scrap_tracking(scrap_sinks, total_parts_produced, opcua_vars):
 
 
 def calculate_line_level_oee(machines, machine_metrics):
-    """Calculate line-level OEE using bottleneck model (minimum of all stations).
+    """Calculate line-level OEE using bottleneck model (minimum of all machines).
 
     Returns:
         tuple: (line_availability, line_performance, line_quality, line_oee)
@@ -1124,12 +1136,12 @@ def build_simantha_system(config: dict):
         tuple: (system, source, sink, machines_dict, buffers_dict, maintainer, scrap_sinks)
                machines_dict: {"M1": machine_obj, "M2": machine_obj, ...}
                buffers_dict: {"B1": buffer_obj, "B2": buffer_obj, ...}
-               scrap_sinks: {"ScrapBin1": sink_obj, ...} (Phase 14, empty if none)
+               scrap_sinks: {"ScrapBin1": sink_obj, ...} (empty if none)
     """
     source = Source()
     sink = Sink(collect_parts=True)
 
-    # Phase 14: Create scrap sinks
+    # Create scrap sinks
     scrap_sinks = {}
     for scrap_cfg in config.get("scrap_sinks", []):
         scrap_sinks[scrap_cfg["name"]] = Sink(
@@ -1140,11 +1152,16 @@ def build_simantha_system(config: dict):
     machines = {}
     for machine_cfg in config["machines"]:
         name = machine_cfg["name"]
-        cycle_time = int(machine_cfg.get("cycle_time", 1))  # Convert to int for Simantha
+        # Derive cycle_time from target_ppm if provided, otherwise use direct value
+        if "target_ppm" in machine_cfg:
+            target_ppm = machine_cfg["target_ppm"]
+            cycle_time = max(1, int(60.0 / target_ppm))
+        else:
+            cycle_time = int(machine_cfg.get("cycle_time", 1))  # Convert to int for Simantha
         enable_advanced_failures = machine_cfg.get("enable_advanced_failures", False)
         enable_degradation = machine_cfg.get("enable_degradation", False)
 
-        # Phase 14: Check for quality routing
+        # Check for quality routing
         quality_cfg = machine_cfg.get("quality_routing", {})
         has_quality_routing = quality_cfg.get("enabled", False)
 
@@ -1201,7 +1218,7 @@ def build_simantha_system(config: dict):
             **degradation_kwargs
         )
 
-    # Phase 14: Wire scrap sinks to machines (after all objects created)
+    # Wire scrap sinks to machines (after all objects created)
     for machine_cfg in config["machines"]:
         quality_cfg = machine_cfg.get("quality_routing", {})
         if quality_cfg.get("enabled", False):
@@ -1274,6 +1291,7 @@ def build_opcua_server(config: dict):
                }
     """
     server = Server()
+    server.set_server_name("Simantha Digital Twin OPC UA Server")
     server.set_endpoint("opc.tcp://0.0.0.0:4840/simantha/")
 
     uri = "http://simantha.nist.gov/"
@@ -1293,18 +1311,18 @@ def build_opcua_server(config: dict):
     line_kpi_node = line1.add_object(idx, "LineKPIs")
     var_total_wip = line_kpi_node.add_variable(idx, "TotalWIP", 0)
 
-    # Line-level OEE (Phase 6)
+    # Line-level OEE
     line_oee_node = line_kpi_node.add_object(idx, "LineOEE")
     var_line_availability = line_oee_node.add_variable(idx, "Availability", 0.0)
     var_line_performance = line_oee_node.add_variable(idx, "Performance", 0.0)
     var_line_quality = line_oee_node.add_variable(idx, "Quality", 1.0)
     var_line_oee = line_oee_node.add_variable(idx, "OEE", 0.0)
 
-    # Phase 14: Line-level scrap KPIs
+    # Line-level scrap KPIs
     var_total_scrap = line_kpi_node.add_variable(idx, "TotalScrap", 0)
     var_scrap_rate = line_kpi_node.add_variable(idx, "ScrapRate", 0.0)
 
-    # Phase 9b: EventLog node (optional - for future event generation)
+    # EventLog node
     event_log_node = line1.add_object(idx, "EventLog")
     var_total_events = event_log_node.add_variable(idx, "TotalEventsGenerated", 0)
 
@@ -1314,31 +1332,31 @@ def build_opcua_server(config: dict):
     default_interarrival = config.get("source", {}).get("interarrival_time", 1.0)
     var_interarrival = controls_node.add_variable(idx, "setInterarrivalTime", default_interarrival)
 
-    # Dynamic station creation (Phase 7)
+    # Dynamic machine node creation
     machines_vars = {}
     for i, machine_cfg in enumerate(config["machines"], start=1):
         machine_name = machine_cfg["name"]
-        station_name = f"Station{i}"  # "Station1", "Station2", "Station3", ...
+        machine_node_name = f"Machine{i}"  # "Machine1", "Machine2", "Machine3", ...
         enable_health = machine_cfg.get("enable_degradation", False)
 
-        # Phase 10: Check for advanced failures
+        # Check for advanced failures
         enable_failure_modes = machine_cfg.get("enable_advanced_failures", False)
         failure_mode_names = []
         if enable_failure_modes:
             failure_mode_names = [fm["name"] for fm in machine_cfg.get("failure_modes", [])]
 
-        # Phase 11: Check for SPC analytics
+        # Check for SPC analytics
         enable_spc = machine_cfg.get("enable_spc", False)
 
-        # Phase 14: Check for quality routing
+        # Check for quality routing
         enable_quality_routing = machine_cfg.get("quality_routing", {}).get("enabled", False)
 
-        station_vars = create_station_node(line1, idx, station_name, enable_health,
+        machine_vars = create_machine_node(line1, idx, machine_node_name, enable_health,
                                           enable_failure_modes, failure_mode_names,
                                           enable_spc, enable_quality_routing)
-        machines_vars[machine_name] = station_vars
+        machines_vars[machine_name] = machine_vars
 
-    # Phase 14: Scrap sink OPC UA nodes
+    # Scrap sink OPC UA nodes
     scrap_vars = {}
     for scrap_cfg in config.get("scrap_sinks", []):
         scrap_name = scrap_cfg["name"]
@@ -1347,7 +1365,7 @@ def build_opcua_server(config: dict):
             "level": scrap_node.add_variable(idx, "CurrentLevel", 0),
         }
 
-    # Dynamic buffer creation (Phase 7)
+    # Dynamic buffer creation
     buffers_vars = {}
     for i, buffer_cfg in enumerate(config["buffers"], start=1):
         buffer_name = buffer_cfg["name"]
@@ -1363,7 +1381,7 @@ def build_opcua_server(config: dict):
     var_maint_queue = maintenance_node.add_variable(idx, "QueueLength", 0)
     var_total_repairs = maintenance_node.add_variable(idx, "TotalRepairs", 0)
 
-    # Phase 12: Shift tracking (optional)
+    # Shift tracking (optional)
     shift_vars = {}
     if "shifts" in config:
         shift_vars = create_shift_node(line1, idx)
@@ -1395,8 +1413,8 @@ def build_opcua_server(config: dict):
             "queue": var_maint_queue,
             "total_repairs": var_total_repairs,
         },
-        "shift": shift_vars,  # Phase 12: Shift tracking
-        "scrap_sinks": scrap_vars,  # Phase 14: Scrap sink nodes
+        "shift": shift_vars,
+        "scrap_sinks": scrap_vars,
         "scrap_kpis": {
             "total_scrap": var_total_scrap,
             "scrap_rate": var_scrap_rate,
@@ -1415,12 +1433,14 @@ def main(argv=None):
     parser.add_argument("--scenario", default="balanced_line",
                        help="Scenario name from line_models.yaml (default: balanced_line)")
     parser.add_argument("--seed", type=int, default=None,
-                       help="Random seed for reproducible defect generation (Phase 8)")
+                       help="Random seed for reproducible simulation")
     args = parser.parse_args(argv)
 
-    # Set random seed if provided (Phase 8)
+    # Set random seed if provided (seeds both Python random and numpy for scipy)
     if args.seed is not None:
         random.seed(args.seed)
+        import numpy as np
+        np.random.seed(args.seed)
         print(f"Using random seed: {args.seed}")
 
     # Load configuration
@@ -1444,15 +1464,20 @@ def main(argv=None):
     # Initialize per-machine metrics dictionaries
     machine_metrics = {}
 
-    # Phase 11: SPC monitors for machines with enable_spc=True
+    # SPC monitors for machines with enable_spc=True
     spc_monitors = {}
 
     for machine_name in machines.keys():
-        # Find corresponding config to get cycle_time
+        # Find corresponding config to get cycle_time and target_ppm
         machine_cfg = next(m for m in config["machines"] if m["name"] == machine_name)
-        cycle_time = machine_cfg.get("cycle_time", 1.0)
+        if "target_ppm" in machine_cfg:
+            target_ppm = machine_cfg["target_ppm"]
+            cycle_time = max(1, int(60.0 / target_ppm))
+        else:
+            target_ppm = 0.0
+            cycle_time = machine_cfg.get("cycle_time", 1.0)
 
-        # Phase 8: Quality parameters
+        # Quality parameters
         base_defect_rate = machine_cfg.get("defect_rate", 0.0)
         health_multiplier = machine_cfg.get("health_multiplier", 3.0)
 
@@ -1465,14 +1490,15 @@ def main(argv=None):
             "idle_time": 0.0,
             "prev_state": "IDLE",
             "cycle_time": cycle_time,
+            "target_ppm": target_ppm,
 
-            # Phase 8: Quality tracking
+            # Quality tracking
             "good_parts": 0,
             "defective_parts": 0,
             "base_defect_rate": base_defect_rate,
             "health_multiplier": health_multiplier,
 
-            # Phase 9: Alarm state tracking
+            # Alarm state tracking
             "prev_health_state": 0,
             "prev_maint_active": False,
             "prev_defect_rate": 0.0,
@@ -1481,7 +1507,7 @@ def main(argv=None):
             "alarm_quality_alert_active": False,
         }
 
-        # Phase 11: Create SPC monitor if enabled
+        # Create SPC monitor if enabled
         if machine_cfg.get("enable_spc", False):
             spc_config_dict = machine_cfg.get("spc", {})
             spc_config = SPCConfiguration(
@@ -1494,16 +1520,17 @@ def main(argv=None):
                 characteristic=spc_config_dict.get("characteristic", "cycle_time")
             )
             spc_monitors[machine_name] = ProcessMonitor(spc_config)
+            machine_metrics[machine_name]["spc_measurement_noise"] = spc_config_dict.get("measurement_noise", 0.02)
             print(f"  SPC enabled for {machine_name}: {spc_config.characteristic} (USL={spc_config.usl}, LSL={spc_config.lsl})")
 
-    # Phase 12: Create shift manager if configured
+    # Create shift manager if configured
     shift_manager = create_shift_manager_from_config(config, list(machines.keys()))
     if shift_manager:
         print(f"  Shift tracking enabled: {len(shift_manager.shift_definitions)} shifts")
         for i, shift_def in enumerate(shift_manager.shift_definitions):
             print(f"    Shift {i+1}: {shift_def.name} ({shift_def.duration} time units)")
 
-    # Phase 13: Create event historian if configured
+    # Create event historian if configured
     historian = create_historian_from_config(config, args.scenario)
     historian_state = {}  # Separate edge-detection state for historian
     production_summary_counter = 0.0
@@ -1511,7 +1538,7 @@ def main(argv=None):
     if historian:
         print(f"  Event historian enabled: {historian.describe()}")
 
-    # Phase 13c: Create Neo4j historian if configured
+    # Create Neo4j historian if configured
     neo4j_hist = create_neo4j_historian_from_config(config, args.scenario)
     if neo4j_hist:
         neo4j_hist.create_topology(config)
@@ -1586,7 +1613,7 @@ def main(argv=None):
     except KeyboardInterrupt:
         print("\n\nSimulation stopped by user")
 
-        # Phase 8b: Print part quality analysis
+        # Print part quality analysis
         quality_analysis = analyze_part_quality(sink)
         print(f"\n=== Part Quality Analysis ===")
         print(f"Total Parts: {quality_analysis['total_parts']}")
@@ -1603,7 +1630,7 @@ def main(argv=None):
 
         print("\nStopping server...")
     finally:
-        # Phase 13: Flush and close historians
+        # Flush and close historians
         if historian:
             historian.flush()
             historian.close()

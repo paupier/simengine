@@ -11,7 +11,7 @@
         .status-stopped { color: #dc3545; font-weight: bold; }
         .status-paused { color: #fd7e14; font-weight: bold; }
         #log-viewer {
-            height: 300px;
+            height: 250px;
             overflow-y: auto;
             font-family: 'Courier New', monospace;
             font-size: 0.85rem;
@@ -23,21 +23,28 @@
         .kpi-card { text-align: center; }
         .kpi-value { font-size: 1.8rem; font-weight: bold; color: #0d6efd; }
         .kpi-label { font-size: 0.85rem; color: #6c757d; }
-        .station-badge { font-size: 0.8rem; margin: 2px; }
+        .machine-badge { font-size: 0.8rem; margin: 2px; }
+        .machine-detail { border: 1px solid #dee2e6; border-radius: 6px; padding: 10px; margin-bottom: 8px; }
+        .oee-bar { height: 6px; border-radius: 3px; }
+        .cpk-good { color: #198754; font-weight: bold; }
+        .cpk-warn { color: #fd7e14; font-weight: bold; }
+        .cpk-bad { color: #dc3545; font-weight: bold; }
+        .shift-bar { background: #e9ecef; border-radius: 4px; height: 20px; position: relative; overflow: hidden; }
+        .shift-bar-fill { background: #0d6efd; height: 100%; transition: width 0.3s; }
     </style>
 </head>
 <body>
     <nav class="navbar navbar-dark bg-dark">
         <div class="container-fluid">
             <span class="navbar-brand mb-0 h1">Simantha Digital Twin</span>
-            <span class="navbar-text text-light">Phase 14 | OPC UA Manufacturing Simulation</span>
+            <span class="navbar-text text-light">OPC UA Manufacturing Simulation</span>
         </div>
     </nav>
 
     <div class="container-fluid mt-3">
         <div class="row">
             <!-- Left column: Controls -->
-            <div class="col-md-4">
+            <div class="col-md-3">
                 <!-- Scenario Selection -->
                 <div class="card mb-3">
                     <div class="card-header"><strong>Scenario Selection</strong></div>
@@ -95,8 +102,8 @@
                 </div>
             </div>
 
-            <!-- Right column: Status + Logs -->
-            <div class="col-md-8">
+            <!-- Right column: Status + KPIs + Machines + Logs -->
+            <div class="col-md-9">
                 <!-- Status -->
                 <div class="card mb-3">
                     <div class="card-header d-flex justify-content-between">
@@ -112,9 +119,9 @@
                     </div>
                 </div>
 
-                <!-- Live KPIs -->
+                <!-- Line-Level KPIs -->
                 <div class="card mb-3">
-                    <div class="card-header"><strong>Live KPIs</strong></div>
+                    <div class="card-header"><strong>Line KPIs</strong></div>
                     <div class="card-body">
                         <div class="row">
                             <div class="col kpi-card">
@@ -129,11 +136,34 @@
                                 <div class="kpi-value" id="kpi-paused">-</div>
                                 <div class="kpi-label">Line Status</div>
                             </div>
+                            <div class="col kpi-card">
+                                <div class="kpi-value" id="kpi-line-oee">-</div>
+                                <div class="kpi-label">Line OEE</div>
+                            </div>
+                            <div class="col kpi-card">
+                                <div class="kpi-value" id="kpi-scrap">-</div>
+                                <div class="kpi-label">Scrap</div>
+                            </div>
                         </div>
-                        <hr>
-                        <div id="station-states" class="text-center">
-                            <span class="text-muted">Start a simulation to see station states</span>
+
+                        <!-- Shift info bar -->
+                        <div id="shift-info" class="mt-3" style="display:none;">
+                            <div class="d-flex justify-content-between small text-muted mb-1">
+                                <span>Shift: <strong id="shift-name">-</strong></span>
+                                <span id="shift-time">-</span>
+                            </div>
+                            <div class="shift-bar">
+                                <div class="shift-bar-fill" id="shift-progress" style="width:0%"></div>
+                            </div>
                         </div>
+                    </div>
+                </div>
+
+                <!-- Per-Machine Details -->
+                <div class="card mb-3">
+                    <div class="card-header"><strong>Machine Overview</strong></div>
+                    <div class="card-body" id="machine-details">
+                        <span class="text-muted">Start a simulation to see machine details</span>
                     </div>
                 </div>
 
@@ -224,6 +254,71 @@
             }, 200);
         }
 
+        // --- Helper: OEE bar color ---
+        function oeeColor(val) {
+            if (val >= 0.85) return '#198754';
+            if (val >= 0.65) return '#fd7e14';
+            return '#dc3545';
+        }
+
+        // --- Helper: Cpk class ---
+        function cpkClass(val) {
+            if (val >= 1.33) return 'cpk-good';
+            if (val >= 1.0) return 'cpk-warn';
+            return 'cpk-bad';
+        }
+
+        // --- Build per-machine card HTML ---
+        function buildMachineCards(machines) {
+            let html = '<div class="row">';
+            for (const [name, m] of Object.entries(machines)) {
+                const color = stateColor(m.state);
+                html += `<div class="col-md-6 col-lg-4"><div class="machine-detail">`;
+                html += `<div class="d-flex justify-content-between align-items-center mb-2">`;
+                html += `<strong>${name}</strong>`;
+                html += `<span class="badge bg-${color}">${m.state}</span>`;
+                html += `</div>`;
+                html += `<div class="small text-muted mb-1">Parts: ${m.partcount}</div>`;
+
+                // PPM
+                if (m.target_ppm > 0 || m.actual_ppm > 0) {
+                    html += `<div class="small mb-1">PPM: <strong>${m.actual_ppm.toFixed(1)}</strong>`;
+                    if (m.target_ppm > 0) {
+                        html += ` / ${m.target_ppm.toFixed(0)} target`;
+                    }
+                    html += `</div>`;
+                }
+
+                // OEE bars
+                if (m.oee !== undefined) {
+                    html += `<div class="small text-muted">OEE: ${(m.oee * 100).toFixed(1)}%</div>`;
+                    html += `<div class="progress mb-1" style="height:6px;">`;
+                    html += `<div class="progress-bar" style="width:${(m.oee * 100).toFixed(0)}%;background:${oeeColor(m.oee)}"></div>`;
+                    html += `</div>`;
+                    html += `<div class="d-flex justify-content-between" style="font-size:0.7rem;color:#6c757d;">`;
+                    html += `<span>A: ${(m.availability * 100).toFixed(0)}%</span>`;
+                    html += `<span>P: ${(m.performance * 100).toFixed(0)}%</span>`;
+                    html += `<span>Q: ${(m.quality * 100).toFixed(0)}%</span>`;
+                    html += `</div>`;
+                }
+
+                // SPC Capability
+                if (m.cp !== undefined) {
+                    html += `<div class="small mt-1">Cp: <span class="${cpkClass(m.cp)}">${m.cp.toFixed(2)}</span>`;
+                    html += ` Cpk: <span class="${cpkClass(m.cpk)}">${m.cpk.toFixed(2)}</span></div>`;
+                }
+
+                // Active failure mode
+                if (m.active_failure && m.active_failure !== 'none') {
+                    html += `<div class="small mt-1 text-danger">Failure: ${m.active_failure}</div>`;
+                }
+
+                html += `</div></div>`;
+            }
+            html += '</div>';
+            return html;
+        }
+
         // --- Status polling ---
         async function pollStatus() {
             try {
@@ -267,6 +362,41 @@
                     document.getElementById('kpi-paused').style.color =
                         data.opcua.pause_line ? '#fd7e14' : '#198754';
 
+                    // Line OEE
+                    if (data.opcua.line_oee && data.opcua.line_oee.oee !== undefined) {
+                        const loee = data.opcua.line_oee;
+                        document.getElementById('kpi-line-oee').textContent =
+                            `${(loee.oee * 100).toFixed(1)}%`;
+                        document.getElementById('kpi-line-oee').style.color = oeeColor(loee.oee);
+                    } else {
+                        document.getElementById('kpi-line-oee').textContent = '-';
+                        document.getElementById('kpi-line-oee').style.color = '';
+                    }
+
+                    // Scrap
+                    if (data.opcua.line_kpis && data.opcua.line_kpis.total_scrap !== undefined) {
+                        const kpis = data.opcua.line_kpis;
+                        document.getElementById('kpi-scrap').textContent =
+                            `${kpis.total_scrap} (${(kpis.scrap_rate * 100).toFixed(1)}%)`;
+                    } else {
+                        document.getElementById('kpi-scrap').textContent = '-';
+                    }
+
+                    // Shift info
+                    const shiftDiv = document.getElementById('shift-info');
+                    if (data.opcua.shift && data.opcua.shift.name) {
+                        shiftDiv.style.display = '';
+                        document.getElementById('shift-name').textContent = data.opcua.shift.name;
+                        const elapsed = data.opcua.shift.elapsed || 0;
+                        const duration = data.opcua.shift.duration || 1;
+                        const pct = Math.min(100, (elapsed / duration * 100)).toFixed(0);
+                        document.getElementById('shift-time').textContent =
+                            `${Math.floor(elapsed)}s / ${Math.floor(duration)}s`;
+                        document.getElementById('shift-progress').style.width = `${pct}%`;
+                    } else {
+                        shiftDiv.style.display = 'none';
+                    }
+
                     // Update interarrival slider to match server value
                     const slider = document.getElementById('interarrival-range');
                     if (document.activeElement !== slider) {
@@ -275,23 +405,22 @@
                             parseFloat(data.opcua.interarrival_time).toFixed(1);
                     }
 
-                    // Station states
-                    const stationsDiv = document.getElementById('station-states');
-                    if (data.opcua.stations && Object.keys(data.opcua.stations).length > 0) {
-                        let html = '';
-                        for (const [name, info] of Object.entries(data.opcua.stations)) {
-                            const color = stateColor(info.state);
-                            html += `<span class="badge station-badge bg-${color}">${name}: ${info.state} (${info.partcount})</span> `;
-                        }
-                        stationsDiv.innerHTML = html;
+                    // Machine details
+                    const detailsDiv = document.getElementById('machine-details');
+                    if (data.opcua.machines && Object.keys(data.opcua.machines).length > 0) {
+                        detailsDiv.innerHTML = buildMachineCards(data.opcua.machines);
                     }
                 } else if (!data.running) {
                     document.getElementById('kpi-simtime').textContent = '-';
                     document.getElementById('kpi-throughput').textContent = '-';
                     document.getElementById('kpi-paused').textContent = '-';
                     document.getElementById('kpi-paused').style.color = '';
-                    document.getElementById('station-states').innerHTML =
-                        '<span class="text-muted">Start a simulation to see station states</span>';
+                    document.getElementById('kpi-line-oee').textContent = '-';
+                    document.getElementById('kpi-line-oee').style.color = '';
+                    document.getElementById('kpi-scrap').textContent = '-';
+                    document.getElementById('shift-info').style.display = 'none';
+                    document.getElementById('machine-details').innerHTML =
+                        '<span class="text-muted">Start a simulation to see machine details</span>';
                 }
             } catch (e) {
                 // Server not reachable

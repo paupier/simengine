@@ -91,10 +91,10 @@ def validate_serial_topology(config: Dict[str, Any]) -> None:
         if "name" not in machine:
             raise ValueError(f"Machine at index {i} missing 'name' field")
 
-        # Validate quality parameters (Phase 8)
+        # Validate quality parameters
         validate_machine_quality_config(machine)
 
-        # Validate advanced failure modes (Phase 10)
+        # Validate advanced failure modes
         if machine.get("enable_advanced_failures", False):
             validate_failure_modes(machine)
             validate_maintenance_strategy(machine)
@@ -117,12 +117,12 @@ def validate_serial_topology(config: Dict[str, Any]) -> None:
                 f"got {buffer['upstream']}→{buffer['downstream']}"
             )
 
-    # Validate quality routing (Phase 14)
+    # Validate quality routing
     for machine in machines:
         validate_quality_routing(machine)
     validate_scrap_sinks(config)
 
-    # Validate historian config (Phase 13)
+    # Validate historian config
     validate_historian_config(config)
 
     print(f"[OK] Configuration validated: {len(machines)} machines, {len(buffers)} buffers")
@@ -152,13 +152,25 @@ def validate_machine_quality_config(machine_cfg: dict) -> None:
                 f"Machine '{machine_cfg['name']}': health_multiplier must be >= 0, got {mult}"
             )
 
+    if "target_ppm" in machine_cfg:
+        ppm = machine_cfg["target_ppm"]
+        if not isinstance(ppm, (int, float)) or ppm <= 0:
+            raise ValueError(
+                f"Machine '{machine_cfg['name']}': target_ppm must be positive, got {ppm}"
+            )
+        if "cycle_time" in machine_cfg:
+            import logging
+            logging.warning(
+                f"Machine '{machine_cfg['name']}': target_ppm overrides cycle_time"
+            )
 
-# ========== Advanced Failure Mode Validation (Phase 10) ==========
+
+# ========== Advanced Failure Mode Validation ==========
 
 
 def validate_failure_modes(machine_cfg: dict) -> None:
     """
-    Validate failure_modes configuration (Phase 10).
+    Validate failure_modes configuration.
 
     Args:
         machine_cfg: Machine configuration dictionary
@@ -225,7 +237,7 @@ def validate_failure_modes(machine_cfg: dict) -> None:
 
 def validate_distribution_config(dist_cfg: dict, context: str) -> None:
     """
-    Validate distribution configuration (Phase 10).
+    Validate distribution configuration.
 
     Args:
         dist_cfg: Distribution configuration dictionary
@@ -310,7 +322,7 @@ def validate_distribution_config(dist_cfg: dict, context: str) -> None:
 
 def validate_maintenance_strategy(machine_cfg: dict) -> None:
     """
-    Validate maintenance_strategy configuration (Phase 10).
+    Validate maintenance_strategy configuration.
 
     Args:
         machine_cfg: Machine configuration dictionary
@@ -368,7 +380,7 @@ def validate_maintenance_strategy(machine_cfg: dict) -> None:
 
 def validate_historian_config(config: Dict[str, Any]) -> None:
     """
-    Validate historian configuration (Phase 13).
+    Validate historian configuration.
 
     Args:
         config: Full scenario configuration dictionary
@@ -417,7 +429,7 @@ def validate_historian_config(config: Dict[str, Any]) -> None:
 
 def validate_quality_routing(machine_cfg: dict) -> None:
     """
-    Validate quality_routing configuration for a machine (Phase 14).
+    Validate quality_routing configuration for a machine.
 
     Args:
         machine_cfg: Machine configuration dictionary
@@ -473,7 +485,7 @@ def validate_quality_routing(machine_cfg: dict) -> None:
 
 def validate_scrap_sinks(config: Dict[str, Any]) -> None:
     """
-    Validate scrap_sinks configuration and cross-references (Phase 14).
+    Validate scrap_sinks configuration and cross-references.
 
     Args:
         config: Full scenario configuration dictionary

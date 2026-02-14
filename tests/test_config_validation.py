@@ -1,5 +1,5 @@
 """
-Configuration Validation Tests (Phase 10b)
+Configuration Validation Tests
 
 Tests YAML configuration validation for advanced failure modes.
 """
@@ -401,7 +401,7 @@ class TestMaintenanceStrategyValidation:
 
 
 class TestHistorianConfigValidation:
-    """Tests for Phase 13 historian configuration validation."""
+    """Tests for historian configuration validation."""
 
     def test_no_historian_config_passes(self):
         """Config without historian section passes validation."""

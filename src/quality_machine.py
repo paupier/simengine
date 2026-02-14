@@ -1,5 +1,5 @@
 """
-Phase 14: Quality-Aware Machines with Scrap & Rework Routing
+Quality-Aware Machines with Scrap & Rework Routing
 
 Extends Simantha's Machine (and AdvancedMachine) to divert defective parts
 to scrap sinks or attempt virtual rework before scrapping.
@@ -55,7 +55,7 @@ def _quality_route(machine, part):
     part.failed_at_machine = machine.name
     part.defect_type = "quality"
 
-    # Virtual rework attempt (Phase 14b)
+    # Virtual rework attempt
     rework_count = getattr(part, 'rework_count', 0)
     if machine._rework_enabled and rework_count < machine._max_rework:
         if random.random() < machine._rework_success_rate:
@@ -173,7 +173,7 @@ class QualityAwareMachine(QualityRoutingMixin, Machine):
 class QualityAdvancedMachine(QualityRoutingMixin, AdvancedMachine):
     """AdvancedMachine with quality-based routing for scrap and rework.
 
-    Combines advanced failure modes (Phase 10) with quality routing (Phase 14).
+    Combines advanced failure modes with quality routing.
     AdvancedMachine overrides get_time_to_degrade/get_time_to_repair/restore;
     the mixin adds output_addon_process for quality routing. No method conflicts.
     """

@@ -30,13 +30,13 @@ class TestOPCUAAddressSpace:
         assert pause is not None
         assert interarrival is not None
 
-    def test_station1_nodes_exist(self, opcua_client):
-        """Verify Station1 (M1) nodes exist"""
-        state = opcua_client.get_node("ns=2;s=Line1.Station1.State")
-        partcount = opcua_client.get_node("ns=2;s=Line1.Station1.PartCount")
-        util = opcua_client.get_node("ns=2;s=Line1.Station1.Utilisation")
-        health = opcua_client.get_node("ns=2;s=Line1.Station1.HealthState")
-        health_pct = opcua_client.get_node("ns=2;s=Line1.Station1.HealthPercent")
+    def test_machine1_nodes_exist(self, opcua_client):
+        """Verify Machine1 (M1) nodes exist"""
+        state = opcua_client.get_node("ns=2;s=Line1.Machine1.State")
+        partcount = opcua_client.get_node("ns=2;s=Line1.Machine1.PartCount")
+        util = opcua_client.get_node("ns=2;s=Line1.Machine1.Utilisation")
+        health = opcua_client.get_node("ns=2;s=Line1.Machine1.HealthState")
+        health_pct = opcua_client.get_node("ns=2;s=Line1.Machine1.HealthPercent")
 
         assert state is not None
         assert partcount is not None
@@ -52,11 +52,11 @@ class TestOPCUAAddressSpace:
         assert level is not None
         assert capacity is not None
 
-    def test_station2_nodes_exist(self, opcua_client):
-        """Verify Station2 (M2) nodes exist"""
-        state = opcua_client.get_node("ns=2;s=Line1.Station2.State")
-        partcount = opcua_client.get_node("ns=2;s=Line1.Station2.PartCount")
-        util = opcua_client.get_node("ns=2;s=Line1.Station2.Utilisation")
+    def test_machine2_nodes_exist(self, opcua_client):
+        """Verify Machine2 (M2) nodes exist"""
+        state = opcua_client.get_node("ns=2;s=Line1.Machine2.State")
+        partcount = opcua_client.get_node("ns=2;s=Line1.Machine2.PartCount")
+        util = opcua_client.get_node("ns=2;s=Line1.Machine2.Utilisation")
 
         assert state is not None
         assert partcount is not None
@@ -99,8 +99,8 @@ class TestSimulationBehavior:
     def test_part_counts_are_monotonic(self, opcua_client):
         """Verify part counts never decrease (monotonic counter)"""
         throughput = opcua_client.get_node("ns=2;s=Line1.System.Throughput")
-        m1_parts = opcua_client.get_node("ns=2;s=Line1.Station1.PartCount")
-        m2_parts = opcua_client.get_node("ns=2;s=Line1.Station2.PartCount")
+        m1_parts = opcua_client.get_node("ns=2;s=Line1.Machine1.PartCount")
+        m2_parts = opcua_client.get_node("ns=2;s=Line1.Machine2.PartCount")
 
         prev_throughput = throughput.get_value()
         prev_m1 = m1_parts.get_value()
@@ -148,7 +148,7 @@ class TestControlInputs:
         """Verify cmdPauseLine control freezes simulation"""
         pause = opcua_client.get_node("ns=2;s=Line1.System.Controls.cmdPauseLine")
         simtime = opcua_client.get_node("ns=2;s=Line1.System.SimTime")
-        m1_state = opcua_client.get_node("ns=2;s=Line1.Station1.State")
+        m1_state = opcua_client.get_node("ns=2;s=Line1.Machine1.State")
 
         # Unpause first (in case paused from previous test)
         pause.set_value(False)
@@ -166,7 +166,7 @@ class TestControlInputs:
         state = m1_state.get_value()
 
         assert time2 == time1, "Simulation time should freeze when paused"
-        assert state == "PAUSED", f"Station state should be PAUSED, got {state}"
+        assert state == "PAUSED", f"Machine state should be PAUSED, got {state}"
 
         # Unpause for other tests
         pause.set_value(False)
@@ -207,7 +207,7 @@ class TestHealthAndMaintenance:
 
     def test_initial_health_is_100_percent(self, opcua_client):
         """Verify M1 starts at 100% health"""
-        health_pct = opcua_client.get_node("ns=2;s=Line1.Station1.HealthPercent")
+        health_pct = opcua_client.get_node("ns=2;s=Line1.Machine1.HealthPercent")
 
         # May not be exactly 100 if test runs after failure, but should be high initially
         initial_health = health_pct.get_value()
@@ -216,7 +216,7 @@ class TestHealthAndMaintenance:
 
     def test_health_state_values_are_valid(self, opcua_client):
         """Verify HealthState is either 0 (healthy) or 1 (failed)"""
-        health_state = opcua_client.get_node("ns=2;s=Line1.Station1.HealthState")
+        health_state = opcua_client.get_node("ns=2;s=Line1.Machine1.HealthState")
 
         for _ in range(5):
             state = health_state.get_value()
@@ -238,13 +238,13 @@ class TestHealthAndMaintenance:
         assert repairs >= 0, "TotalRepairs should be non-negative"
 
 
-class TestStationStates:
-    """Test that station states are valid and meaningful"""
+class TestMachineStates:
+    """Test that machine states are valid and meaningful"""
 
-    def test_station_states_are_valid(self, opcua_client):
-        """Verify station states are one of the expected values"""
-        m1_state = opcua_client.get_node("ns=2;s=Line1.Station1.State")
-        m2_state = opcua_client.get_node("ns=2;s=Line1.Station2.State")
+    def test_machine_states_are_valid(self, opcua_client):
+        """Verify machine states are one of the expected values"""
+        m1_state = opcua_client.get_node("ns=2;s=Line1.Machine1.State")
+        m2_state = opcua_client.get_node("ns=2;s=Line1.Machine2.State")
 
         valid_states = ["IDLE", "PROCESSING", "BLOCKED", "STARVED", "PAUSED", "FAILED", "UNDER_REPAIR"]
 
@@ -263,8 +263,8 @@ class TestStationStates:
 
     def test_utilisation_is_between_0_and_1(self, opcua_client):
         """Verify utilisation values are in valid range [0.0, 1.0]"""
-        m1_util = opcua_client.get_node("ns=2;s=Line1.Station1.Utilisation")
-        m2_util = opcua_client.get_node("ns=2;s=Line1.Station2.Utilisation")
+        m1_util = opcua_client.get_node("ns=2;s=Line1.Machine1.Utilisation")
+        m2_util = opcua_client.get_node("ns=2;s=Line1.Machine2.Utilisation")
 
         for _ in range(5):
             util1 = m1_util.get_value()
@@ -277,28 +277,28 @@ class TestStationStates:
 
 
 class TestEnhancedStateMachine:
-    """Test Phase 5: Enhanced state logic and time tracking"""
+    """Test enhanced state logic and time tracking"""
 
     def test_time_tracking_variables_exist(self, opcua_client):
         """Verify all time tracking variables are accessible"""
         root = opcua_client.get_objects_node()
         line1 = root.get_child(["2:Line1"])
-        station1 = line1.get_child(["2:Station1"])
-        station2 = line1.get_child(["2:Station2"])
+        machine1 = line1.get_child(["2:Machine1"])
+        machine2 = line1.get_child(["2:Machine2"])
 
-        # Station1 time tracking
-        m1_blocked = station1.get_child(["2:BlockedTime"])
-        m1_starved = station1.get_child(["2:StarvedTime"])
-        m1_down = station1.get_child(["2:DownTime"])
-        m1_processing = station1.get_child(["2:ProcessingTime"])
-        m1_idle = station1.get_child(["2:IdleTime"])
+        # Machine1 time tracking
+        m1_blocked = machine1.get_child(["2:BlockedTime"])
+        m1_starved = machine1.get_child(["2:StarvedTime"])
+        m1_down = machine1.get_child(["2:DownTime"])
+        m1_processing = machine1.get_child(["2:ProcessingTime"])
+        m1_idle = machine1.get_child(["2:IdleTime"])
 
-        # Station2 time tracking
-        m2_blocked = station2.get_child(["2:BlockedTime"])
-        m2_starved = station2.get_child(["2:StarvedTime"])
-        m2_down = station2.get_child(["2:DownTime"])
-        m2_processing = station2.get_child(["2:ProcessingTime"])
-        m2_idle = station2.get_child(["2:IdleTime"])
+        # Machine2 time tracking
+        m2_blocked = machine2.get_child(["2:BlockedTime"])
+        m2_starved = machine2.get_child(["2:StarvedTime"])
+        m2_down = machine2.get_child(["2:DownTime"])
+        m2_processing = machine2.get_child(["2:ProcessingTime"])
+        m2_idle = machine2.get_child(["2:IdleTime"])
 
         # All should be accessible and non-negative
         assert m1_blocked.get_value() >= 0.0
@@ -317,14 +317,14 @@ class TestEnhancedStateMachine:
         """Verify time tracking values increase over time"""
         root = opcua_client.get_objects_node()
         line1 = root.get_child(["2:Line1"])
-        station1 = line1.get_child(["2:Station1"])
+        machine1 = line1.get_child(["2:Machine1"])
 
         # Get all time tracking variables
-        m1_blocked = station1.get_child(["2:BlockedTime"])
-        m1_starved = station1.get_child(["2:StarvedTime"])
-        m1_down = station1.get_child(["2:DownTime"])
-        m1_processing = station1.get_child(["2:ProcessingTime"])
-        m1_idle = station1.get_child(["2:IdleTime"])
+        m1_blocked = machine1.get_child(["2:BlockedTime"])
+        m1_starved = machine1.get_child(["2:StarvedTime"])
+        m1_down = machine1.get_child(["2:DownTime"])
+        m1_processing = machine1.get_child(["2:ProcessingTime"])
+        m1_idle = machine1.get_child(["2:IdleTime"])
 
         # Record initial totals
         initial_total = (m1_blocked.get_value() + m1_starved.get_value() +
@@ -343,14 +343,14 @@ class TestEnhancedStateMachine:
         root = opcua_client.get_objects_node()
         line1 = root.get_child(["2:Line1"])
         system = line1.get_child(["2:System"])
-        station1 = line1.get_child(["2:Station1"])
+        machine1 = line1.get_child(["2:Machine1"])
 
         simtime = system.get_child(["2:SimTime"])
-        m1_blocked = station1.get_child(["2:BlockedTime"])
-        m1_starved = station1.get_child(["2:StarvedTime"])
-        m1_down = station1.get_child(["2:DownTime"])
-        m1_processing = station1.get_child(["2:ProcessingTime"])
-        m1_idle = station1.get_child(["2:IdleTime"])
+        m1_blocked = machine1.get_child(["2:BlockedTime"])
+        m1_starved = machine1.get_child(["2:StarvedTime"])
+        m1_down = machine1.get_child(["2:DownTime"])
+        m1_processing = machine1.get_child(["2:ProcessingTime"])
+        m1_idle = machine1.get_child(["2:IdleTime"])
 
         # Wait a bit for simulation to run
         time.sleep(5)
@@ -367,14 +367,14 @@ class TestEnhancedStateMachine:
         """Verify utilization is based on ProcessingTime / TotalTime (not binary)"""
         root = opcua_client.get_objects_node()
         line1 = root.get_child(["2:Line1"])
-        station1 = line1.get_child(["2:Station1"])
+        machine1 = line1.get_child(["2:Machine1"])
 
-        m1_util = station1.get_child(["2:Utilisation"])
-        m1_processing = station1.get_child(["2:ProcessingTime"])
-        m1_blocked = station1.get_child(["2:BlockedTime"])
-        m1_starved = station1.get_child(["2:StarvedTime"])
-        m1_down = station1.get_child(["2:DownTime"])
-        m1_idle = station1.get_child(["2:IdleTime"])
+        m1_util = machine1.get_child(["2:Utilisation"])
+        m1_processing = machine1.get_child(["2:ProcessingTime"])
+        m1_blocked = machine1.get_child(["2:BlockedTime"])
+        m1_starved = machine1.get_child(["2:StarvedTime"])
+        m1_down = machine1.get_child(["2:DownTime"])
+        m1_idle = machine1.get_child(["2:IdleTime"])
 
         time.sleep(5)
 
@@ -393,11 +393,11 @@ class TestEnhancedStateMachine:
         """Verify that enhanced states (PROCESSING, IDLE, etc.) are observable"""
         root = opcua_client.get_objects_node()
         line1 = root.get_child(["2:Line1"])
-        station1 = line1.get_child(["2:Station1"])
-        station2 = line1.get_child(["2:Station2"])
+        machine1 = line1.get_child(["2:Machine1"])
+        machine2 = line1.get_child(["2:Machine2"])
 
-        m1_state = station1.get_child(["2:State"])
-        m2_state = station2.get_child(["2:State"])
+        m1_state = machine1.get_child(["2:State"])
+        m2_state = machine2.get_child(["2:State"])
 
         # Sample states over time
         states_observed = set()
@@ -412,16 +412,16 @@ class TestEnhancedStateMachine:
 
 
 class TestOEEMetrics:
-    """Test Phase 6: OEE (Overall Equipment Effectiveness) Calculation"""
+    """Test OEE (Overall Equipment Effectiveness) Calculation"""
 
     def test_oee_variables_exist(self, opcua_client):
         """Verify all OEE variables are accessible"""
         root = opcua_client.get_objects_node()
         line1 = root.get_child(["2:Line1"])
 
-        # Station 1 OEE
-        station1 = line1.get_child(["2:Station1"])
-        oee1 = station1.get_child(["2:OEE"])
+        # Machine 1 OEE
+        machine1 = line1.get_child(["2:Machine1"])
+        oee1 = machine1.get_child(["2:OEE"])
 
         availability = oee1.get_child(["2:Availability"])
         performance = oee1.get_child(["2:Performance"])
@@ -439,9 +439,9 @@ class TestOEEMetrics:
         assert defective_parts is not None
         assert theoretical is not None
 
-        # Station 2 OEE
-        station2 = line1.get_child(["2:Station2"])
-        oee2 = station2.get_child(["2:OEE"])
+        # Machine 2 OEE
+        machine2 = line1.get_child(["2:Machine2"])
+        oee2 = machine2.get_child(["2:OEE"])
 
         assert oee2.get_child(["2:Availability"]) is not None
         assert oee2.get_child(["2:Performance"]) is not None
@@ -462,18 +462,18 @@ class TestOEEMetrics:
         root = opcua_client.get_objects_node()
         line1 = root.get_child(["2:Line1"])
 
-        # Station 1
-        station1 = line1.get_child(["2:Station1"])
-        oee1 = station1.get_child(["2:OEE"])
+        # Machine 1
+        machine1 = line1.get_child(["2:Machine1"])
+        oee1 = machine1.get_child(["2:OEE"])
 
         assert 0.0 <= oee1.get_child(["2:Availability"]).get_value() <= 1.0
         assert 0.0 <= oee1.get_child(["2:Performance"]).get_value() <= 1.0
         assert 0.0 <= oee1.get_child(["2:Quality"]).get_value() <= 1.0
         assert 0.0 <= oee1.get_child(["2:OEE"]).get_value() <= 1.0
 
-        # Station 2
-        station2 = line1.get_child(["2:Station2"])
-        oee2 = station2.get_child(["2:OEE"])
+        # Machine 2
+        machine2 = line1.get_child(["2:Machine2"])
+        oee2 = machine2.get_child(["2:OEE"])
 
         assert 0.0 <= oee2.get_child(["2:Availability"]).get_value() <= 1.0
         assert 0.0 <= oee2.get_child(["2:Performance"]).get_value() <= 1.0
@@ -494,9 +494,9 @@ class TestOEEMetrics:
         root = opcua_client.get_objects_node()
         line1 = root.get_child(["2:Line1"])
 
-        # Station 1
-        station1 = line1.get_child(["2:Station1"])
-        oee1 = station1.get_child(["2:OEE"])
+        # Machine 1
+        machine1 = line1.get_child(["2:Machine1"])
+        oee1 = machine1.get_child(["2:OEE"])
 
         avail = oee1.get_child(["2:Availability"]).get_value()
         perf = oee1.get_child(["2:Performance"]).get_value()
@@ -507,9 +507,9 @@ class TestOEEMetrics:
         assert abs(oee - expected_oee) < 0.001, \
             f"M1 OEE {oee} should equal Avail×Perf×Qual {expected_oee}"
 
-        # Station 2
-        station2 = line1.get_child(["2:Station2"])
-        oee2 = station2.get_child(["2:OEE"])
+        # Machine 2
+        machine2 = line1.get_child(["2:Machine2"])
+        oee2 = machine2.get_child(["2:OEE"])
 
         avail2 = oee2.get_child(["2:Availability"]).get_value()
         perf2 = oee2.get_child(["2:Performance"]).get_value()
@@ -534,12 +534,12 @@ class TestOEEMetrics:
             f"Line OEE {line_oee} should equal Avail×Perf×Qual {expected_line_oee}"
 
     def test_quality_phase6_placeholder(self, opcua_client):
-        """Verify Quality is 1.0 (100%) in Phase 6 (no defects yet)"""
+        """Verify Quality is 1.0 (100%) when no defects configured"""
         root = opcua_client.get_objects_node()
         line1 = root.get_child(["2:Line1"])
 
-        station1 = line1.get_child(["2:Station1"])
-        oee1 = station1.get_child(["2:OEE"])
+        machine1 = line1.get_child(["2:Machine1"])
+        oee1 = machine1.get_child(["2:OEE"])
 
         # Wait for some parts to be produced
         time.sleep(5)
@@ -548,8 +548,8 @@ class TestOEEMetrics:
         defective_parts = oee1.get_child(["2:DefectivePartCount"]).get_value()
         quality = oee1.get_child(["2:Quality"]).get_value()
 
-        # Phase 6: All parts are good (no defect tracking yet)
-        assert defective_parts == 0, "Phase 6 should have no defective parts"
+        # All parts are good (no defect tracking in balanced_line scenario)
+        assert defective_parts == 0, "Should have no defective parts without defect config"
         if good_parts > 0:
             assert quality == 1.0, "Quality should be 100% when parts are produced"
 
@@ -561,11 +561,11 @@ class TestOEEMetrics:
         # Wait for steady state
         time.sleep(10)
 
-        station1 = line1.get_child(["2:Station1"])
-        station2 = line1.get_child(["2:Station2"])
+        machine1 = line1.get_child(["2:Machine1"])
+        machine2 = line1.get_child(["2:Machine2"])
 
-        oee1 = station1.get_child(["2:OEE"])
-        oee2 = station2.get_child(["2:OEE"])
+        oee1 = machine1.get_child(["2:OEE"])
+        oee2 = machine2.get_child(["2:OEE"])
 
         m1_avail = oee1.get_child(["2:Availability"]).get_value()
         m2_avail = oee2.get_child(["2:Availability"]).get_value()
@@ -579,25 +579,25 @@ class TestOEEMetrics:
         line_avail = line_oee_node.get_child(["2:Availability"]).get_value()
         line_perf = line_oee_node.get_child(["2:Performance"]).get_value()
 
-        # Line metrics should be min of station metrics (bottleneck)
+        # Line metrics should be min of machine metrics (bottleneck)
         expected_line_avail = min(m1_avail, m2_avail)
         expected_line_perf = min(m1_perf, m2_perf)
 
         assert abs(line_avail - expected_line_avail) < 0.001, \
-            f"Line Availability {line_avail} should be min of station availabilities {expected_line_avail}"
+            f"Line Availability {line_avail} should be min of machine availabilities {expected_line_avail}"
         assert abs(line_perf - expected_line_perf) < 0.001, \
-            f"Line Performance {line_perf} should be min of station performances {expected_line_perf}"
+            f"Line Performance {line_perf} should be min of machine performances {expected_line_perf}"
 
 
 class TestAlarmsAndEvents:
-    """Test Phase 9: Alarm variables and event generation"""
+    """Test alarm variables and event generation"""
 
     def test_alarm_nodes_exist(self, opcua_client):
         """Verify all alarm nodes are accessible"""
         root = opcua_client.get_objects_node()
         line1 = root.get_child(["2:Line1"])
-        station1 = line1.get_child(["2:Station1"])
-        alarms = station1.get_child(["2:Alarms"])
+        machine1 = line1.get_child(["2:Machine1"])
+        alarms = machine1.get_child(["2:Alarms"])
 
         # Check alarm variables exist
         alarm_count = alarms.get_child(["2:ActiveAlarmCount"])
@@ -636,8 +636,8 @@ class TestAlarmsAndEvents:
         """Verify alarm count changes when alarms activate"""
         root = opcua_client.get_objects_node()
         line1 = root.get_child(["2:Line1"])
-        station1 = line1.get_child(["2:Station1"])
-        alarms = station1.get_child(["2:Alarms"])
+        machine1 = line1.get_child(["2:Machine1"])
+        alarms = machine1.get_child(["2:Alarms"])
 
         alarm_count = alarms.get_child(["2:ActiveAlarmCount"])
         initial_count = alarm_count.get_value()
@@ -650,12 +650,12 @@ class TestAlarmsAndEvents:
         assert final_count >= initial_count
 
     def test_backward_compatibility(self, opcua_client):
-        """Ensure Phase 1-8 tests still pass after Phase 9 changes"""
+        """Ensure all existing tests still pass after alarm changes"""
         # Verify existing nodes still accessible
         simtime = opcua_client.get_node("ns=2;s=Line1.System.SimTime")
         assert simtime is not None
 
-        state = opcua_client.get_node("ns=2;s=Line1.Station1.State")
+        state = opcua_client.get_node("ns=2;s=Line1.Machine1.State")
         assert state is not None
 
         # No changes to existing node structure

@@ -1,5 +1,5 @@
 """
-Unit Tests for Failure Modes Module (Phase 10a)
+Unit Tests for Failure Modes Module
 
 Tests the core failure mode logic in isolation before OPC UA integration.
 """

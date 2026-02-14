@@ -26,11 +26,27 @@ sim_start_time = None
 sim_log = deque(maxlen=200)  # Ring buffer for stdout capture
 sim_lock = threading.Lock()
 
+_SCRIPT_DIR = Path(__file__).resolve().parent
+_PROJECT_ROOT = _SCRIPT_DIR.parent.parent  # docker/webui/ → project root
+
 CONFIG_PATH = Path(os.environ.get(
     "SIMANTHA_CONFIG_PATH",
-    "/app/config/line_models_runtime.yaml"
+    str(_PROJECT_ROOT / "config" / "line_models.yaml")
 ))
-ORIGINAL_CONFIG_PATH = Path("/app/config/line_models.yaml")
+ORIGINAL_CONFIG_PATH = Path(os.environ.get(
+    "SIMANTHA_ORIGINAL_CONFIG_PATH",
+    str(_PROJECT_ROOT / "config" / "line_models.yaml")
+))
+
+OPCUA_SERVER_SCRIPT = os.environ.get(
+    "SIMANTHA_SERVER_SCRIPT",
+    str(_PROJECT_ROOT / "src" / "opcua_server.py")
+)
+
+OPCUA_ENDPOINT = os.environ.get(
+    "SIMANTHA_OPCUA_ENDPOINT",
+    "opc.tcp://localhost:4840/simantha/"
+)
 
 # OPC UA client (lazy-connected)
 _opcua_client = None
@@ -108,7 +124,7 @@ def start_simulation(scenario, seed=None):
     with sim_lock:
         stop_simulation()
 
-        cmd = ["python", "/app/src/opcua_server.py", "--scenario", scenario]
+        cmd = ["python", OPCUA_SERVER_SCRIPT, "--scenario", scenario]
         if seed is not None:
             cmd += ["--seed", str(seed)]
 
@@ -163,7 +179,7 @@ def _get_opcua_client():
         return _opcua_client
     try:
         from opcua import Client
-        client = Client("opc.tcp://localhost:4840/simantha/")
+        client = Client(OPCUA_ENDPOINT)
         client.connect()
         _opcua_client = client
         return client
@@ -198,23 +214,82 @@ def _read_opcua_values():
         pause_line = controls.get_child(["2:cmdPauseLine"]).get_value()
         interarrival = controls.get_child(["2:setInterarrivalTime"]).get_value()
 
-        # Read station states dynamically
-        stations = {}
-        for i in range(1, 20):  # Up to 19 stations
+        # Read machine states dynamically
+        machines = {}
+        for i in range(1, 20):  # Up to 19 machines
             try:
-                station = line1.get_child([f"2:Station{i}"])
-                state = station.get_child(["2:State"]).get_value()
-                partcount = station.get_child(["2:PartCount"]).get_value()
-                stations[f"Station{i}"] = {"state": state, "partcount": partcount}
+                machine = line1.get_child([f"2:Machine{i}"])
+                state = machine.get_child(["2:State"]).get_value()
+                partcount = machine.get_child(["2:PartCount"]).get_value()
+                target_ppm = machine.get_child(["2:TargetPPM"]).get_value()
+                actual_ppm = machine.get_child(["2:ActualPPM"]).get_value()
+                m_data = {
+                    "state": state, "partcount": partcount,
+                    "target_ppm": target_ppm, "actual_ppm": actual_ppm,
+                }
+                # OEE (always present)
+                try:
+                    oee_node = machine.get_child(["2:OEE"])
+                    m_data["availability"] = oee_node.get_child(["2:Availability"]).get_value()
+                    m_data["performance"] = oee_node.get_child(["2:Performance"]).get_value()
+                    m_data["quality"] = oee_node.get_child(["2:Quality"]).get_value()
+                    m_data["oee"] = oee_node.get_child(["2:OEE"]).get_value()
+                except Exception:
+                    pass
+                # SPC Capability (optional)
+                try:
+                    cap_node = machine.get_child(["2:SPC", "2:Capability"])
+                    m_data["cp"] = cap_node.get_child(["2:Cp"]).get_value()
+                    m_data["cpk"] = cap_node.get_child(["2:Cpk"]).get_value()
+                except Exception:
+                    pass
+                # Active failure mode (optional)
+                try:
+                    fm_node = machine.get_child(["2:FailureModes"])
+                    m_data["active_failure"] = fm_node.get_child(["2:ActiveFailureMode"]).get_value()
+                except Exception:
+                    pass
+                machines[f"Machine{i}"] = m_data
             except Exception:
                 break
+
+        # Line-level KPIs
+        line_oee = {}
+        try:
+            oee_node = line1.get_child(["2:LineKPIs", "2:LineOEE"])
+            line_oee["availability"] = oee_node.get_child(["2:Availability"]).get_value()
+            line_oee["performance"] = oee_node.get_child(["2:Performance"]).get_value()
+            line_oee["quality"] = oee_node.get_child(["2:Quality"]).get_value()
+            line_oee["oee"] = oee_node.get_child(["2:OEE"]).get_value()
+        except Exception:
+            pass
+        line_kpis = {}
+        try:
+            kpi_node = line1.get_child(["2:LineKPIs"])
+            line_kpis["total_scrap"] = kpi_node.get_child(["2:TotalScrap"]).get_value()
+            line_kpis["scrap_rate"] = kpi_node.get_child(["2:ScrapRate"]).get_value()
+        except Exception:
+            pass
+
+        # Shift info (optional)
+        shift_info = {}
+        try:
+            shift_node = line1.get_child(["2:Shift", "2:CurrentShift"])
+            shift_info["name"] = shift_node.get_child(["2:CurrentShiftName"]).get_value()
+            shift_info["elapsed"] = shift_node.get_child(["2:ShiftElapsedTime"]).get_value()
+            shift_info["duration"] = shift_node.get_child(["2:ShiftDuration"]).get_value()
+        except Exception:
+            pass
 
         return {
             "sim_time": sim_time,
             "throughput": throughput,
             "pause_line": pause_line,
             "interarrival_time": interarrival,
-            "stations": stations,
+            "machines": machines,
+            "line_oee": line_oee,
+            "line_kpis": line_kpis,
+            "shift": shift_info,
         }
     except Exception:
         _disconnect_opcua()
@@ -340,6 +415,94 @@ def api_opcua_read():
     if values is None:
         return jsonify({"error": "Cannot read OPC UA values"}), 503
     return jsonify(values)
+
+
+# ---------------------------------------------------------------------------
+# Config editor routes
+# ---------------------------------------------------------------------------
+def _get_config_file_path():
+    """Return the writable config file path."""
+    return ORIGINAL_CONFIG_PATH if ORIGINAL_CONFIG_PATH.exists() else CONFIG_PATH
+
+
+@app.route("/config")
+def config_editor():
+    """Render the scenario config editor page."""
+    return render_template("config.html")
+
+
+@app.route("/api/scenario/<name>")
+def api_get_scenario(name):
+    """Return full config for a single scenario."""
+    cfg_path = _get_config_file_path()
+    with open(cfg_path, "r") as f:
+        all_configs = yaml.safe_load(f)
+    if name not in all_configs:
+        return jsonify({"error": f"Scenario '{name}' not found"}), 404
+    return jsonify(all_configs[name])
+
+
+@app.route("/api/scenario/<name>", methods=["PUT"])
+def api_update_scenario(name):
+    """Update an existing scenario config."""
+    cfg_path = _get_config_file_path()
+    with open(cfg_path, "r") as f:
+        all_configs = yaml.safe_load(f)
+    if name not in all_configs:
+        return jsonify({"error": f"Scenario '{name}' not found"}), 404
+
+    data = request.get_json(force=True)
+
+    # Validate
+    try:
+        from config_loader import validate_serial_topology
+        validate_serial_topology(data)
+    except Exception as e:
+        return jsonify({"error": f"Validation failed: {e}"}), 400
+
+    all_configs[name] = data
+    with open(cfg_path, "w") as f:
+        yaml.dump(all_configs, f, default_flow_style=False, sort_keys=False)
+    return jsonify({"status": "ok", "scenario": name})
+
+
+@app.route("/api/scenario", methods=["POST"])
+def api_create_scenario():
+    """Create a new scenario."""
+    data = request.get_json(force=True)
+    name = data.pop("_name", None)
+    if not name:
+        return jsonify({"error": "Missing '_name' field"}), 400
+
+    cfg_path = _get_config_file_path()
+    with open(cfg_path, "r") as f:
+        all_configs = yaml.safe_load(f)
+    if name in all_configs:
+        return jsonify({"error": f"Scenario '{name}' already exists"}), 409
+
+    # Validate
+    try:
+        from config_loader import validate_serial_topology
+        validate_serial_topology(data)
+    except Exception as e:
+        return jsonify({"error": f"Validation failed: {e}"}), 400
+
+    all_configs[name] = data
+    with open(cfg_path, "w") as f:
+        yaml.dump(all_configs, f, default_flow_style=False, sort_keys=False)
+    return jsonify({"status": "created", "scenario": name}), 201
+
+
+@app.route("/api/scenario/<name>/yaml")
+def api_scenario_yaml(name):
+    """Return scenario config as YAML text (for preview)."""
+    cfg_path = _get_config_file_path()
+    with open(cfg_path, "r") as f:
+        all_configs = yaml.safe_load(f)
+    if name not in all_configs:
+        return jsonify({"error": f"Scenario '{name}' not found"}), 404
+    yaml_text = yaml.dump({name: all_configs[name]}, default_flow_style=False, sort_keys=False)
+    return jsonify({"yaml": yaml_text})
 
 
 # ---------------------------------------------------------------------------

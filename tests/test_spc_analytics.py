@@ -1,5 +1,5 @@
 """
-Unit Tests for SPC Analytics Module (Phase 11)
+Unit Tests for SPC Analytics Module
 
 Tests control charts, capability indices, and Western Electric rules.
 """

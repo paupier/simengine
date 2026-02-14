@@ -1,5 +1,5 @@
 """
-Isolation Test for AdvancedMachine (Phase 10a)
+Isolation Test for AdvancedMachine
 
 Tests AdvancedMachine integration with Simantha before OPC UA integration.
 This verifies that:
@@ -228,7 +228,7 @@ def test_no_failures():
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("AdvancedMachine Isolation Tests (Phase 10a)")
+    print("AdvancedMachine Isolation Tests")
     print("=" * 60)
 
     try:

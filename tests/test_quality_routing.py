@@ -1,4 +1,4 @@
-"""Tests for Phase 14: Quality-Aware Machine Routing (Scrap & Rework)."""
+"""Tests for Quality-Aware Machine Routing (Scrap & Rework)."""
 
 import os
 import sys

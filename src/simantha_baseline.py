@@ -1,5 +1,5 @@
 """
-Phase 1/4: Simantha baseline simulation script.
+Simantha baseline simulation script.
 
 Scenarios:
 - A: Balanced line (M1=1s, M2=1s)
@@ -12,7 +12,7 @@ import csv
 from dataclasses import dataclass
 from typing import Optional
 
-from simantha import Source, Machine, Buffer, Sink, System, Maintainer  # Phase 4: add Maintainer
+from simantha import Source, Machine, Buffer, Sink, System, Maintainer
 
 
 # ---------- Data structures ----------
@@ -58,7 +58,7 @@ SCENARIOS = [
 ]
 
 
-# ---------- Machine health degradation setup (Phase 4) ----------
+# ---------- Machine health degradation setup ----------
 
 # Simple 2‑state degradation matrix:
 # state 0: healthy, state 1: failed (absorbing)
@@ -71,7 +71,7 @@ degradation_matrix = [
 # ---------- Helper functions ----------
 
 def ensure_results_dir() -> str:
-    """Ensure Phase 4 results directory exists at the project root and return its path."""
+    """Ensure results directory exists at the project root and return its path."""
     script_dir = os.path.dirname(os.path.abspath(__file__))  # .../project/src
     project_root = os.path.dirname(script_dir)               # .../project
     results_dir = os.path.join(project_root, "results", "phase4")
