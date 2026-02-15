@@ -889,7 +889,6 @@ def write_machine_opcua_vars(machine_vars, machine_obj, current_state, metrics,
     total_time_min = total_time / 60.0
     actual_ppm = metrics["partcount"] / total_time_min if total_time_min > 0 else 0.0
     machine_vars["actual_ppm"].set_value(round(actual_ppm, 2))
-
     # Health (if enabled)
     if "health" in machine_vars:
         health_pct = 100.0 * (1 - health_state)
@@ -897,7 +896,7 @@ def write_machine_opcua_vars(machine_vars, machine_obj, current_state, metrics,
         machine_vars["health_pct"].set_value(health_pct)
 
     # Failure mode statistics
-    if isinstance(machine_obj, AdvancedMachine):
+    if isinstance(machine_obj, AdvancedMachine) and "fm_active" in machine_vars:
         active_mode = machine_obj.get_active_failure_mode()
         machine_vars["fm_active"].set_value(active_mode)
 
