@@ -407,10 +407,19 @@
                     m.target_ppm = parseInt(ppm);
                     delete m.cycle_time;  // PPM takes precedence
                 }
-                if (el.querySelector('.m-spc').checked) m.enable_spc = true;
-                if (el.querySelector('.m-failures').checked) m.enable_advanced_failures = true;
+                // Preserve detailed configs from original scenario data
+                const orig = (scenarioData && scenarioData.machines || [])[machines.length] || {};
+                if (el.querySelector('.m-spc').checked) {
+                    m.enable_spc = true;
+                    if (orig.spc) m.spc = orig.spc;
+                }
+                if (el.querySelector('.m-failures').checked) {
+                    m.enable_advanced_failures = true;
+                    if (orig.failure_modes) m.failure_modes = orig.failure_modes;
+                    if (orig.maintenance_strategy) m.maintenance_strategy = orig.maintenance_strategy;
+                }
                 if (el.querySelector('.m-qr').checked) {
-                    m.quality_routing = {enabled: true};
+                    m.quality_routing = orig.quality_routing || {enabled: true};
                 }
                 machines.push(m);
             });
@@ -427,8 +436,21 @@
             });
 
             const cfg = {machines, buffers};
+            // Preserve detailed top-level configs from original scenario
             if (document.getElementById('feat-maintainer').checked) {
-                cfg.maintainer = {enabled: true};
+                cfg.maintainer = (scenarioData && scenarioData.maintainer) || {enabled: true};
+            }
+            if (document.getElementById('feat-shifts').checked && scenarioData && scenarioData.shifts) {
+                cfg.shifts = scenarioData.shifts;
+            }
+            if (document.getElementById('feat-historian').checked && scenarioData && scenarioData.historian) {
+                cfg.historian = scenarioData.historian;
+            }
+            if (scenarioData && scenarioData.scrap_sinks) {
+                cfg.scrap_sinks = scenarioData.scrap_sinks;
+            }
+            if (scenarioData && scenarioData.description) {
+                cfg.description = scenarioData.description;
             }
             return cfg;
         }
