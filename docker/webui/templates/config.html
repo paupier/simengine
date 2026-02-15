@@ -222,6 +222,9 @@
             const hasPpm = m.target_ppm ? true : false;
             const cycleVal = hasPpm ? (60.0 / m.target_ppm).toFixed(2) : (m.cycle_time || 1);
             const cycleDisabled = hasPpm ? 'disabled' : '';
+            // Read defect rate from quality_routing if present, else top-level
+            const defectRate = (m.quality_routing && m.quality_routing.defect_rate != null)
+                ? m.quality_routing.defect_rate : (m.defect_rate || 0);
             return `
             <div class="machine-section" id="machine-${idx}">
                 <div class="d-flex justify-content-between mb-2">
@@ -245,7 +248,7 @@
                     </div>
                     <div class="col-md-3">
                         <label class="form-label small">Defect Rate <span class="tooltip-hint" data-bs-toggle="tooltip" title="Probability (0.0-1.0) that each part is defective">(?)</span></label>
-                        <input type="number" class="form-control form-control-sm m-defect" value="${m.defect_rate || 0}" step="0.01" min="0" max="1">
+                        <input type="number" class="form-control form-control-sm m-defect" value="${defectRate}" step="0.01" min="0" max="1">
                     </div>
                 </div>
                 <div class="ppm-formula" id="ppm-formula-${idx}"></div>
@@ -397,10 +400,10 @@
             const machineEls = document.querySelectorAll('.machine-section');
             const machines = [];
             machineEls.forEach(el => {
+                const formDefect = parseFloat(el.querySelector('.m-defect').value) || 0;
                 const m = {
                     name: el.querySelector('.m-name').value,
                     cycle_time: parseFloat(el.querySelector('.m-cycle').value) || 1.0,
-                    defect_rate: parseFloat(el.querySelector('.m-defect').value) || 0,
                 };
                 const ppm = el.querySelector('.m-ppm').value;
                 if (ppm) {
@@ -419,7 +422,13 @@
                     if (orig.maintenance_strategy) m.maintenance_strategy = orig.maintenance_strategy;
                 }
                 if (el.querySelector('.m-qr').checked) {
-                    m.quality_routing = orig.quality_routing || {enabled: true};
+                    const qr = Object.assign({}, orig.quality_routing || {enabled: true});
+                    qr.enabled = true;
+                    qr.defect_rate = formDefect;
+                    m.quality_routing = qr;
+                } else if (formDefect > 0) {
+                    // No quality routing but defect rate set — save top-level
+                    m.defect_rate = formDefect;
                 }
                 machines.push(m);
             });
@@ -483,12 +492,15 @@
             if (resp.ok) {
                 showAlert(`Scenario saved: ${result.scenario}`, 'success');
                 await loadScenarioList();
+                const savedName = result.scenario;
                 if (isNewScenario) {
-                    document.getElementById('scenario-select').value = result.scenario;
                     isNewScenario = false;
-                    currentScenario = result.scenario;
                     document.getElementById('name-group').style.display = 'none';
                 }
+                // Reload scenario to refresh form and scenarioData
+                document.getElementById('scenario-select').value = savedName;
+                currentScenario = savedName;
+                await loadScenario(savedName);
             } else {
                 showAlert(result.error, 'danger');
             }
