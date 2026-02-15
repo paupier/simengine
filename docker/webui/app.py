@@ -14,15 +14,85 @@ from collections import deque
 from io import StringIO
 from pathlib import Path
 
+import re
+
 from ruamel.yaml import YAML
 
 from flask import Flask, jsonify, render_template, request
 
 _ryaml = YAML()
 _ryaml.preserve_quotes = True
+_ryaml.indent(mapping=2, sequence=4, offset=2)
+
+
+def _find_scenario_span(text, name):
+    """Find the start and end character positions of a scenario block in YAML text.
+
+    Returns (start, end) where text[start:end] is the full scenario block
+    including its key line. Returns (None, None) if not found.
+    """
+    # Match the scenario key at the start of a line (top-level, no indent)
+    pattern = re.compile(rf'^{re.escape(name)}:\s*(?:#.*)?\n', re.MULTILINE)
+    match = pattern.search(text)
+    if not match:
+        return None, None
+
+    start = match.start()
+
+    # Find the end: next top-level key (non-whitespace at column 0 followed by colon)
+    # or end of file
+    rest = text[match.end():]
+    end_pattern = re.compile(r'^\S', re.MULTILINE)
+    end_match = end_pattern.search(rest)
+    if end_match:
+        end = match.end() + end_match.start()
+    else:
+        end = len(text)
+
+    return start, end
+
+
+def _render_scenario_yaml(name, data):
+    """Render a single scenario as YAML text with correct indentation."""
+    ry = YAML()
+    ry.indent(mapping=2, sequence=4, offset=2)
+    buf = StringIO()
+    ry.dump({name: data}, buf)
+    return buf.getvalue()
+
+
+def _save_scenario_to_file(cfg_path, name, data):
+    """Save a scenario to the YAML file using text-level surgery.
+
+    Only the target scenario block is replaced; all other content
+    (comments, formatting, other scenarios) is preserved byte-for-byte.
+    """
+    with open(cfg_path, "r") as f:
+        original_text = f.read()
+
+    new_block = _render_scenario_yaml(name, data)
+
+    start, end = _find_scenario_span(original_text, name)
+    if start is not None:
+        # Replace existing scenario block
+        # Ensure there's a blank line before the next scenario
+        modified = original_text[:start] + new_block
+        remaining = original_text[end:]
+        if remaining and not remaining.startswith("\n"):
+            modified += "\n"
+        modified += remaining
+    else:
+        # Append new scenario at end of file
+        if not original_text.endswith("\n"):
+            original_text += "\n"
+        modified = original_text + "\n" + new_block
+
+    with open(cfg_path, "w") as f:
+        f.write(modified)
 
 app = Flask(__name__)
 app.config["TEMPLATES_AUTO_RELOAD"] = True
+app.json.sort_keys = False
 
 # ---------------------------------------------------------------------------
 # Global state
@@ -471,9 +541,7 @@ def api_update_scenario(name):
     except Exception as e:
         return jsonify({"error": f"Validation failed: {e}"}), 400
 
-    all_configs[name] = data
-    with open(cfg_path, "w") as f:
-        _ryaml.dump(all_configs, f)
+    _save_scenario_to_file(cfg_path, name, data)
     return jsonify({"status": "ok", "scenario": name})
 
 
@@ -498,9 +566,7 @@ def api_create_scenario():
     except Exception as e:
         return jsonify({"error": f"Validation failed: {e}"}), 400
 
-    all_configs[name] = data
-    with open(cfg_path, "w") as f:
-        _ryaml.dump(all_configs, f)
+    _save_scenario_to_file(cfg_path, name, data)
     return jsonify({"status": "created", "scenario": name}), 201
 
 
