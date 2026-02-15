@@ -7,8 +7,12 @@ Scenarios that already have a historian block are updated to enable InfluxDB
 and point at the Docker-internal InfluxDB URL.
 """
 import os
-import yaml
 from pathlib import Path
+
+from ruamel.yaml import YAML
+
+_ryaml = YAML()
+_ryaml.preserve_quotes = True
 
 
 def inject_historian_config():
@@ -18,7 +22,7 @@ def inject_historian_config():
     output_path = config_dir / "line_models_runtime.yaml"
 
     with open(source_path, "r") as f:
-        all_configs = yaml.safe_load(f)
+        all_configs = _ryaml.load(f)
 
     influxdb_url = os.environ.get("INFLUXDB_URL", "http://influxdb:8086")
     influxdb_token = os.environ.get("INFLUXDB_TOKEN", "simantha-dev-token")
@@ -73,7 +77,7 @@ def inject_historian_config():
             hist["influxdb"]["bucket"] = influxdb_bucket
 
     with open(output_path, "w") as f:
-        yaml.dump(all_configs, f, default_flow_style=False, sort_keys=False)
+        _ryaml.dump(all_configs, f)
 
     print(f"[Docker] Generated runtime config: {output_path}")
     print(f"[Docker] InfluxDB URL: {influxdb_url}")

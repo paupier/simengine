@@ -11,10 +11,15 @@ import sys
 import threading
 import time
 from collections import deque
+from io import StringIO
 from pathlib import Path
 
-import yaml
+from ruamel.yaml import YAML
+
 from flask import Flask, jsonify, render_template, request
+
+_ryaml = YAML()
+_ryaml.preserve_quotes = True
 
 app = Flask(__name__)
 app.config["TEMPLATES_AUTO_RELOAD"] = True
@@ -62,7 +67,7 @@ def list_scenarios():
     """Parse line_models.yaml and return scenario metadata."""
     config_path = ORIGINAL_CONFIG_PATH if ORIGINAL_CONFIG_PATH.exists() else CONFIG_PATH
     with open(config_path, "r") as f:
-        all_configs = yaml.safe_load(f)
+        all_configs = _ryaml.load(f)
 
     scenarios = {}
     for key, cfg in all_configs.items():
@@ -442,7 +447,7 @@ def api_get_scenario(name):
     """Return full config for a single scenario."""
     cfg_path = _get_config_file_path()
     with open(cfg_path, "r") as f:
-        all_configs = yaml.safe_load(f)
+        all_configs = _ryaml.load(f)
     if name not in all_configs:
         return jsonify({"error": f"Scenario '{name}' not found"}), 404
     return jsonify(all_configs[name])
@@ -453,7 +458,7 @@ def api_update_scenario(name):
     """Update an existing scenario config."""
     cfg_path = _get_config_file_path()
     with open(cfg_path, "r") as f:
-        all_configs = yaml.safe_load(f)
+        all_configs = _ryaml.load(f)
     if name not in all_configs:
         return jsonify({"error": f"Scenario '{name}' not found"}), 404
 
@@ -468,7 +473,7 @@ def api_update_scenario(name):
 
     all_configs[name] = data
     with open(cfg_path, "w") as f:
-        yaml.dump(all_configs, f, default_flow_style=False, sort_keys=False)
+        _ryaml.dump(all_configs, f)
     return jsonify({"status": "ok", "scenario": name})
 
 
@@ -482,7 +487,7 @@ def api_create_scenario():
 
     cfg_path = _get_config_file_path()
     with open(cfg_path, "r") as f:
-        all_configs = yaml.safe_load(f)
+        all_configs = _ryaml.load(f)
     if name in all_configs:
         return jsonify({"error": f"Scenario '{name}' already exists"}), 409
 
@@ -495,7 +500,7 @@ def api_create_scenario():
 
     all_configs[name] = data
     with open(cfg_path, "w") as f:
-        yaml.dump(all_configs, f, default_flow_style=False, sort_keys=False)
+        _ryaml.dump(all_configs, f)
     return jsonify({"status": "created", "scenario": name}), 201
 
 
@@ -504,11 +509,12 @@ def api_scenario_yaml(name):
     """Return scenario config as YAML text (for preview)."""
     cfg_path = _get_config_file_path()
     with open(cfg_path, "r") as f:
-        all_configs = yaml.safe_load(f)
+        all_configs = _ryaml.load(f)
     if name not in all_configs:
         return jsonify({"error": f"Scenario '{name}' not found"}), 404
-    yaml_text = yaml.dump({name: all_configs[name]}, default_flow_style=False, sort_keys=False)
-    return jsonify({"yaml": yaml_text})
+    buf = StringIO()
+    _ryaml.dump({name: all_configs[name]}, buf)
+    return jsonify({"yaml": buf.getvalue()})
 
 
 # ---------------------------------------------------------------------------
