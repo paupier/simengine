@@ -517,4 +517,5 @@ if __name__ == "__main__":
     port = int(os.environ.get("WEBUI_PORT", 8080))
     print(f"[WebUI] Starting on port {port}")
     print(f"[WebUI] Config: {CONFIG_PATH}")
+    app.jinja_env.auto_reload = True
     app.run(host="0.0.0.0", port=port, debug=False)
