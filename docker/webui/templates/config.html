@@ -28,6 +28,15 @@
         .tooltip-hint { cursor: help; color: #6c757d; font-size: 0.75rem; }
         .ppm-formula { font-size: 0.75rem; color: #6c757d; font-style: italic; margin-top: 2px; }
         #scenario-description { font-size: 0.85rem; color: #6c757d; margin-top: 4px; }
+        .feature-detail {
+            font-size: 0.75rem;
+            color: #6c757d;
+            background: #f8f9fa;
+            border-left: 3px solid #dee2e6;
+            padding: 4px 8px;
+            margin: 4px 0;
+            font-family: 'Courier New', monospace;
+        }
     </style>
 </head>
 <body>
@@ -260,7 +269,72 @@
                         </div>
                     </div>
                 </div>
+                ${buildFeatureDetails(m)}
             </div>`;
+        }
+
+        function formatDist(dist) {
+            if (!dist) return '?';
+            const d = dist.distribution;
+            switch (d) {
+                case 'weibull': return `weibull(shape=${dist.shape}, scale=${dist.scale})`;
+                case 'exponential': return `exponential(mean=${dist.mean})`;
+                case 'lognormal': return `lognormal(mean=${dist.mean}, std=${dist.std})`;
+                case 'normal': return `normal(mean=${dist.mean}, std=${dist.std})`;
+                case 'uniform': return `uniform(${dist.min}-${dist.max})`;
+                case 'constant': return `constant(${dist.value})`;
+                default: return d || '?';
+            }
+        }
+
+        function buildFeatureDetails(m) {
+            let html = '';
+
+            // SPC details
+            if (m.spc) {
+                const s = m.spc;
+                html += `<div class="feature-detail">`;
+                html += `<strong>SPC:</strong> ${s.characteristic || 'cycle_time'}`;
+                if (s.usl != null) html += ` | USL: ${s.usl}`;
+                if (s.lsl != null) html += `, LSL: ${s.lsl}`;
+                if (s.target != null) html += `, Target: ${s.target}`;
+                html += `<br>Subgroup: ${s.subgroup_size || 5} x ${s.num_subgroups || 25}`;
+                html += ` | W.E. Rules: ${s.enable_western_electric !== false ? 'on' : 'off'}`;
+                if (s.measurement_noise) html += ` | Noise: ${s.measurement_noise}`;
+                html += `</div>`;
+            }
+
+            // Failure modes details
+            if (m.failure_modes && m.failure_modes.length > 0) {
+                html += `<div class="feature-detail">`;
+                for (const fm of m.failure_modes) {
+                    html += `<strong>${fm.name}</strong> (${fm.type}): `;
+                    html += `MTTF ${formatDist(fm.mttf)} | MTTR ${formatDist(fm.mttr)}<br>`;
+                }
+                if (m.maintenance_strategy) {
+                    const ms = m.maintenance_strategy;
+                    html += `Strategy: ${ms.type}`;
+                    if (ms.pm_interval) html += ` (PM every ${ms.pm_interval})`;
+                    if (ms.cbm_threshold) html += ` (CBM threshold: ${ms.cbm_threshold})`;
+                }
+                html += `</div>`;
+            }
+
+            // Quality routing details
+            if (m.quality_routing && m.quality_routing.enabled) {
+                const qr = m.quality_routing;
+                if (qr.mode || qr.defect_rate || qr.rework_success_rate) {
+                    html += `<div class="feature-detail">`;
+                    html += `<strong>Routing:</strong> ${qr.mode || 'scrap'}`;
+                    if (qr.defect_rate) html += ` | Defect: ${(qr.defect_rate * 100).toFixed(0)}%`;
+                    if (qr.enable_health_correlation) html += ` | Health corr: x${qr.health_multiplier || 3}`;
+                    if (qr.rework_success_rate) html += `<br>Rework: ${(qr.rework_success_rate * 100).toFixed(0)}% success, max ${qr.max_rework || 3}`;
+                    if (qr.scrap_sink) html += ` | Sink: ${qr.scrap_sink}`;
+                    html += `</div>`;
+                }
+            }
+
+            return html;
         }
 
         function addMachine() {

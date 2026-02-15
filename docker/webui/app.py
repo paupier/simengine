@@ -30,6 +30,7 @@ sim_lock = threading.Lock()
 
 _SCRIPT_DIR = Path(__file__).resolve().parent
 _PROJECT_ROOT = _SCRIPT_DIR.parent.parent  # docker/webui/ → project root
+sys.path.insert(0, str(_PROJECT_ROOT / "src"))
 
 CONFIG_PATH = Path(os.environ.get(
     "SIMANTHA_CONFIG_PATH",
