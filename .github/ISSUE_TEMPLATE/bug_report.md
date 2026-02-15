@@ -10,14 +10,17 @@ assignees: ''
 **Describe the bug**
 A clear and concise description of what the bug is.
 
-**Phase**
-Which phase does this affect?
-- [ ] Phase 1: Simantha Baseline
-- [ ] Phase 2: OPC UA Read-Only
-- [ ] Phase 3: Bidirectional Control
-- [ ] Phase 4: Alarms & Logging
-- [ ] Phase 5: Advanced Analytics
-- [ ] Phase 6: NodeSet Export
+**Feature Area**
+Which area does this affect?
+- [ ] OPC UA Server (connectivity, address space, controls)
+- [ ] Simulation Engine (stepping, state detection, OEE)
+- [ ] Configuration (YAML loading, validation, scenarios)
+- [ ] Quality & SPC (defects, control charts, capability)
+- [ ] Failure Modes (distributions, maintenance, MTBF/MTTR)
+- [ ] Shifts & Historian (rotation, CSV/InfluxDB/Neo4j logging)
+- [ ] Scrap & Rework (quality routing, scrap sinks)
+- [ ] Web UI (Flask dashboard, config editor)
+- [ ] Docker (compose, Grafana, InfluxDB)
 
 **To Reproduce**
 Steps to reproduce the behavior:

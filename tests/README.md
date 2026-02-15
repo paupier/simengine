@@ -1,27 +1,40 @@
 # Simantha-OPC UA Test Suite
 
-Automated tests for the OPC UA server integration.
+Automated tests for the Simantha OPC UA digital twin.
 
 ## Test Files
 
-- **`test_opcua_integration.py`** - Comprehensive integration tests
-- **`validate_opcua_server.py`** - Quick validation script for manual testing
-- **`conftest.py`** - Pytest fixtures (server startup, client connection)
+| File | Tests | Description |
+|------|-------|-------------|
+| `test_config_validation.py` | 48 | Configuration loading and validation |
+| `test_event_historian.py` | 38 | CSV/InfluxDB/Composite event historian |
+| `test_quality_routing.py` | 30 | Scrap & rework routing |
+| `test_failure_modes.py` | 29 | Failure mode manager, distributions |
+| `test_spc_analytics.py` | 23 | SPC control charts & capability |
+| `test_neo4j_historian.py` | 23 | Neo4j graph DB historian |
+| `test_distribution_validation.py` | 12 | Statistical distribution validation |
+| `test_advanced_machine_isolation.py` | 5 | AdvancedMachine unit tests |
+| `test_scenarios.py` | 1 | Scenario validation |
+| `test_opcua_integration.py` | — | OPC UA integration (excluded from CI) |
+| `test_advanced_scenarios.py` | — | Long-running scenario tests (excluded from CI) |
+| `conftest.py` | — | Pytest fixtures (server startup, client connection) |
+| `factories.py` | — | Shared test helpers: `make_event()`, `make_part()`, `make_machine_metrics()`, `make_quality_machine()` |
+| `validate_opcua_server.py` | — | Quick validation script for manual testing |
+
+**Total: 209 non-integration tests**
 
 ## Quick Start
 
-### 1. Run All Tests
+### 1. Run All Tests (CI-equivalent)
 
 ```bash
-pytest tests/ -v
+pytest tests/ -v --ignore=tests/test_advanced_scenarios.py --ignore=tests/test_opcua_integration.py
 ```
 
 **Expected output:**
 ```
-tests/test_opcua_integration.py::TestOPCUAAddressSpace::test_system_nodes_exist PASSED
-tests/test_opcua_integration.py::TestOPCUAAddressSpace::test_control_nodes_exist PASSED
 ...
-==================== 25 passed in 45.23s ====================
+==================== 209 passed in X.XXs ====================
 ```
 
 ### 2. Run Quick Validation (Manual)
@@ -63,7 +76,7 @@ Verify all expected OPC UA nodes exist and are accessible.
 
 - System nodes (SimTime, Throughput)
 - Control nodes (cmdPauseLine, setInterarrivalTime)
-- Station nodes (State, PartCount, Utilisation, Health)
+- Machine nodes (State, PartCount, Utilisation, Health)
 - Buffer nodes (CurrentLevel, Capacity)
 - Maintenance nodes (MaintenanceActive, QueueLength, TotalRepairs)
 
@@ -89,10 +102,10 @@ Verify degradation and maintenance modeling.
 - HealthState is binary (0=healthy, 1=failed)
 - Maintenance variables have valid values
 
-### 5. **Station State Tests** (`TestStationStates`)
-Verify station states and utilisation.
+### 5. **Machine State Tests** (`TestMachineStates`)
+Verify machine states and utilisation.
 
-- States are valid (IDLE, RUNNING, PAUSED, FAILED, UNDER_REPAIR)
+- States are valid (IDLE, PROCESSING, PAUSED, FAILED, UNDER_REPAIR, BLOCKED, STARVED)
 - Utilisation is in range [0.0, 1.0]
 
 ## Running Specific Tests
@@ -106,13 +119,16 @@ pytest tests/test_opcua_integration.py::TestControlInputs -v
 
 # Run a specific test
 pytest tests/test_opcua_integration.py::TestSimulationBehavior::test_throughput_increases -v
+
+# Run a specific test file
+pytest tests/test_quality_routing.py -v
 ```
 
 ## Test Coverage
 
 ```bash
 # Run with coverage report
-pytest tests/ --cov=src --cov-report=html
+pytest tests/ --ignore=tests/test_advanced_scenarios.py --ignore=tests/test_opcua_integration.py --cov=src --cov-report=html
 
 # Open coverage report
 # Windows: start htmlcov/index.html
@@ -149,9 +165,7 @@ If tests fail:
 
 ## CI/CD Integration
 
-Tests run automatically on GitHub Actions (when configured).
-
-To add CI/CD, create `.github/workflows/tests.yml`:
+Tests run on GitHub Actions with Python 3.9, 3.10, and 3.11. CI excludes `test_advanced_scenarios.py` and `test_opcua_integration.py` (long-running).
 
 ```yaml
 name: Tests
@@ -161,13 +175,16 @@ on: [push, pull_request]
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.9', '3.10', '3.11']
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/setup-python@v2
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version: '3.8'
+          python-version: ${{ matrix.python-version }}
       - run: pip install -r requirements.txt
-      - run: pytest tests/ -v --cov=src
+      - run: pytest tests/ -v --ignore=tests/test_advanced_scenarios.py --ignore=tests/test_opcua_integration.py
 ```
 
 ## Writing New Tests
@@ -190,6 +207,12 @@ def test_my_feature(self, opcua_client):
     assert new_value != value, "Value should change"
 ```
 
+Shared test helpers are available in `factories.py`:
+
+```python
+from factories import make_event, make_part, make_machine_metrics, make_quality_machine
+```
+
 ## Test Fixtures
 
 ### `opcua_server` (module scope)
@@ -209,14 +232,6 @@ def test_something(self, opcua_client):
 
 ## Known Issues
 
-- Tests may take 45+ seconds to run (simulation needs time to observe behavior)
+- Integration tests may take 45+ seconds to run (simulation needs time to observe behavior)
 - Degradation/failure tests may be flaky (1% random failure rate)
 - Server startup takes ~3 seconds (fixture waits for initialization)
-
-## Next Steps
-
-- [ ] Add scenario-specific tests (balanced, bottleneck, failures)
-- [ ] Add performance/load tests
-- [ ] Add test for buffer filling/draining dynamics
-- [ ] Add test for maintenance repair cycle
-- [ ] Integrate with GitHub Actions CI/CD

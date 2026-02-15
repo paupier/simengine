@@ -95,6 +95,14 @@ class AdvancedMachine(Machine):
             **kwargs
         )
 
+    def initialize_addon_process(self):
+        super().initialize_addon_process()
+        self.total_cm_count = 0
+        self.total_pm_count = 0
+        self.pending_failure_mode = None
+        self.failure_start_time = None
+        self.failure_mode_manager.reset()
+
     def get_time_to_degrade(self) -> float:
         """
         Override: Sample next failure time using scipy distributions.

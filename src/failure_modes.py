@@ -152,6 +152,14 @@ class FailureModeManager:
         self.failure_modes = failure_modes
         self.failure_modes_dict = {fm.name: fm for fm in failure_modes}
 
+    def reset(self):
+        """Reset all failure mode statistics for a new simulate() call."""
+        for fm in self.failure_modes:
+            fm.failure_count = 0
+            fm.total_downtime = 0.0
+            fm.total_uptime = 0.0
+            fm.last_failure_time = 0.0
+
     def sample_next_failure(self) -> Tuple[float, str]:
         """
         Sample next failure using competing risks model.

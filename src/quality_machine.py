@@ -157,6 +157,14 @@ class QualityRoutingMixin:
             rework_enabled, rework_success_rate, max_rework
         )
 
+    def initialize_addon_process(self):
+        super().initialize_addon_process()
+        self._scrap_count = 0
+        self._rework_count = 0
+        self._rework_success_count = 0
+        self._good_count = 0
+        self._defective_count = 0
+
     def output_addon_process(self, part):
         _quality_route(self, part)
 

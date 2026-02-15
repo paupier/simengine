@@ -11,7 +11,7 @@ A real-time **digital twin** of a manufacturing production line using [Simantha]
 ## 📋 Project Status
 
 **Status:** All 14 development phases complete
-**Last Updated:** 2026-02-09
+**Last Updated:** 2026-02-14
 
 ### Phase Completion Status
 
@@ -111,6 +111,7 @@ python src/opcua_server.py --scenario shift_line
 python src/opcua_server.py --scenario scrap_line
 
 # ALL features combined (failures, SPC, shifts, historian, scrap/rework)
+# --seed seeds both Python random and numpy for full reproducibility
 python src/opcua_server.py --scenario full_feature_line --seed 42
 ```
 
@@ -122,6 +123,25 @@ OPC UA server started at opc.tcp://localhost:4840/simantha/
 Scenario: balanced_line (2 machines, 1 buffers)
 Press Ctrl+C to stop.
 ```
+
+### Web UI
+
+A Flask-based web dashboard is available as an alternative to OPC UA clients:
+
+**Local mode (no Docker):**
+```bash
+python docker/webui/app.py
+# Open http://localhost:8080
+```
+
+Features: scenario selection, live dashboard (per-machine OEE/PPM/SPC/shifts/scrap), and config editor at `/config`.
+
+**Docker mode (full stack):**
+```bash
+docker compose -f docker/docker-compose.yml up --build -d
+```
+
+Includes the Web UI, InfluxDB for time-series storage, and Grafana for dashboards.
 
 ### Connect with UA Expert
 
@@ -195,6 +215,8 @@ Objects/
       │    ├─ State (string, READ-ONLY)             # IDLE, PROCESSING, BLOCKED, STARVED, PAUSED, FAILED, UNDER_REPAIR
       │    ├─ PartCount (int, READ-ONLY)            # Parts processed (monotonic)
       │    ├─ Utilisation (double, READ-ONLY)       # ProcessingTime / TotalTime (range: 0.0-1.0)
+      │    ├─ TargetPPM (double, READ-ONLY)         # Target parts per minute (from config)
+      │    ├─ ActualPPM (double, READ-ONLY)         # Actual parts per minute (measured)
       │    ├─ HealthState (int, READ-ONLY)          # 0=healthy, 1=failed
       │    ├─ HealthPercent (double, READ-ONLY)     # 100=healthy, 0=failed
       │    ├─ BlockedTime (double, READ-ONLY)       # Time spent waiting for downstream
@@ -423,13 +445,19 @@ simantha-opcua/
 │   ├─ test_quality_routing.py   # Scrap & rework routing tests (30 tests)
 │   └─ validate_opcua_server.py   # Server validation script
 │
+├─ docker/
+│   ├─ webui/
+│   │   ├─ app.py                 # Flask web dashboard (local + Docker)
+│   │   └─ templates/             # HTML templates
+│   └─ docker-compose.yml        # Full stack: Web UI + InfluxDB + Grafana
+│
 ├─ grafana/
 │   ├─ dashboards/                # 4 Grafana dashboard JSON templates
 │   └─ README.md                  # InfluxDB + Grafana setup guide
 │
 ├─ docs/
-│   ├─ USER_MANUAL.md             # Comprehensive user manual
-│   ├─ phase11_spc_implementation_summary.md
+│   ├─ user_manual.md             # Comprehensive user manual
+│   ├─ spc_analytics.md           # SPC analytics reference
 │   └─ address_space.md           # OPC UA address space reference
 │
 ├─ requirements.txt               # Python dependencies
@@ -478,9 +506,9 @@ simantha-opcua/
 | **Phase 13** | Historical Data - Event-based CSV/InfluxDB/Neo4j logging, Grafana dashboards |
 | **Phase 14** | Scrap & Rework Routing - Quality-based part routing, scrap sinks, virtual rework |
 
-See the [User Manual](docs/USER_MANUAL.md) for detailed documentation of each phase.
+See the [User Manual](docs/user_manual.md) for detailed documentation.
 
-### Phase 12: Shift Tracking & Management ✅
+### Shift Tracking & Management ✅
 
 **Status:** Complete (2026-02-08)
 
@@ -560,7 +588,7 @@ Line1/Shift/
 
 ---
 
-### Phase 13: Historical Data & Visualization
+### Historical Data & Visualization
 
 Event-based logging to CSV, InfluxDB 2.x, and Neo4j with Grafana dashboard templates.
 
@@ -612,7 +640,7 @@ See [grafana/README.md](grafana/README.md) for InfluxDB + Grafana setup instruct
 
 ---
 
-### Phase 14: Scrap & Rework Routing ✅
+### Scrap & Rework Routing ✅
 
 **Status:** Complete (2026-02-09)
 
@@ -640,7 +668,7 @@ Source → M1 → B1 → M2 → Sink    (main serial chain)
 ```yaml
 machines:
   - name: M1
-    cycle_time: 1
+    cycle_time: 1              # or use target_ppm: 60 (derives cycle_time = 60/target_ppm)
     quality_routing:
       enabled: true
       mode: scrap_and_rework    # scrap, rework, or scrap_and_rework

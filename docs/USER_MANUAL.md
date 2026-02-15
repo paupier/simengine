@@ -1,7 +1,7 @@
 # Simantha OPC UA - Complete User Manual
 
-**Version:** Phase 14 (Scrap & Rework Routing)
-**Last Updated:** 2026-02-09
+**Version:** 2.0
+**Last Updated:** 2026-02-14
 **Difficulty:** Beginner to Advanced
 
 ---
@@ -230,9 +230,9 @@ Press Ctrl+C to stop.
    - You'll see:
      - System
      - LineKPIs
-     - Station1
+     - Machine1
      - Buffer1
-     - Station2
+     - Machine2
      - Maintenance
 
 4. **View Live Data:**
@@ -240,7 +240,7 @@ Press Ctrl+C to stop.
    - Try these first:
      - `Line1/System/SimTime` - Simulation time
      - `Line1/System/Throughput` - Total parts produced
-     - `Line1/Station1/State` - Machine 1 state
+     - `Line1/Machine1/State` - Machine 1 state
      - `Line1/Buffer1/CurrentLevel` - Buffer level
 
 **You should see values updating in real-time!** 🎉
@@ -275,6 +275,26 @@ In the terminal where the server is running:
 - Server will gracefully shut down
 
 **Congratulations!** You've completed your first simulation. 🎊
+
+### Web UI (Alternative to OPC UA Clients)
+
+Instead of using UA Expert, you can use the built-in Flask web dashboard:
+
+**Local mode (no Docker needed):**
+```bash
+python docker/webui/app.py
+```
+
+Open `http://localhost:8080` in your browser. The dashboard provides:
+
+- **Scenario selection** and simulation start/stop
+- **Live dashboard** with per-machine OEE bars, PPM, Cp/Cpk, shift progress, line OEE, and scrap metrics
+- **Config editor** at `/config` for creating and editing scenarios with YAML preview and validation
+
+**Docker mode (full stack with InfluxDB + Grafana):**
+```bash
+docker compose -f docker/docker-compose.yml up --build -d
+```
 
 ---
 
@@ -335,8 +355,8 @@ Source  →  M1  →  Buffer1  →  M2  →  Sink
 | **BLOCKED** | Waiting for downstream buffer space | Buffer full, downstream slow |
 | **STARVED** | Waiting for upstream parts | Buffer empty, upstream slow |
 | **PAUSED** | Simulation paused | User control via OPC UA |
-| **FAILED** | Machine has failed | Health degradation (Phase 4+) |
-| **UNDER_REPAIR** | Being repaired by maintainer | After failure (Phase 4+) |
+| **FAILED** | Machine has failed | Health degradation (with degradation enabled) |
+| **UNDER_REPAIR** | Being repaired by maintainer | After failure (with maintainer) |
 
 ### Key Performance Indicators (KPIs)
 
@@ -403,7 +423,7 @@ Source  →  M1  →  Buffer1  →  M2  →  Sink
 - **Data Access View:** Real-time value monitoring
 - **Data Logger:** Record historical values to CSV
 - **Trends:** Plot values over time (live charts)
-- **Alarms & Events:** View alarm notifications (Phase 9+)
+- **Alarms & Events:** View alarm notifications
 
 ### Prosys OPC UA Browser
 
@@ -515,7 +535,16 @@ machines:
     cycle_time: 1          # Processing time (seconds)
 ```
 
-**Machine with Health Degradation (Phase 4):**
+**Machine with Target PPM:**
+```yaml
+machines:
+  - name: M1
+    target_ppm: 60         # Parts per minute target (derives cycle_time = 60/target_ppm = 1.0s)
+```
+
+`target_ppm` takes precedence over `cycle_time` if both are specified.
+
+**Machine with Health Degradation:**
 ```yaml
 machines:
   - name: M1
@@ -527,7 +556,7 @@ machines:
     cbm_threshold: 1       # Request maintenance when state=1
 ```
 
-**Machine with Quality Modeling (Phase 8):**
+**Machine with Quality Modeling:**
 ```yaml
 machines:
   - name: M1
@@ -536,7 +565,7 @@ machines:
     health_multiplier: 3.0 # Defect rate × 3 when failed
 ```
 
-**Machine with Advanced Failures (Phase 10):**
+**Machine with Advanced Failures (optional):**
 ```yaml
 machines:
   - name: M1
@@ -570,7 +599,7 @@ machines:
       cbm_threshold: 1
 ```
 
-**Machine with SPC Analytics (Phase 11):**
+**Machine with SPC Analytics (optional):**
 ```yaml
 machines:
   - name: M1
@@ -585,9 +614,10 @@ machines:
       lsl: 0.8              # Lower spec limit
       target: 1.0           # Nominal value
       enable_western_electric: true
+      measurement_noise: 0.02   # Coefficient of variation for measurement noise
 ```
 
-### Quality Routing Configuration (Phase 14)
+### Quality Routing Configuration
 
 Add a `quality_routing` block to any machine to enable scrap/rework routing:
 
@@ -632,7 +662,7 @@ Source → M1 → B1 → M2 → Sink   (main serial chain unchanged)
 
 Scrap sinks are side branches - they do **not** affect the main serial chain. Parts only go to scrap when quality routing explicitly diverts them.
 
-### Event Historian Configuration (Phase 13)
+### Event Historian Configuration
 
 Add a `historian` block to enable event logging to CSV, InfluxDB, or Neo4j:
 
@@ -663,10 +693,10 @@ historian:
 | BUFFER_LOW | Buffer below 10% capacity |
 | SHIFT_CHANGE | Shift rotation boundary |
 | SPC_VIOLATION | Western Electric rule violation |
-| SCRAP | Part scrapped (Phase 14) |
-| REWORK | Rework attempted on defective part (Phase 14) |
+| SCRAP | Part scrapped (with quality routing) |
+| REWORK | Rework attempted on defective part (with quality routing) |
 
-### Shift Configuration (Phase 12)
+### Shift Configuration
 
 Add a `shifts` block to any scenario to enable shift tracking:
 
@@ -696,7 +726,7 @@ shifts:
 - **Number of shifts:** Unlimited. Define 2-shift, 3-shift, or any custom rotation.
 - **Custom names:** Use any naming convention ("Shift A", "06:00-14:00", "Morning", etc.)
 
-**Shift tracking is optional.** If the `shifts` block is omitted, the scenario runs without shift tracking (backward compatible with all Phase 1-11 scenarios).
+**Shift tracking is optional.** If the `shifts` block is omitted, the scenario runs without shift tracking.
 
 ### Creating Custom Scenarios
 
@@ -832,8 +862,8 @@ buffers:
 - Throughput: ~0.5 parts/second (limited by M1)
 
 **Observations:**
-- `Station2/State` often shows "STARVED"
-- `Station1/State` often shows "BLOCKED" (buffer full)
+- `Machine2/State` often shows "STARVED"
+- `Machine1/State` often shows "BLOCKED" (buffer full)
 - `Buffer1/CurrentLevel` fluctuates near 0
 
 **Use case:** Understanding bottlenecks and buffer dynamics
@@ -869,8 +899,8 @@ maintainer:
 - Throughput drops during M1 failures
 
 **Observations:**
-- `Station1/State` cycles: PROCESSING → FAILED → UNDER_REPAIR → PROCESSING
-- `Station1/HealthState` = 0 (healthy) or 1 (failed)
+- `Machine1/State` cycles: PROCESSING → FAILED → UNDER_REPAIR → PROCESSING
+- `Machine1/HealthState` = 0 (healthy) or 1 (failed)
 - `Maintenance/MaintenanceActive` = true during repairs
 - Buffer drains when M1 is down
 
@@ -917,9 +947,9 @@ machines:
 - Real Quality OEE calculation
 
 **Observations:**
-- `Station1/OEE/Quality` < 1.0 (defects reduce quality)
-- `Station1/OEE/DefectivePartCount` increases
-- `Station1/Alarms/QualityAlertActive` triggers if >5% defects
+- `Machine1/OEE/Quality` < 1.0 (defects reduce quality)
+- `Machine1/OEE/DefectivePartCount` increases
+- `Machine1/Alarms/QualityAlertActive` triggers if >5% defects
 
 **Use case:** Quality modeling and OEE analysis
 
@@ -950,8 +980,8 @@ machines:
 - MTBF/MTTR tracking per failure mode
 
 **Observations:**
-- `Station1/FailureModes/ActiveFailureMode` shows which mode failed
-- `Station1/FailureModes/MechanicalMTBF` shows mean time between failures
+- `Machine1/FailureModes/ActiveFailureMode` shows which mode failed
+- `Machine1/FailureModes/MechanicalMTBF` shows mean time between failures
 - More realistic failure patterns than simple degradation
 
 **Use case:** Realistic reliability modeling
@@ -980,9 +1010,9 @@ machines:
 - Western Electric rules
 
 **Observations:**
-- `Station1/SPC/Capability/Cpk` shows process capability
-- `Station1/SPC/Status/InControl` = false when out of control
-- `Station1/SPC/Status/Violations` lists rule violations
+- `Machine1/SPC/Capability/Cpk` shows process capability
+- `Machine1/SPC/Status/InControl` = false when out of control
+- `Machine1/SPC/Status/Violations` lists rule violations
 
 **Use case:** Quality control and Six Sigma analysis
 
@@ -996,7 +1026,7 @@ machines:
 **Characteristics:**
 - Combines advanced failure modes with SPC
 - Most realistic and complete simulation
-- All Phase 1-11 features enabled
+- All advanced features enabled
 
 **Use case:** Comprehensive digital twin demonstration
 
@@ -1049,7 +1079,7 @@ shifts:
 
 **Characteristics:**
 - 2-machine line with shift tracking + advanced failures + SPC + quality
-- All Phase 1-12 features enabled simultaneously
+- All features enabled simultaneously
 - Per-shift failure tracking and OEE
 - Predictive maintenance strategy
 
@@ -1098,7 +1128,7 @@ scrap_sinks:
 - Scrap rate visible in OPC UA
 
 **Observations:**
-- `Station1/QualityRouting/ScrapCount` increases as defects occur
+- `Machine1/QualityRouting/ScrapCount` increases as defects occur
 - `LineKPIs/TotalScrap` shows total scrapped parts
 - `LineKPIs/ScrapRate` shows overall scrap percentage
 - Buffer levels unaffected (scrap goes to side bins, not downstream)
@@ -1135,9 +1165,9 @@ scrap_sinks:
 - Failed rework routes to scrap sink
 
 **Observations:**
-- `Station1/QualityRouting/ReworkCount` shows total rework attempts
-- `Station1/QualityRouting/ReworkSuccessCount` shows successful reworks
-- `Station1/QualityRouting/ReworkSuccessRate` shows success percentage
+- `Machine1/QualityRouting/ReworkCount` shows total rework attempts
+- `Machine1/QualityRouting/ReworkSuccessCount` shows successful reworks
+- `Machine1/QualityRouting/ReworkSuccessRate` shows success percentage
 - Many defective parts are "saved" by rework, reducing scrap
 
 **Use case:** Virtual rework modeling and scrap reduction analysis
@@ -1150,7 +1180,7 @@ scrap_sinks:
 **Complexity:** ⭐⭐⭐⭐⭐ Expert
 
 **Characteristics:**
-- Combines ALL features from Phase 1-14
+- Combines ALL features
 - Advanced failures (Weibull mechanical + exponential electrical)
 - SPC analytics with Western Electric rules
 - Quality routing with scrap and rework
@@ -1183,11 +1213,11 @@ All nodes live under `Objects / Line1 /`:
 |------|-------------|
 | `System/` | Simulation time, throughput, controls |
 | `LineKPIs/` | Line-level WIP, OEE, scrap metrics |
-| `Station1/` ... `StationN/` | Per-machine state, time tracking, OEE, alarms, SPC, quality routing |
+| `Machine1/` ... `MachineN/` | Per-machine state, time tracking, OEE, alarms, SPC, quality routing |
 | `Buffer1/` ... `BufferN/` | Buffer levels and alarms |
 | `Maintenance/` | Maintainer status and repair counts |
-| `Shift/` | Shift tracking and per-shift metrics *(Phase 12, if configured)* |
-| `ScrapBin1/` ... `ScrapBinN/` | Scrap sink levels *(Phase 14, if configured)* |
+| `Shift/` | Shift tracking and per-shift metrics *(if shifts configured)* |
+| `ScrapBin1/` ... `ScrapBinN/` | Scrap sink levels *(if scrap_sinks configured)* |
 | `EventLog/` | Event counter |
 
 ---
@@ -1213,8 +1243,8 @@ All nodes live under `Objects / Line1 /`:
 | Variable | Access | Type | Description |
 |----------|--------|------|-------------|
 | `TotalWIP` | READ | Int32 | Total WIP in all buffers |
-| `TotalScrap` | READ | Int32 | Total parts scrapped across all machines *(Phase 14)* |
-| `ScrapRate` | READ | Double | TotalScrap / (Throughput + TotalScrap) *(Phase 14)* |
+| `TotalScrap` | READ | Int32 | Total parts scrapped across all machines *(if scrap_sinks configured)* |
+| `ScrapRate` | READ | Double | TotalScrap / (Throughput + TotalScrap) *(if scrap_sinks configured)* |
 
 **`LineKPIs / LineOEE /`**
 
@@ -1227,13 +1257,15 @@ All nodes live under `Objects / Line1 /`:
 
 ---
 
-### `Line1 / StationN /` *(per machine)*
+### `Line1 / MachineN /` *(per machine)*
 
 | Variable | Access | Type | Description |
 |----------|--------|------|-------------|
 | `State` | READ | String | IDLE, PROCESSING, BLOCKED, STARVED, PAUSED, FAILED, UNDER_REPAIR |
 | `PartCount` | READ | Int32 | Parts processed (monotonic) |
 | `Utilisation` | READ | Double | ProcessingTime / TotalTime (0.0-1.0) |
+| `TargetPPM` | READ | Double | Target parts per minute (from config) |
+| `ActualPPM` | READ | Double | Actual parts per minute (measured) |
 | `BlockedTime` | READ | Double | Time spent waiting for downstream |
 | `StarvedTime` | READ | Double | Time spent waiting for upstream |
 | `DownTime` | READ | Double | Time spent failed or under repair |
@@ -1242,7 +1274,7 @@ All nodes live under `Objects / Line1 /`:
 | `HealthState` | READ | Int32 | 0 = healthy, 1 = failed |
 | `HealthPercent` | READ | Double | Health percentage |
 
-**`StationN / OEE /`**
+**`MachineN / OEE /`**
 
 | Variable | Access | Type | Description |
 |----------|--------|------|-------------|
@@ -1254,7 +1286,7 @@ All nodes live under `Objects / Line1 /`:
 | `DefectivePartCount` | READ | Int32 | Defective parts |
 | `TheoreticalOutput` | READ | Double | Theoretical max output |
 
-**`StationN / Alarms /`**
+**`MachineN / Alarms /`**
 
 | Variable | Access | Type | Description |
 |----------|--------|------|-------------|
@@ -1266,7 +1298,7 @@ All nodes live under `Objects / Line1 /`:
 | `MaintenanceActive` | READ | Boolean | Maintenance alarm active |
 | `QualityAlertActive` | READ | Boolean | Quality alert active |
 
-**`StationN / QualityRouting /`** *(Phase 14 - if `quality_routing.enabled: true`)*
+**`MachineN / QualityRouting /`** *(if `quality_routing.enabled: true`)*
 
 | Variable | Access | Type | Description |
 |----------|--------|------|-------------|
@@ -1276,7 +1308,7 @@ All nodes live under `Objects / Line1 /`:
 | `ReworkSuccessRate` | READ | Double | ReworkSuccessCount / ReworkCount |
 | `GoodCount` | READ | Int32 | Total good parts (including successful reworks) |
 
-**`StationN / FailureModes /`** *(Phase 10 - if `enable_advanced_failures: true`)*
+**`MachineN / FailureModes /`** *(if `enable_advanced_failures: true`)*
 
 | Variable | Access | Type | Description |
 |----------|--------|------|-------------|
@@ -1286,7 +1318,7 @@ All nodes live under `Objects / Line1 /`:
 | `{Mode}MTBF` | READ | Double | Mean time between failures |
 | `{Mode}MTTR` | READ | Double | Mean time to repair |
 
-**`StationN / MaintenanceStrategy /`** *(Phase 10 - if `enable_advanced_failures: true`)*
+**`MachineN / MaintenanceStrategy /`** *(if `enable_advanced_failures: true`)*
 
 | Variable | Access | Type | Description |
 |----------|--------|------|-------------|
@@ -1295,7 +1327,7 @@ All nodes live under `Objects / Line1 /`:
 | `PMCount` | READ | Int32 | Preventive maintenance count |
 | `CMCount` | READ | Int32 | Corrective maintenance count |
 
-**`StationN / SPC /`** *(Phase 11 - if `enable_spc: true`)*
+**`MachineN / SPC /`** *(if `enable_spc: true`)*
 
 | Group | Variable | Type | Description |
 |-------|----------|------|-------------|
@@ -1336,7 +1368,7 @@ All nodes live under `Objects / Line1 /`:
 
 ---
 
-### `Line1 / ScrapBinN /` *(Phase 14, per scrap sink)*
+### `Line1 / ScrapBinN /` *(per scrap sink, if configured)*
 
 | Variable | Access | Type | Description |
 |----------|--------|------|-------------|
@@ -1354,7 +1386,7 @@ All nodes live under `Objects / Line1 /`:
 
 ---
 
-### `Line1 / Shift /` *(Phase 12 - if `shifts` configured)*
+### `Line1 / Shift /` *(if `shifts` configured)*
 
 | Variable | Access | Type | Description |
 |----------|--------|------|-------------|
@@ -1443,7 +1475,7 @@ python src/opcua_server.py [OPTIONS]
 # Run specific scenario
 python src/opcua_server.py --scenario bottleneck_line
 
-# Reproducible random defects (Phase 8)
+# Reproducible random defects
 python src/opcua_server.py --scenario quality_line --seed 123
 
 # Combined
@@ -1504,9 +1536,9 @@ system = line1.get_child(["2:System"])
 sim_time = system.get_child(["2:SimTime"])
 throughput = system.get_child(["2:Throughput"])
 
-station1 = line1.get_child(["2:Station1"])
-state = station1.get_child(["2:State"])
-util = station1.get_child(["2:Utilisation"])
+machine1 = line1.get_child(["2:Machine1"])
+state = machine1.get_child(["2:State"])
+util = machine1.get_child(["2:Utilisation"])
 
 # Open CSV file
 with open('simulation_log.csv', 'w', newline='') as csvfile:
@@ -1599,8 +1631,8 @@ client.connect()
 
 root = client.get_objects_node()
 line1 = root.get_child(["2:Line1"])
-station1 = line1.get_child(["2:Station1"])
-alarms = station1.get_child(["2:Alarms"])
+machine1 = line1.get_child(["2:Machine1"])
+alarms = machine1.get_child(["2:Alarms"])
 
 # Subscribe to alarm message
 alarm_msg = alarms.get_child(["2:LastAlarmMessage"])
@@ -1868,8 +1900,8 @@ ModuleNotFoundError: No module named 'simantha'
 
 4. **Documentation:**
    - README.md - Overview and quick start
-   - docs/phase11_spc_implementation_summary.md - SPC details
-   - docs/USER_MANUAL.md - This comprehensive manual
+   - docs/spc_analytics.md - SPC details
+   - docs/user_manual.md - This comprehensive manual
 
 ---
 
@@ -2034,7 +2066,7 @@ Before closing this manual, verify you can:
 
 **Next Steps:**
 
-1. Try `full_feature_line` scenario - combines all Phase 1-14 features in one run
+1. Try `full_feature_line` scenario - combines all features in one run
 2. Experiment with scrap/rework routing (`scrap_line`, `rework_line` scenarios)
 3. Enable CSV historian and analyze event logs in `results/historian/`
 4. Connect InfluxDB + Grafana for real-time dashboards
@@ -2052,5 +2084,5 @@ For updates and contributions:
 
 ---
 
-*Document Version: 1.2 (Phase 14)*
-*Last Updated: 2026-02-09*
+*Document Version: 2.0*
+*Last Updated: 2026-02-14*

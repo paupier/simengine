@@ -2,9 +2,9 @@
 
 **Namespace URI:** `urn:simantha:opcua`
 **Namespace Index:** `ns=2`
-**Version:** Phase 12
+**Last Updated:** 2026-02-14
 
-> **Authoritative reference:** See the [User Manual, Section 9](USER_MANUAL.md#9-opc-ua-address-space-reference) for full tables with descriptions.
+> **Authoritative reference:** See the [User Manual, Section 9](user_manual.md#9-opc-ua-address-space-reference) for full tables with descriptions.
 
 ---
 
@@ -22,16 +22,20 @@ Objects/
    │
    ├─ LineKPIs/
    │  ├─ TotalWIP                       (Int32, READ)
+   │  ├─ TotalScrap                     (Int32, READ)
+   │  ├─ ScrapRate                      (Double, READ)
    │  └─ LineOEE/
    │     ├─ Availability                (Double, READ)
    │     ├─ Performance                 (Double, READ)
    │     ├─ Quality                     (Double, READ)
    │     └─ OEE                         (Double, READ)
    │
-   ├─ Station1/ ... StationN/
+   ├─ Machine1/ ... MachineN/
    │  ├─ State                          (String, READ)
    │  ├─ PartCount                      (Int32, READ)
    │  ├─ Utilisation                    (Double, READ)
+   │  ├─ TargetPPM                      (Double, READ)
+   │  ├─ ActualPPM                      (Double, READ)
    │  ├─ BlockedTime                    (Double, READ)
    │  ├─ StarvedTime                    (Double, READ)
    │  ├─ DownTime                       (Double, READ)
@@ -55,18 +59,24 @@ Objects/
    │  │  ├─ MachineFailureActive        (Boolean, READ)
    │  │  ├─ MaintenanceActive           (Boolean, READ)
    │  │  └─ QualityAlertActive          (Boolean, READ)
-   │  ├─ FailureModes/                  (Phase 10, optional)
+   │  ├─ QualityRouting/                (if quality_routing enabled)
+   │  │  ├─ ScrapCount                  (Int32, READ)
+   │  │  ├─ ReworkCount                 (Int32, READ)
+   │  │  ├─ ReworkSuccessCount          (Int32, READ)
+   │  │  ├─ ReworkSuccessRate           (Double, READ)
+   │  │  └─ GoodCount                   (Int32, READ)
+   │  ├─ FailureModes/                  (if enable_advanced_failures)
    │  │  ├─ ActiveFailureMode           (String, READ)
    │  │  ├─ {Mode}FailureCount          (Int32, READ)
    │  │  ├─ {Mode}TotalDowntime         (Double, READ)
    │  │  ├─ {Mode}MTBF                  (Double, READ)
    │  │  └─ {Mode}MTTR                  (Double, READ)
-   │  ├─ MaintenanceStrategy/           (Phase 10, optional)
+   │  ├─ MaintenanceStrategy/           (if enable_advanced_failures)
    │  │  ├─ StrategyType                (String, READ)
    │  │  ├─ NextPMScheduled             (Double, READ)
    │  │  ├─ PMCount                     (Int32, READ)
    │  │  └─ CMCount                     (Int32, READ)
-   │  └─ SPC/                           (Phase 11, optional)
+   │  └─ SPC/                           (if enable_spc)
    │     ├─ XBarChart/ {XBar, UCL, CL, LCL}
    │     ├─ RChart/ {Range, UCL, CL, LCL}
    │     ├─ Capability/ {Cp, Cpk, Pp, Ppk, SigmaLevel}
@@ -85,7 +95,10 @@ Objects/
    │  ├─ QueueLength                    (Int32, READ)
    │  └─ TotalRepairs                   (Int32, READ)
    │
-   ├─ Shift/                            (Phase 12, optional)
+   ├─ ScrapBin1/ ... ScrapBinN/        (if scrap_sinks configured)
+   │  └─ CurrentLevel                   (Int32, READ)
+   │
+   ├─ Shift/                            (if shifts configured)
    │  ├─ CurrentShiftNumber             (Int32, READ)
    │  ├─ CurrentShiftName               (String, READ)
    │  ├─ ShiftStartTime                 (Double, READ)
@@ -175,8 +188,8 @@ client.connect()
 
 root = client.get_objects_node()
 line1 = root.get_child(["2:Line1"])
-station1 = line1.get_child(["2:Station1"])
-state = station1.get_child(["2:State"])
+machine1 = line1.get_child(["2:Machine1"])
+state = machine1.get_child(["2:State"])
 
 print(state.get_value())  # "PROCESSING"
 ```
@@ -187,9 +200,11 @@ print(state.get_value())  # "PROCESSING"
 
 These nodes only appear when enabled in the scenario config (`config/line_models.yaml`):
 
-| Node Group | Config Flag | Phase |
-|------------|------------|-------|
-| `FailureModes/` | `enable_advanced_failures: true` | 10 |
-| `MaintenanceStrategy/` | `enable_advanced_failures: true` | 10 |
-| `SPC/` | `enable_spc: true` | 11 |
-| `Shift/` | `shifts: schedule: [...]` | 12 |
+| Node Group | Config Flag |
+|------------|------------|
+| `FailureModes/` | `enable_advanced_failures: true` |
+| `MaintenanceStrategy/` | `enable_advanced_failures: true` |
+| `SPC/` | `enable_spc: true` |
+| `QualityRouting/` | `quality_routing.enabled: true` |
+| `Shift/` | `shifts: schedule: [...]` |
+| `ScrapBinN/` | `scrap_sinks: [...]` |
