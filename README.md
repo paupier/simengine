@@ -54,7 +54,7 @@ This project creates a **realistic manufacturing digital twin** that:
 - ✅ **Maintenance Strategies** - Corrective, preventive, and predictive maintenance
 - ✅ **Buffer Dynamics** - WIP accumulates/drains based on machine states
 - ✅ **Quality Defects** - Health-correlated defect rates with individual part tracking
-- ✅ **OEE Calculation** - Availability x Performance x Quality per machine and line-level
+- ✅ **OEE Calculation** - Availability x Performance x Quality per machine and line-level (bucketed every 10 min using Simantha's authoritative `machine.downtime` and `machine.parts_made`)
 - ✅ **SPC Analytics** - X-bar/R control charts, Cp/Cpk capability, Western Electric rules
 - ✅ **Shift Management** - Configurable shift rotation with per-shift metrics and OEE
 - ✅ **Alarms & Events** - Machine failure, quality, maintenance, and buffer alerts
@@ -224,9 +224,9 @@ Objects/
       │    ├─ DownTime (double, READ-ONLY)          # Time spent failed or under repair
       │    ├─ ProcessingTime (double, READ-ONLY)    # Time spent actively processing parts
       │    ├─ IdleTime (double, READ-ONLY)          # Time spent idle (waiting for work)
-      │    └─ OEE/                                  # OEE metrics
-      │         ├─ Availability (double, READ-ONLY) # (TotalTime - DownTime) / TotalTime
-      │         ├─ Performance (double, READ-ONLY)  # ActualOutput / TheoreticalOutput
+      │    └─ OEE/                                  # OEE metrics (bucketed, updates every 10 min)
+      │         ├─ Availability (double, READ-ONLY) # (SimTime - Downtime) / SimTime
+      │         ├─ Performance (double, READ-ONLY)  # PartsMade / TheoreticalOutput
       │         ├─ Quality (double, READ-ONLY)      # GoodParts / TotalParts (1.0 when no defects)
       │         ├─ OEE (double, READ-ONLY)          # Availability × Performance × Quality
       │         ├─ GoodPartCount (int, READ-ONLY)   # Parts without defects (quality tracking)
@@ -252,9 +252,9 @@ Objects/
       │    ├─ DownTime (double, READ-ONLY)          # Time spent down (M2 has no degradation, so always 0)
       │    ├─ ProcessingTime (double, READ-ONLY)    # Time spent actively processing parts
       │    ├─ IdleTime (double, READ-ONLY)          # Time spent idle (waiting for work)
-      │    └─ OEE/                                  # OEE metrics
-      │         ├─ Availability (double, READ-ONLY) # (TotalTime - DownTime) / TotalTime
-      │         ├─ Performance (double, READ-ONLY)  # ActualOutput / TheoreticalOutput
+      │    └─ OEE/                                  # OEE metrics (bucketed, updates every 10 min)
+      │         ├─ Availability (double, READ-ONLY) # (SimTime - Downtime) / SimTime
+      │         ├─ Performance (double, READ-ONLY)  # PartsMade / TheoreticalOutput
       │         ├─ Quality (double, READ-ONLY)      # GoodParts / TotalParts (1.0 when no defects)
       │         ├─ OEE (double, READ-ONLY)          # Availability × Performance × Quality
       │         ├─ GoodPartCount (int, READ-ONLY)   # Parts without defects (quality tracking)

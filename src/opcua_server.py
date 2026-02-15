@@ -27,6 +27,8 @@ DEGRADATION_MATRIX = [
     [0.0, 1.0],    # from failed: stay failed until maintainer repairs
 ]
 
+OEE_BUCKET_INTERVAL = 600  # seconds (10 minutes) — OEE recalculated at this interval
+
 
 # ========== HELPER FUNCTIONS ==========
 
@@ -580,6 +582,45 @@ def calculate_oee(
     }
 
 
+def calculate_oee_from_sim(sim_time, machine_downtime, parts_made, cycle_time,
+                           good_parts=None, defective_parts=None):
+    """Calculate OEE from Simantha's authoritative per-run data."""
+    if sim_time <= 0:
+        return {"availability": 0, "performance": 0, "quality": 0, "oee": 0,
+                "good_parts": 0, "defective_parts": 0, "theoretical_output": 0}
+
+    # Availability = (RunTime - Downtime) / RunTime
+    availability = max(0.0, min(1.0, (sim_time - machine_downtime) / sim_time))
+
+    # Performance = ActualOutput / TheoreticalOutput
+    available_time = sim_time - machine_downtime
+    if available_time > 0 and cycle_time > 0:
+        theoretical_output = available_time / cycle_time
+        performance = max(0.0, min(1.0, parts_made / theoretical_output))
+    else:
+        theoretical_output = 0.0
+        performance = 0.0
+
+    # Quality
+    total_parts = parts_made
+    if good_parts is not None and total_parts > 0:
+        quality = max(0.0, min(1.0, good_parts / total_parts))
+    else:
+        good_parts = parts_made
+        defective_parts = 0
+        quality = 1.0 if parts_made > 0 else 0.0
+
+    return {
+        "availability": availability,
+        "performance": performance,
+        "quality": quality,
+        "oee": availability * performance * quality,
+        "good_parts": good_parts,
+        "defective_parts": defective_parts or 0,
+        "theoretical_output": theoretical_output,
+    }
+
+
 def calculate_defects(
     prev_partcount: int,
     current_partcount: int,
@@ -760,7 +801,7 @@ def collect_system_metrics(buffers, maintainer, machines=None):
 
 def process_machine_step(machine_name, machine_obj, metrics, config_machines,
                          total_parts_produced, pause_line, sim_step, maintainer,
-                         shift_manager, spc_monitors, opcua_vars, sink):
+                         shift_manager, spc_monitors, opcua_vars, sink, sim_time):
     """Process one simulation step for a single machine.
 
     Updates metrics, detects state, calculates OEE, updates alarms, SPC,
@@ -841,14 +882,26 @@ def process_machine_step(machine_name, machine_obj, metrics, config_machines,
     if machine_alarms:
         update_alarm_variables(machine_vars, machine_alarms)
 
-    # OEE calculation
-    oee_result = calculate_oee(
-        metrics["partcount"],
-        metrics,
-        metrics["cycle_time"],
-        good_parts=metrics["good_parts"],
-        defective_parts=metrics["defective_parts"]
-    )
+    # OEE calculation (bucketed — recalculate every OEE_BUCKET_INTERVAL seconds)
+    if (sim_time - metrics["oee_last_update_time"] >= OEE_BUCKET_INTERVAL
+            or metrics["oee_cached"] is None):
+        if isinstance(machine_obj, QualityRoutingMixin):
+            qr_good = machine_obj._good_count
+            qr_defective = machine_obj._scrap_count + machine_obj._defective_count
+        else:
+            qr_good = metrics["good_parts"]
+            qr_defective = metrics["defective_parts"]
+
+        oee_result = calculate_oee_from_sim(
+            sim_time, machine_obj.downtime, machine_obj.parts_made,
+            metrics["cycle_time"],
+            good_parts=qr_good, defective_parts=qr_defective
+        )
+        metrics["oee_cached"] = oee_result
+        metrics["oee_last_update_time"] = sim_time
+    else:
+        oee_result = metrics["oee_cached"]
+
     metrics["oee"] = oee_result["oee"]
 
     # Utilization
@@ -1016,14 +1069,13 @@ def calculate_line_level_oee(machines, machine_metrics):
     Returns:
         tuple: (line_availability, line_performance, line_quality, line_oee)
     """
-    all_oee_results = [
-        calculate_oee(machine_metrics[m]["partcount"],
-                      machine_metrics[m],
-                      machine_metrics[m]["cycle_time"],
-                      good_parts=machine_metrics[m]["good_parts"],
-                      defective_parts=machine_metrics[m]["defective_parts"])
-        for m in machines.keys()
-    ]
+    all_oee_results = []
+    for m in machines.keys():
+        cached = machine_metrics[m].get("oee_cached")
+        if cached:
+            all_oee_results.append(cached)
+        else:
+            all_oee_results.append({"availability": 0, "performance": 0, "quality": 0, "oee": 0})
 
     line_availability = min(r["availability"] for r in all_oee_results) if all_oee_results else 0.0
     line_performance = min(r["performance"] for r in all_oee_results) if all_oee_results else 0.0
@@ -1534,6 +1586,10 @@ def main(argv=None):
             "alarm_machine_failed_active": False,
             "alarm_maintenance_active": False,
             "alarm_quality_alert_active": False,
+
+            # OEE bucket tracking
+            "oee_last_update_time": 0.0,
+            "oee_cached": None,
         }
 
         # Create SPC monitor if enabled
@@ -1607,7 +1663,8 @@ def main(argv=None):
                 alarms = process_machine_step(
                     machine_name, machine_obj, machine_metrics[machine_name],
                     config["machines"], total_parts_produced, pause_line, sim_step,
-                    maintainer, shift_manager, spc_monitors, opcua_vars, sink)
+                    maintainer, shift_manager, spc_monitors, opcua_vars, sink,
+                    sim_time)
                 if alarms:
                     machine_alarms_map[machine_name] = alarms
 

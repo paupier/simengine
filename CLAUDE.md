@@ -171,6 +171,9 @@ elif m.has_part: "PROCESSING"
 else: "IDLE"
 ```
 
+### OEE uses Simantha's authoritative data, not time accumulators
+OEE is calculated via `calculate_oee_from_sim()` using `machine.downtime` and `machine.parts_made` — Simantha's whole-run summaries. It is **not** derived from the per-step time accumulators (`processing_time`, `down_time`, etc.) which are noisy due to simulate() reinitialization. OEE recalculates every `OEE_BUCKET_INTERVAL` (600 seconds / 10 minutes) and holds constant between updates. The `oee_cached` dict in `machine_metrics` stores the last result.
+
 ### File paths — anchor to script location
 ```python
 script_dir = os.path.dirname(os.path.abspath(__file__))

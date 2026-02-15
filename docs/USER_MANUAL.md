@@ -373,6 +373,8 @@ Source  →  M1  →  Buffer1  →  M2  →  Sink
 - `Availability × Performance × Quality`
 - Industry-standard metric
 - Target: >85% for world-class manufacturing
+- Calculated from Simantha's authoritative `machine.downtime` and `machine.parts_made` data
+- Updates every 10 minutes (bucketed) for stable, non-erratic readings
 
 **Buffer Level:**
 - Current WIP (Work-In-Progress) count
