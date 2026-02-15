@@ -74,6 +74,7 @@ class ShiftManager:
         self.current_shift_index = 0
         self.current_shift_number = 1  # Sequential counter (1, 2, 3, ...)
         self.shift_start_time = 0.0
+        self.shift_start_wall_clock = datetime.now()
 
         # Shift history
         self.shift_history: List[ShiftMetrics] = []
@@ -130,6 +131,7 @@ class ShiftManager:
             self.current_shift_index = (self.current_shift_index + 1) % len(self.shift_definitions)
             self.current_shift_number += 1
             self.shift_start_time = shift_end_time  # Next shift starts where this one ended
+            self.shift_start_wall_clock = datetime.now()
 
             # Create new metrics for next shift
             self.current_metrics = self._create_new_shift_metrics()
@@ -238,6 +240,7 @@ class ShiftManager:
             "shift_duration": current_shift.duration,
             "shift_start_time": self.shift_start_time,
             "shift_end_time": self.shift_start_time + current_shift.duration,
+            "shift_start_wall_clock": self.shift_start_wall_clock,
         }
 
     def get_current_shift_metrics(self) -> Dict:

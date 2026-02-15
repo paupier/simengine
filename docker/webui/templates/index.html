@@ -254,6 +254,15 @@
             }, 200);
         }
 
+        // --- Helper: PPM color based on actual vs target ---
+        function ppmColor(actual, target) {
+            if (target <= 0) return '#6c757d';
+            const ratio = actual / target;
+            if (ratio >= 0.95) return '#198754';
+            if (ratio >= 0.80) return '#fd7e14';
+            return '#dc3545';
+        }
+
         // --- Helper: OEE bar color ---
         function oeeColor(val) {
             if (val >= 0.85) return '#198754';
@@ -280,13 +289,23 @@
                 html += `</div>`;
                 html += `<div class="small text-muted mb-1">Parts: ${m.partcount}</div>`;
 
-                // PPM
+                // PPM with color-coding and progress bar
                 if (m.target_ppm > 0 || m.actual_ppm > 0) {
-                    html += `<div class="small mb-1">PPM: <strong>${m.actual_ppm.toFixed(1)}</strong>`;
+                    const color = ppmColor(m.actual_ppm, m.target_ppm);
+                    const pct = m.target_ppm > 0 ? Math.min(100, (m.actual_ppm / m.target_ppm * 100)).toFixed(0) : 0;
+                    html += `<div class="small mb-1">PPM: <strong style="color:${color}">${m.actual_ppm.toFixed(1)}</strong>`;
                     if (m.target_ppm > 0) {
-                        html += ` / ${m.target_ppm.toFixed(0)} target`;
+                        html += ` / ${m.target_ppm.toFixed(0)} target (${pct}%)`;
                     }
                     html += `</div>`;
+                    if (m.target_ppm > 0) {
+                        html += `<div class="progress mb-1" style="height:6px;">`;
+                        html += `<div class="progress-bar" style="width:${pct}%;background:${color}"></div>`;
+                        html += `</div>`;
+                        html += `<div style="font-size:0.65rem;color:#6c757d;">${pct}% of target`;
+                        const cycleTime = m.target_ppm > 0 ? (60.0 / m.target_ppm).toFixed(1) : '?';
+                        html += ` | cycle = ${cycleTime}s</div>`;
+                    }
                 }
 
                 // OEE bars

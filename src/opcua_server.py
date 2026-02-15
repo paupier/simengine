@@ -1,13 +1,14 @@
 import logging
 import random
 import time
+from datetime import datetime
 
 # Suppress noisy OPC UA library warnings
 logging.getLogger("opcua").setLevel(logging.WARNING)
 logging.getLogger("opcua.server.internal_server").setLevel(logging.ERROR)
 logging.getLogger("opcua.server.address_space").setLevel(logging.ERROR)
 
-from opcua import Server
+from opcua import Server, ua
 from simantha import Source, Machine, Buffer, Sink, System, Maintainer
 from config_loader import load_line_config
 from advanced_machine import AdvancedMachine
@@ -104,7 +105,7 @@ def create_machine_node(parent_node, opcua_idx: int, machine_node_name: str, ena
 
     # SPC sub-node
     if enable_spc:
-        spc_vars = create_spc_node(machine_node, opcua_idx)
+        spc_vars = create_spc_node(machine_node, opcua_idx, machine_prefix=machine_node_name)
         vars_dict.update({f"spc_{k}": v for k, v in spc_vars.items()})
 
     # QualityRouting sub-node
@@ -157,8 +158,6 @@ def create_alarms_node(parent_node, opcua_idx: int, alarm_type: str = "machine")
     Returns:
         dict: Dictionary of alarm variable objects
     """
-    from datetime import datetime
-
     alarms_node = parent_node.add_object(opcua_idx, "Alarms")
 
     vars_dict = {}
@@ -178,13 +177,29 @@ def create_alarms_node(parent_node, opcua_idx: int, alarm_type: str = "machine")
     return vars_dict
 
 
-def create_spc_node(parent_node, opcua_idx: int):
+def _add_prefixed_var(parent, idx, browse_name, default_val, prefix):
+    """Add an OPC UA variable with a prefixed DisplayName for clarity in UA browsers.
+
+    BrowseName remains unchanged (e.g. "Cp") for backward-compatible path navigation.
+    DisplayName becomes e.g. "Machine1_Cp" so it's unambiguous in flat views.
+    """
+    v = parent.add_variable(idx, browse_name, default_val)
+    if prefix:
+        v.set_attribute(
+            ua.AttributeIds.DisplayName,
+            ua.DataValue(ua.LocalizedText(f"{prefix}_{browse_name}"))
+        )
+    return v
+
+
+def create_spc_node(parent_node, opcua_idx: int, machine_prefix: str = ""):
     """
     Create SPC (Statistical Process Control) sub-node for a machine.
 
     Args:
         parent_node: Parent OPC UA node (machine)
         opcua_idx: OPC UA namespace index
+        machine_prefix: Prefix for DisplayName (e.g. "Machine1")
 
     Returns:
         dict: Dictionary of SPC variable objects
@@ -192,35 +207,36 @@ def create_spc_node(parent_node, opcua_idx: int):
     spc_node = parent_node.add_object(opcua_idx, "SPC")
 
     vars_dict = {}
+    p = machine_prefix
 
     # X-bar Chart sub-node
     xbar_node = spc_node.add_object(opcua_idx, "XBarChart")
-    vars_dict["xbar_current"] = xbar_node.add_variable(opcua_idx, "XBar", 0.0)
-    vars_dict["xbar_ucl"] = xbar_node.add_variable(opcua_idx, "UCL", 0.0)
-    vars_dict["xbar_cl"] = xbar_node.add_variable(opcua_idx, "CL", 0.0)
-    vars_dict["xbar_lcl"] = xbar_node.add_variable(opcua_idx, "LCL", 0.0)
+    vars_dict["xbar_current"] = _add_prefixed_var(xbar_node, opcua_idx, "XBar", 0.0, p)
+    vars_dict["xbar_ucl"] = _add_prefixed_var(xbar_node, opcua_idx, "UCL", 0.0, p)
+    vars_dict["xbar_cl"] = _add_prefixed_var(xbar_node, opcua_idx, "CL", 0.0, p)
+    vars_dict["xbar_lcl"] = _add_prefixed_var(xbar_node, opcua_idx, "LCL", 0.0, p)
 
     # R Chart sub-node
     r_node = spc_node.add_object(opcua_idx, "RChart")
-    vars_dict["r_current"] = r_node.add_variable(opcua_idx, "Range", 0.0)
-    vars_dict["r_ucl"] = r_node.add_variable(opcua_idx, "UCL", 0.0)
-    vars_dict["r_cl"] = r_node.add_variable(opcua_idx, "CL", 0.0)
-    vars_dict["r_lcl"] = r_node.add_variable(opcua_idx, "LCL", 0.0)
+    vars_dict["r_current"] = _add_prefixed_var(r_node, opcua_idx, "Range", 0.0, p)
+    vars_dict["r_ucl"] = _add_prefixed_var(r_node, opcua_idx, "UCL", 0.0, p)
+    vars_dict["r_cl"] = _add_prefixed_var(r_node, opcua_idx, "CL", 0.0, p)
+    vars_dict["r_lcl"] = _add_prefixed_var(r_node, opcua_idx, "LCL", 0.0, p)
 
     # Capability sub-node
     cap_node = spc_node.add_object(opcua_idx, "Capability")
-    vars_dict["cp"] = cap_node.add_variable(opcua_idx, "Cp", 0.0)
-    vars_dict["cpk"] = cap_node.add_variable(opcua_idx, "Cpk", 0.0)
-    vars_dict["pp"] = cap_node.add_variable(opcua_idx, "Pp", 0.0)
-    vars_dict["ppk"] = cap_node.add_variable(opcua_idx, "Ppk", 0.0)
-    vars_dict["sigma_level"] = cap_node.add_variable(opcua_idx, "SigmaLevel", 0.0)
+    vars_dict["cp"] = _add_prefixed_var(cap_node, opcua_idx, "Cp", 0.0, p)
+    vars_dict["cpk"] = _add_prefixed_var(cap_node, opcua_idx, "Cpk", 0.0, p)
+    vars_dict["pp"] = _add_prefixed_var(cap_node, opcua_idx, "Pp", 0.0, p)
+    vars_dict["ppk"] = _add_prefixed_var(cap_node, opcua_idx, "Ppk", 0.0, p)
+    vars_dict["sigma_level"] = _add_prefixed_var(cap_node, opcua_idx, "SigmaLevel", 0.0, p)
 
     # Status sub-node
     status_node = spc_node.add_object(opcua_idx, "Status")
-    vars_dict["in_control"] = status_node.add_variable(opcua_idx, "InControl", True)
-    vars_dict["violations"] = status_node.add_variable(opcua_idx, "Violations", "")
-    vars_dict["total_samples"] = status_node.add_variable(opcua_idx, "TotalSamples", 0)
-    vars_dict["num_subgroups"] = status_node.add_variable(opcua_idx, "NumSubgroups", 0)
+    vars_dict["in_control"] = _add_prefixed_var(status_node, opcua_idx, "InControl", True, p)
+    vars_dict["violations"] = _add_prefixed_var(status_node, opcua_idx, "Violations", "", p)
+    vars_dict["total_samples"] = _add_prefixed_var(status_node, opcua_idx, "TotalSamples", 0, p)
+    vars_dict["num_subgroups"] = _add_prefixed_var(status_node, opcua_idx, "NumSubgroups", 0, p)
 
     return vars_dict
 
@@ -244,6 +260,7 @@ def create_shift_node(parent_node, opcua_idx: int):
     vars_dict["shift_number"] = shift_node.add_variable(opcua_idx, "CurrentShiftNumber", 1)
     vars_dict["shift_name"] = shift_node.add_variable(opcua_idx, "CurrentShiftName", "")
     vars_dict["shift_start_time"] = shift_node.add_variable(opcua_idx, "ShiftStartTime", 0.0)
+    vars_dict["shift_start_datetime"] = shift_node.add_variable(opcua_idx, "ShiftStartDateTime", datetime.now())
     vars_dict["shift_end_time"] = shift_node.add_variable(opcua_idx, "ShiftEndTime", 0.0)
     vars_dict["shift_duration"] = shift_node.add_variable(opcua_idx, "ShiftDuration", 0.0)
     vars_dict["shift_elapsed"] = shift_node.add_variable(opcua_idx, "ShiftElapsedTime", 0.0)
@@ -443,8 +460,6 @@ def update_alarm_variables(node_vars: dict, alarms: list):
         node_vars: Dictionary of OPC UA variable nodes (from opcua_vars)
         alarms: List of (alarm_type, severity, message, is_active, var_key) tuples
     """
-    from datetime import datetime
-
     if not alarms:
         return
 
@@ -709,8 +724,13 @@ def check_shift_rotation(shift_manager, sim_time, pause_line):
     return False
 
 
-def collect_system_metrics(buffers, maintainer):
+def collect_system_metrics(buffers, maintainer, machines=None):
     """Collect system-level metrics: WIP, maintenance status.
+
+    Args:
+        buffers: Dict of buffer objects
+        maintainer: Simantha Maintainer object (or None)
+        machines: Dict of machine objects (for repair count aggregation)
 
     Returns:
         tuple: (total_wip, maint_active, maint_queue_length, total_repairs)
@@ -719,13 +739,18 @@ def collect_system_metrics(buffers, maintainer):
 
     if maintainer is not None:
         try:
-            maint_active = len(maintainer.in_progress) > 0
-            maint_queue_length = len(maintainer.queue)
-            total_repairs = maintainer.total_throughput if hasattr(maintainer, 'total_throughput') else 0
+            maint_active = maintainer.utilization > 0
         except AttributeError:
             maint_active = False
+        try:
+            maint_queue_length = len(maintainer.get_queue())
+        except (AttributeError, TypeError):
             maint_queue_length = 0
-            total_repairs = 0
+        # Aggregate repair counts from machines (AdvancedMachine tracks cm/pm counts)
+        total_repairs = 0
+        if machines:
+            for m in machines.values():
+                total_repairs += getattr(m, 'total_cm_count', 0) + getattr(m, 'total_pm_count', 0)
     else:
         maint_active = False
         maint_queue_length = 0
@@ -754,16 +779,12 @@ def process_machine_step(machine_name, machine_obj, metrics, config_machines,
 
     # Detect current state
     machine_cfg = next(m for m in config_machines if m["name"] == machine_name)
-    enable_health = machine_cfg.get("enable_degradation", False)
+    enable_health = (machine_cfg.get("enable_degradation", False)
+                     or machine_cfg.get("enable_advanced_failures", False))
     health_state = machine_obj.health if enable_health else 0
 
-    # Check if this machine is being repaired
-    machine_maint_active = False
-    if maintainer:
-        try:
-            machine_maint_active = machine_obj in maintainer.in_progress
-        except AttributeError:
-            machine_maint_active = False
+    # Check if this machine is being repaired (use machine attribute, not maintainer)
+    machine_maint_active = getattr(machine_obj, 'under_repair', False)
 
     current_state = detect_machine_state(machine_obj, pause_line, health_state, machine_maint_active)
     metrics["prev_state"] = current_state
@@ -1047,6 +1068,10 @@ def update_shift_opcua_vars(shift_manager, opcua_vars, sim_time, delta_parts):
     sv["shift_number"].set_value(shift_info["shift_number"])
     sv["shift_name"].set_value(shift_info["shift_name"])
     sv["shift_start_time"].set_value(shift_info["shift_start_time"])
+    if "shift_start_datetime" in sv:
+        sv["shift_start_datetime"].set_value(
+            shift_info.get("shift_start_wall_clock", datetime.now())
+        )
     sv["shift_end_time"].set_value(shift_info["shift_end_time"])
     sv["shift_duration"].set_value(shift_info["shift_duration"])
     sv["shift_elapsed"].set_value(shift_manager.get_shift_elapsed_time(sim_time))
@@ -1343,7 +1368,8 @@ def build_opcua_server(config: dict):
     for i, machine_cfg in enumerate(config["machines"], start=1):
         machine_name = machine_cfg["name"]
         machine_node_name = f"Machine{i}"  # "Machine1", "Machine2", "Machine3", ...
-        enable_health = machine_cfg.get("enable_degradation", False)
+        enable_health = (machine_cfg.get("enable_degradation", False)
+                         or machine_cfg.get("enable_advanced_failures", False))
 
         # Check for advanced failures
         enable_failure_modes = machine_cfg.get("enable_advanced_failures", False)
@@ -1480,8 +1506,8 @@ def main(argv=None):
             target_ppm = machine_cfg["target_ppm"]
             cycle_time = max(1, int(60.0 / target_ppm))
         else:
-            target_ppm = 0.0
             cycle_time = machine_cfg.get("cycle_time", 1.0)
+            target_ppm = 60.0 / cycle_time  # Derive from cycle_time
 
         # Quality parameters
         base_defect_rate = machine_cfg.get("defect_rate", 0.0)
@@ -1565,7 +1591,7 @@ def main(argv=None):
             # Step simulation (CRITICAL: increment sim_time BEFORE simulate)
             if not pause_line:
                 sim_time += sim_step
-                system.simulate(simulation_time=sim_time)
+                system.simulate(simulation_time=sim_time, verbose=False, collect_data=False)
 
             # Monotonic part counter (handles sink.level decreasing during maintenance)
             delta_parts, total_parts_produced, prev_sink_level = update_part_counter(
@@ -1576,7 +1602,7 @@ def main(argv=None):
 
             # System-level metrics (WIP, maintenance)
             total_wip, maint_active, maint_queue_length, total_repairs = \
-                collect_system_metrics(buffers, maintainer)
+                collect_system_metrics(buffers, maintainer, machines)
 
             # Per-machine: state detection, metrics, defects, alarms, OEE, SPC, OPC UA writes
             machine_alarms_map = {}

@@ -25,6 +25,9 @@
             margin-bottom: 10px;
         }
         .remove-btn { cursor: pointer; color: #dc3545; }
+        .tooltip-hint { cursor: help; color: #6c757d; font-size: 0.75rem; }
+        .ppm-formula { font-size: 0.75rem; color: #6c757d; font-style: italic; margin-top: 2px; }
+        #scenario-description { font-size: 0.85rem; color: #6c757d; margin-top: 4px; }
     </style>
 </head>
 <body>
@@ -48,6 +51,7 @@
                             <button class="btn btn-sm btn-outline-primary ms-2" onclick="newScenario()">New</button>
                         </div>
                     </div>
+                    <div id="scenario-description" class="px-3 pt-2"></div>
                     <div class="card-body">
                         <div id="alert-area"></div>
 
@@ -72,19 +76,25 @@
                             <div class="col-md-4">
                                 <div class="form-check">
                                     <input class="form-check-input" type="checkbox" id="feat-maintainer">
-                                    <label class="form-check-label" for="feat-maintainer">Maintainer</label>
+                                    <label class="form-check-label" for="feat-maintainer">Maintainer
+                                        <span class="tooltip-hint" data-bs-toggle="tooltip" title="Shared repair resource for machines with degradation/failures">(?)</span>
+                                    </label>
                                 </div>
                             </div>
                             <div class="col-md-4">
                                 <div class="form-check">
                                     <input class="form-check-input" type="checkbox" id="feat-shifts">
-                                    <label class="form-check-label" for="feat-shifts">Shifts</label>
+                                    <label class="form-check-label" for="feat-shifts">Shifts
+                                        <span class="tooltip-hint" data-bs-toggle="tooltip" title="Shift rotation with per-shift metric resets">(?)</span>
+                                    </label>
                                 </div>
                             </div>
                             <div class="col-md-4">
                                 <div class="form-check">
                                     <input class="form-check-input" type="checkbox" id="feat-historian">
-                                    <label class="form-check-label" for="feat-historian">Historian</label>
+                                    <label class="form-check-label" for="feat-historian">Historian
+                                        <span class="tooltip-hint" data-bs-toggle="tooltip" title="Event logging to CSV, InfluxDB, or Neo4j">(?)</span>
+                                    </label>
                                 </div>
                             </div>
                         </div>
@@ -114,27 +124,37 @@
         let isNewScenario = false;
         let currentScenario = null;
         let scenarioData = null;
+        let scenarioMeta = {};
 
         // --- Load scenario list ---
         async function loadScenarioList() {
             const resp = await fetch('/api/scenarios');
-            const scenarios = await resp.json();
+            scenarioMeta = await resp.json();
             const select = document.getElementById('scenario-select');
             select.innerHTML = '<option value="">-- Select --</option>';
-            for (const name of Object.keys(scenarios)) {
+            for (const [name, info] of Object.entries(scenarioMeta)) {
                 const opt = document.createElement('option');
                 opt.value = name;
-                opt.textContent = name;
+                const desc = info.description ? ` - ${info.description}` : '';
+                opt.textContent = `${name}${desc}`;
                 select.appendChild(opt);
             }
         }
 
         // --- Load a scenario into the form ---
         async function loadScenario(name) {
-            if (!name) return;
+            if (!name) {
+                document.getElementById('scenario-description').textContent = '';
+                return;
+            }
             isNewScenario = false;
             currentScenario = name;
             document.getElementById('name-group').style.display = 'none';
+
+            // Show scenario description
+            const meta = scenarioMeta[name];
+            document.getElementById('scenario-description').textContent =
+                meta && meta.description ? meta.description : '';
 
             const resp = await fetch(`/api/scenario/${name}`);
             scenarioData = await resp.json();
@@ -148,6 +168,7 @@
             document.getElementById('name-group').style.display = '';
             document.getElementById('scenario-name').value = '';
             document.getElementById('scenario-select').value = '';
+            document.getElementById('scenario-description').textContent = '';
 
             // Default: 2 machines, 1 buffer
             scenarioData = {
@@ -177,9 +198,18 @@
                 cfg.maintainer && cfg.maintainer.enabled;
             document.getElementById('feat-shifts').checked = !!cfg.shifts;
             document.getElementById('feat-historian').checked = !!cfg.historian;
+
+            // Sync PPM formulas for machines loaded with target_ppm
+            document.querySelectorAll('.machine-section').forEach(section => {
+                syncPpmToCycle(section);
+            });
+            initTooltips();
         }
 
         function buildMachineForm(m, idx) {
+            const hasPpm = m.target_ppm ? true : false;
+            const cycleVal = hasPpm ? (60.0 / m.target_ppm).toFixed(2) : (m.cycle_time || 1);
+            const cycleDisabled = hasPpm ? 'disabled' : '';
             return `
             <div class="machine-section" id="machine-${idx}">
                 <div class="d-flex justify-content-between mb-2">
@@ -188,39 +218,42 @@
                 </div>
                 <div class="row g-2">
                     <div class="col-md-3">
-                        <label class="form-label small">Name</label>
+                        <label class="form-label small">Name <span class="tooltip-hint" data-bs-toggle="tooltip" title="Machine identifier used in topology routing">(?)</span></label>
                         <input type="text" class="form-control form-control-sm m-name" value="${m.name || ''}">
                     </div>
                     <div class="col-md-3">
-                        <label class="form-label small">Cycle Time</label>
-                        <input type="number" class="form-control form-control-sm m-cycle" value="${m.cycle_time || 1}" step="0.1" min="0.1">
+                        <label class="form-label small">Cycle Time <span class="tooltip-hint" data-bs-toggle="tooltip" title="Seconds to process one part (derived from PPM if set)">(?)</span></label>
+                        <input type="number" class="form-control form-control-sm m-cycle" value="${cycleVal}" step="0.1" min="0.1" ${cycleDisabled}
+                               oninput="syncCycleToPpm(this.closest('.machine-section'))">
                     </div>
                     <div class="col-md-3">
-                        <label class="form-label small">Target PPM</label>
-                        <input type="number" class="form-control form-control-sm m-ppm" value="${m.target_ppm || ''}" step="1" min="0" placeholder="optional">
+                        <label class="form-label small">Target PPM <span class="tooltip-hint" data-bs-toggle="tooltip" title="Parts per minute target; overrides Cycle Time">(?)</span></label>
+                        <input type="number" class="form-control form-control-sm m-ppm" value="${m.target_ppm || ''}" step="1" min="0" placeholder="optional"
+                               oninput="syncPpmToCycle(this.closest('.machine-section'))">
                     </div>
                     <div class="col-md-3">
-                        <label class="form-label small">Defect Rate</label>
+                        <label class="form-label small">Defect Rate <span class="tooltip-hint" data-bs-toggle="tooltip" title="Probability (0.0-1.0) that each part is defective">(?)</span></label>
                         <input type="number" class="form-control form-control-sm m-defect" value="${m.defect_rate || 0}" step="0.01" min="0" max="1">
                     </div>
                 </div>
+                <div class="ppm-formula" id="ppm-formula-${idx}"></div>
                 <div class="row g-2 mt-1">
                     <div class="col-md-4">
                         <div class="form-check form-check-inline">
                             <input class="form-check-input m-spc" type="checkbox" ${m.enable_spc ? 'checked' : ''}>
-                            <label class="form-check-label small">SPC</label>
+                            <label class="form-check-label small">SPC <span class="tooltip-hint" data-bs-toggle="tooltip" title="Statistical Process Control monitoring (X-bar/R, Cp/Cpk)">(?)</span></label>
                         </div>
                     </div>
                     <div class="col-md-4">
                         <div class="form-check form-check-inline">
                             <input class="form-check-input m-failures" type="checkbox" ${m.enable_advanced_failures ? 'checked' : ''}>
-                            <label class="form-check-label small">Adv. Failures</label>
+                            <label class="form-check-label small">Adv. Failures <span class="tooltip-hint" data-bs-toggle="tooltip" title="Multiple failure modes with MTTF/MTTR distributions">(?)</span></label>
                         </div>
                     </div>
                     <div class="col-md-4">
                         <div class="form-check form-check-inline">
                             <input class="form-check-input m-qr" type="checkbox" ${m.quality_routing && m.quality_routing.enabled ? 'checked' : ''}>
-                            <label class="form-check-label small">Quality Routing</label>
+                            <label class="form-check-label small">Quality Routing <span class="tooltip-hint" data-bs-toggle="tooltip" title="Route defective parts to scrap sinks or rework">(?)</span></label>
                         </div>
                     </div>
                 </div>
@@ -234,6 +267,7 @@
             const m = {name: name, cycle_time: 1.0, defect_rate: 0};
             mc.insertAdjacentHTML('beforeend', buildMachineForm(m, count));
             rebuildBuffers();
+            initTooltips();
         }
 
         function removeMachine(idx) {
@@ -403,6 +437,48 @@
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>`;
             setTimeout(() => { area.innerHTML = ''; }, 5000);
+        }
+
+        // --- PPM / Cycle Time bidirectional sync ---
+        function syncPpmToCycle(section) {
+            const ppmInput = section.querySelector('.m-ppm');
+            const cycleInput = section.querySelector('.m-cycle');
+            const formula = section.querySelector('.ppm-formula');
+            const ppmVal = parseFloat(ppmInput.value);
+            if (ppmVal > 0) {
+                const derived = (60.0 / ppmVal).toFixed(2);
+                cycleInput.value = derived;
+                cycleInput.disabled = true;
+                if (formula) formula.textContent = `= 60 / ${ppmVal} PPM = ${derived}s cycle time`;
+            } else {
+                cycleInput.disabled = false;
+                if (formula) {
+                    const ct = parseFloat(cycleInput.value) || 1;
+                    const derivedPpm = (60.0 / ct).toFixed(1);
+                    formula.textContent = ct > 0 ? `cycle ${ct}s = ${derivedPpm} PPM` : '';
+                }
+            }
+        }
+
+        function syncCycleToPpm(section) {
+            const ppmInput = section.querySelector('.m-ppm');
+            const cycleInput = section.querySelector('.m-cycle');
+            const formula = section.querySelector('.ppm-formula');
+            // Only update formula if PPM is not set (PPM takes precedence)
+            if (!ppmInput.value) {
+                const ct = parseFloat(cycleInput.value) || 1;
+                const derivedPpm = (60.0 / ct).toFixed(1);
+                if (formula) formula.textContent = ct > 0 ? `cycle ${ct}s = ${derivedPpm} PPM` : '';
+            }
+        }
+
+        // --- Bootstrap tooltips ---
+        function initTooltips() {
+            document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => {
+                if (!bootstrap.Tooltip.getInstance(el)) {
+                    new bootstrap.Tooltip(el);
+                }
+            });
         }
 
         // --- Init ---
