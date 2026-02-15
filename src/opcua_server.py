@@ -697,20 +697,19 @@ def read_opcua_controls(opcua_vars):
     return pause_line, interarrival
 
 
-def update_part_counter(sink_level, prev_sink_level, total_parts_produced):
-    """Track production monotonically (sink.level can decrease during maintenance).
+def update_part_counter(sink_level, prev_sink_level):
+    """Read throughput directly from sink.level.
+
+    Each system.simulate() call reinitializes the entire simulation and runs
+    from time 0, so sink.level is the authoritative total for the current run
+    length. delta_parts is the change since the previous step.
 
     Returns:
         tuple: (delta_parts, total_parts_produced, prev_sink_level)
     """
-    delta_parts = 0
-    if sink_level > prev_sink_level:
-        delta_parts = sink_level - prev_sink_level
-        total_parts_produced += delta_parts
-        prev_sink_level = sink_level
-    elif sink_level < prev_sink_level:
-        prev_sink_level = sink_level
-    return delta_parts, total_parts_produced, prev_sink_level
+    delta_parts = max(0, sink_level - prev_sink_level)
+    total_parts_produced = sink_level
+    return delta_parts, total_parts_produced, sink_level
 
 
 def check_shift_rotation(shift_manager, sim_time, pause_line):
@@ -1488,9 +1487,8 @@ def main(argv=None):
     sim_step = 1.0
     real_step = 1.0
 
-    # Manual part counter (monotonic, never decreases)
+    # Part counter: sink.level is authoritative after each simulate() call
     prev_sink_level = 0
-    total_parts_produced = 0
 
     # Initialize per-machine metrics dictionaries
     machine_metrics = {}
@@ -1592,9 +1590,9 @@ def main(argv=None):
                 sim_time += sim_step
                 system.simulate(simulation_time=sim_time, verbose=False, collect_data=False)
 
-            # Monotonic part counter (handles sink.level decreasing during maintenance)
+            # Part counter (sink.level is authoritative after each simulate() call)
             delta_parts, total_parts_produced, prev_sink_level = update_part_counter(
-                sink.level, prev_sink_level, total_parts_produced)
+                sink.level, prev_sink_level)
 
             # Shift rotation check
             shift_rotated = check_shift_rotation(shift_manager, sim_time, pause_line)
