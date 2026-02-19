@@ -487,6 +487,12 @@ simantha-opcua/
 
 **Fix:** Set `cmdPauseLine = False` via OPC UA client, or check loop logic.
 
+### MemoryError during long simulation runs
+
+**Cause:** Simantha's `Sink.initialize()` does not reset `level_data` between `system.simulate()` calls. Since each call reinitializes and runs from time 0 to N, the list grows quadratically (K*(K+1)/2 entries after K steps), exhausting memory after ~4000 steps.
+
+**Fix:** Already patched in the current version. A monkey-patch in `opcua_server.py` resets `Sink.level_data` during initialization, matching the pattern used by Buffer and Machine.
+
 ---
 
 ## 🗺️ Roadmap

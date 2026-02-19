@@ -1,6 +1,8 @@
 import logging
 import random
+import sys
 import time
+import traceback
 from datetime import datetime
 
 # Suppress noisy OPC UA library warnings
@@ -10,6 +12,63 @@ logging.getLogger("opcua.server.address_space").setLevel(logging.ERROR)
 
 from opcua import Server, ua
 from simantha import Source, Machine, Buffer, Sink, System, Maintainer
+from simantha.simulation import Environment
+
+
+# Monkey-patch Simantha's Environment.step() to print actual tracebacks
+# instead of swallowing exceptions with a bare except:
+_original_step = Environment.step
+
+
+def _patched_step(self):
+    next_event = self.events.pop(0)
+    self.now = next_event.time
+
+    try:
+        if self.trace:
+            self.trace_event(next_event)
+        next_event.execute()
+    except Exception as e:
+        self.export_trace()
+        print('Failed event:')
+        print(f'  time:      {next_event.time}')
+        print(f'  location:  {next_event.location}')
+        print(f'  action:    {next_event.action.__name__}')
+        print(f'  priority:  {next_event.priority}')
+        print(f'  exception: {type(e).__name__}: {e}')
+        traceback.print_exc()
+        # Dump machine state for debugging
+        for obj in getattr(self, 'objects', []):
+            if hasattr(obj, 'has_part'):
+                print(f'  {obj.name}: has_part={obj.has_part} contents={len(obj.contents)} '
+                      f'failed={getattr(obj, "failed", "?")} '
+                      f'blocked={obj.blocked} starved={obj.starved} '
+                      f'target_receiver={getattr(obj.target_receiver, "name", None)}')
+            elif hasattr(obj, 'level'):
+                rv = getattr(obj, 'reserved_vacancy', 'N/A')
+                rc = getattr(obj, 'reserved_content', 'N/A')
+                print(f'  {obj.name}: level={obj.level} reserved_vacancy={rv} '
+                      f'reserved_content={rc}')
+        sys.exit(1)
+
+
+Environment.step = _patched_step
+
+
+# Monkey-patch Simantha's Sink.initialize() to reset level_data.
+# Bug: Buffer and Machine reset their data lists in initialize(), but Sink does not.
+# Since system.simulate(N) calls initialize() then runs 0..N each step, Sink.level_data
+# grows quadratically (K*(K+1)/2 entries after K steps) and causes MemoryError.
+_original_sink_initialize = Sink.initialize
+
+
+def _patched_sink_initialize(self):
+    _original_sink_initialize(self)
+    self.level_data = {'time': [0], 'level': [self.initial_level]}
+
+
+Sink.initialize = _patched_sink_initialize
+
 from config_loader import load_line_config
 from advanced_machine import AdvancedMachine
 from failure_modes import FailureMode

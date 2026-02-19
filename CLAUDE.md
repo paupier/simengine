@@ -158,6 +158,9 @@ elif current_sink_level < prev_sink_level:
     prev_sink_level = current_sink_level  # Resync without losing count
 ```
 
+### Sink.level_data memory leak (monkey-patched)
+Simantha's `Sink.initialize()` does not reset `level_data`, so it grows quadratically across `system.simulate()` calls (K*(K+1)/2 entries after K steps), causing MemoryError after ~4000 steps. A monkey-patch in `opcua_server.py` resets `level_data = []` in `Sink.initialize()` to match the pattern used by Buffer and Machine.
+
 ### Scrap sinks are NOT in machine.downstream
 Scrap sinks are stored as `_scrap_sink` attribute to avoid random routing by Simantha. Parts are diverted inside `output_addon_process()` using `_redirect_to()` which fixes buffer `reserved_vacancy` bookkeeping.
 

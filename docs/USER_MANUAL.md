@@ -1861,7 +1861,21 @@ ModuleNotFoundError: No module named 'simantha'
 
 ---
 
-#### Issue 5: Variables Not Updating
+#### Issue 5: MemoryError During Long Runs
+
+**Symptom:**
+```
+MemoryError
+```
+Or the process is killed by the OS after running for thousands of simulation steps.
+
+**Cause:** Simantha's `Sink.initialize()` does not reset `level_data` between `system.simulate()` calls. Since each call reinitializes and runs from time 0 to N, the list grows quadratically, exhausting memory after ~4000 steps.
+
+**Solution:** This is already fixed in the current version via a monkey-patch in `opcua_server.py` that resets `Sink.level_data` during initialization. If you are running an older version, update to the latest.
+
+---
+
+#### Issue 6: Variables Not Updating
 
 **Symptom:** Values in OPC UA client are stuck/frozen
 
