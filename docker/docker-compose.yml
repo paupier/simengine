@@ -101,10 +101,10 @@ services:
   # Telegraf - OPC UA → InfluxDB Pipeline Validation
   # -------------------------------------------------------------------------
   telegraf:
-    image: telegraf:latest
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.telegraf
     container_name: simantha-telegraf
-    volumes:
-      - ./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
     depends_on:
       - simantha
       - influxdb
