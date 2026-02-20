@@ -373,7 +373,10 @@ def _read_opcua_values():
             "line_kpis": line_kpis,
             "shift": shift_info,
         }
-    except Exception:
+    except Exception as e:
+        import traceback
+        print(f"[WebUI] OPC UA read error: {e}")
+        traceback.print_exc()
         _disconnect_opcua()
         return None
 
