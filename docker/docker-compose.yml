@@ -98,6 +98,21 @@ services:
     restart: unless-stopped
 
   # -------------------------------------------------------------------------
+  # Telegraf - OPC UA → InfluxDB Pipeline Validation
+  # -------------------------------------------------------------------------
+  telegraf:
+    image: telegraf:latest
+    container_name: simantha-telegraf
+    volumes:
+      - ./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+    depends_on:
+      - simantha
+      - influxdb
+    networks:
+      - simantha-net
+    restart: unless-stopped
+
+  # -------------------------------------------------------------------------
   # Neo4j - Graph Database (OPTIONAL - uncomment to enable)
   # -------------------------------------------------------------------------
   # neo4j:

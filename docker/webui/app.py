@@ -18,7 +18,8 @@ import re
 
 from ruamel.yaml import YAML
 
-from flask import Flask, jsonify, render_template, request
+from datetime import datetime as dt
+from flask import Flask, jsonify, render_template, request, send_from_directory
 
 _ryaml = YAML()
 _ryaml.preserve_quotes = True
@@ -581,6 +582,49 @@ def api_scenario_yaml(name):
     buf = StringIO()
     _ryaml.dump({name: all_configs[name]}, buf)
     return jsonify({"yaml": buf.getvalue()})
+
+
+# ---------------------------------------------------------------------------
+# Historian CSV download routes
+# ---------------------------------------------------------------------------
+@app.route("/api/historian/files")
+def list_historian_files():
+    """List available historian CSV files with metadata."""
+    hist_dir = _PROJECT_ROOT / "results" / "historian"
+    if not hist_dir.exists():
+        return jsonify({"files": []})
+    files = sorted(hist_dir.glob("*_events*.csv"), key=os.path.getmtime, reverse=True)
+    return jsonify({"files": [
+        {
+            "name": f.name,
+            "size_mb": round(f.stat().st_size / 1048576, 1),
+            "modified": dt.fromtimestamp(f.stat().st_mtime).isoformat(),
+        }
+        for f in files
+    ]})
+
+
+@app.route("/api/historian/download/<filename>")
+def download_historian_file(filename):
+    """Serve a specific historian CSV file as an attachment."""
+    hist_dir = _PROJECT_ROOT / "results" / "historian"
+    if ".." in filename or not filename.endswith(".csv"):
+        return jsonify({"error": "Invalid filename"}), 400
+    if not (hist_dir / filename).exists():
+        return jsonify({"error": "File not found"}), 404
+    return send_from_directory(str(hist_dir), filename, as_attachment=True)
+
+
+@app.route("/api/historian/download")
+def download_latest_historian():
+    """Download the most recent historian CSV file."""
+    hist_dir = _PROJECT_ROOT / "results" / "historian"
+    if not hist_dir.exists():
+        return jsonify({"error": "No historian files found"}), 404
+    files = sorted(hist_dir.glob("*_events*.csv"), key=os.path.getmtime)
+    if not files:
+        return jsonify({"error": "No historian files found"}), 404
+    return send_from_directory(str(hist_dir), files[-1].name, as_attachment=True)
 
 
 # ---------------------------------------------------------------------------

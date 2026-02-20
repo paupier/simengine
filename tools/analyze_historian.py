@@ -431,10 +431,351 @@ def plot_analysis(df, prod_summaries, csv_path):
     plt.close()
 
 
+def query_influxdb_telegraf(influx_url, influx_token, influx_org, influx_bucket):
+    """Query Telegraf-sourced OPC UA data from InfluxDB.
+
+    Returns a dict with data point count, time range, throughput, OEE values,
+    per-machine partcounts, and update rate statistics.
+    """
+    try:
+        from influxdb_client import InfluxDBClient
+    except ImportError:
+        print("ERROR: influxdb-client is required for --influxdb. "
+              "Install with: pip install influxdb-client")
+        sys.exit(1)
+
+    client = InfluxDBClient(url=influx_url, token=influx_token, org=influx_org)
+    query_api = client.query_api()
+
+    result = {}
+
+    # 1. Data point count and time range
+    flux = f'''
+    from(bucket: "{influx_bucket}")
+      |> range(start: 0)
+      |> filter(fn: (r) => r._measurement == "opcua")
+      |> count()
+      |> group()
+      |> sum()
+    '''
+    tables = query_api.query(flux, org=influx_org)
+    total_points = 0
+    for table in tables:
+        for record in table.records:
+            total_points += record.get_value()
+    result["total_points"] = total_points
+
+    # 2. Time range (first/last SimTime)
+    flux_range = f'''
+    from(bucket: "{influx_bucket}")
+      |> range(start: 0)
+      |> filter(fn: (r) => r._measurement == "opcua")
+      |> filter(fn: (r) => r._field == "SimTime")
+      |> first()
+    '''
+    tables = query_api.query(flux_range, org=influx_org)
+    first_simtime = None
+    for table in tables:
+        for record in table.records:
+            first_simtime = record.get_value()
+
+    flux_range_last = f'''
+    from(bucket: "{influx_bucket}")
+      |> range(start: 0)
+      |> filter(fn: (r) => r._measurement == "opcua")
+      |> filter(fn: (r) => r._field == "SimTime")
+      |> last()
+    '''
+    tables = query_api.query(flux_range_last, org=influx_org)
+    last_simtime = None
+    for table in tables:
+        for record in table.records:
+            last_simtime = record.get_value()
+
+    result["first_simtime"] = first_simtime
+    result["last_simtime"] = last_simtime
+
+    # 3. Final throughput
+    flux_throughput = f'''
+    from(bucket: "{influx_bucket}")
+      |> range(start: 0)
+      |> filter(fn: (r) => r._measurement == "opcua")
+      |> filter(fn: (r) => r._field == "Throughput")
+      |> last()
+    '''
+    tables = query_api.query(flux_throughput, org=influx_org)
+    final_throughput = None
+    for table in tables:
+        for record in table.records:
+            final_throughput = record.get_value()
+    result["final_throughput"] = final_throughput
+
+    # 4. Line OEE over time
+    flux_oee = f'''
+    from(bucket: "{influx_bucket}")
+      |> range(start: 0)
+      |> filter(fn: (r) => r._measurement == "opcua")
+      |> filter(fn: (r) => r._field == "LineOEE")
+      |> sort(columns: ["_time"])
+    '''
+    tables = query_api.query(flux_oee, org=influx_org)
+    oee_values = []
+    for table in tables:
+        for record in table.records:
+            oee_values.append({
+                "time": record.get_time(),
+                "value": record.get_value(),
+            })
+    result["oee_timeseries"] = oee_values
+
+    # 5. Per-machine partcounts (final values)
+    flux_parts = f'''
+    from(bucket: "{influx_bucket}")
+      |> range(start: 0)
+      |> filter(fn: (r) => r._measurement == "opcua")
+      |> filter(fn: (r) => r._field == "PartCount")
+      |> filter(fn: (r) => r.source_type == "machine")
+      |> last()
+    '''
+    tables = query_api.query(flux_parts, org=influx_org)
+    machine_partcounts = {}
+    for table in tables:
+        for record in table.records:
+            source = record.values.get("source", "unknown")
+            machine_partcounts[source] = record.get_value()
+    result["machine_partcounts"] = machine_partcounts
+
+    # 6. Buffer levels (final)
+    flux_buffers = f'''
+    from(bucket: "{influx_bucket}")
+      |> range(start: 0)
+      |> filter(fn: (r) => r._measurement == "opcua")
+      |> filter(fn: (r) => r._field == "CurrentLevel")
+      |> filter(fn: (r) => r.source_type == "buffer")
+      |> last()
+    '''
+    tables = query_api.query(flux_buffers, org=influx_org)
+    buffer_levels = {}
+    for table in tables:
+        for record in table.records:
+            source = record.values.get("source", "unknown")
+            buffer_levels[source] = record.get_value()
+    result["buffer_levels"] = buffer_levels
+
+    # 7. Update rate (average interval between SimTime updates)
+    flux_rate = f'''
+    from(bucket: "{influx_bucket}")
+      |> range(start: 0)
+      |> filter(fn: (r) => r._measurement == "opcua")
+      |> filter(fn: (r) => r._field == "SimTime")
+      |> sort(columns: ["_time"])
+      |> elapsed(unit: 1s)
+    '''
+    tables = query_api.query(flux_rate, org=influx_org)
+    intervals = []
+    for table in tables:
+        for record in table.records:
+            elapsed_val = record.values.get("elapsed", None)
+            if elapsed_val is not None and elapsed_val > 0:
+                intervals.append(elapsed_val)
+    result["update_intervals"] = intervals
+    if intervals:
+        result["avg_update_rate"] = sum(intervals) / len(intervals)
+    else:
+        result["avg_update_rate"] = None
+
+    # 8. Data gaps (intervals > 5s)
+    gaps = [i for i in intervals if i > 5]
+    result["gaps_over_5s"] = len(gaps)
+
+    client.close()
+    return result
+
+
+def compare_csv_telegraf(df, influx_data):
+    """Compare CSV historian ground truth against Telegraf/InfluxDB OPC UA data.
+
+    Prints a structured comparison report as section 11 of the analysis.
+    Returns (checks_passed, checks_total).
+    """
+    section("11. CSV vs INFLUXDB (Telegraf OPC UA) COMPARISON")
+
+    checks_passed = 0
+    checks_total = 0
+
+    # --- Telegraf data range ---
+    print(f"  Telegraf data range:")
+    print(f"    Points received:    {influx_data['total_points']:,}")
+
+    first_st = influx_data.get("first_simtime")
+    last_st = influx_data.get("last_simtime")
+    if first_st is not None and last_st is not None:
+        span_hrs = (last_st - first_st) / 3600
+        print(f"    Time span:          {first_st} - {last_st} ({span_hrs:.1f} hours)")
+    else:
+        print(f"    Time span:          N/A")
+
+    avg_rate = influx_data.get("avg_update_rate")
+    if avg_rate is not None:
+        print(f"    Avg update rate:    {1.0/avg_rate:.2f}/sec (expected: 1.00/sec)")
+        checks_total += 1
+        if abs(1.0 / avg_rate - 1.0) < 0.05:
+            print(f"    PASS: Update rate within 5% of expected")
+            checks_passed += 1
+        else:
+            print(f"    FAIL: Update rate deviates > 5% from expected")
+    else:
+        print(f"    Avg update rate:    N/A (no interval data)")
+
+    # --- Throughput comparison ---
+    print(f"\n  Throughput comparison:")
+    prod_summaries = df[df["event_type"] == "PRODUCTION_SUMMARY"]
+    csv_final_partcount = None
+    if len(prod_summaries) > 0:
+        csv_final_partcount = prod_summaries.iloc[-1]["partcount"]
+        print(f"    CSV final partcount:      {csv_final_partcount:,}")
+    else:
+        print(f"    CSV final partcount:      N/A (no PRODUCTION_SUMMARY)")
+
+    telegraf_throughput = influx_data.get("final_throughput")
+    if telegraf_throughput is not None:
+        print(f"    Telegraf final Throughput: {telegraf_throughput:,}")
+    else:
+        print(f"    Telegraf final Throughput: N/A")
+
+    checks_total += 1
+    if csv_final_partcount is not None and telegraf_throughput is not None:
+        if csv_final_partcount == telegraf_throughput:
+            print(f"    PASS: Exact match")
+            checks_passed += 1
+        elif abs(csv_final_partcount - telegraf_throughput) <= 2:
+            print(f"    PASS: Within 2 parts (timing mismatch)")
+            checks_passed += 1
+        else:
+            diff = abs(csv_final_partcount - telegraf_throughput)
+            print(f"    FAIL: Mismatch of {diff} parts")
+    else:
+        print(f"    SKIP: Missing data for comparison")
+
+    # --- OEE comparison ---
+    print(f"\n  OEE comparison:")
+    oee_ts = influx_data.get("oee_timeseries", [])
+    checks_total += 1
+    if len(oee_ts) > 0 and len(prod_summaries) > 0:
+        extras = parse_extra_json(prod_summaries["extra_json"])
+
+        csv_oee_vals = extras.apply(lambda x: x.get("line_oee", None))
+        csv_oee_vals = pd.to_numeric(csv_oee_vals, errors="coerce").dropna()
+
+        telegraf_oee_vals = [v["value"] for v in oee_ts if v["value"] is not None]
+
+        if len(csv_oee_vals) > 0 and len(telegraf_oee_vals) > 0:
+            csv_mean = csv_oee_vals.mean()
+            telegraf_mean = sum(telegraf_oee_vals) / len(telegraf_oee_vals)
+            mean_diff = abs(csv_mean - telegraf_mean)
+            print(f"    CSV OEE samples:      {len(csv_oee_vals):,} (mean={csv_mean:.4f})")
+            print(f"    Telegraf OEE samples:  {len(telegraf_oee_vals):,} (mean={telegraf_mean:.4f})")
+            print(f"    Mean absolute diff:    {mean_diff:.4f}")
+
+            if mean_diff < 0.05:
+                print(f"    PASS: OEE means within 0.05 tolerance")
+                checks_passed += 1
+            else:
+                print(f"    FAIL: OEE means differ by {mean_diff:.4f}")
+        else:
+            print(f"    SKIP: Insufficient OEE data for comparison")
+    else:
+        print(f"    SKIP: No OEE data available (CSV: {len(prod_summaries)}, "
+              f"Telegraf: {len(oee_ts)})")
+
+    # --- Per-machine PartCount ---
+    print(f"\n  Per-machine PartCount:")
+    machine_pcs = influx_data.get("machine_partcounts", {})
+    machine_events = df[(df["source_type"] == "machine") & (df["event_type"] == "STATE_CHANGE")]
+    csv_machines = sorted(machine_events["source"].unique())
+
+    for i, csv_m in enumerate(csv_machines):
+        telegraf_key = f"Machine{i+1}"
+        m_events = machine_events[machine_events["source"] == csv_m]
+        csv_pc = m_events.iloc[-1]["partcount"] if len(m_events) > 0 else None
+        telegraf_pc = machine_pcs.get(telegraf_key)
+
+        checks_total += 1
+        csv_str = f"{csv_pc:,}" if csv_pc is not None else "N/A"
+        tel_str = f"{telegraf_pc:,}" if telegraf_pc is not None else "N/A"
+
+        if csv_pc is not None and telegraf_pc is not None:
+            if abs(csv_pc - telegraf_pc) <= 2:
+                print(f"    {telegraf_key}: CSV={csv_str}  Telegraf={tel_str}  PASS")
+                checks_passed += 1
+            else:
+                print(f"    {telegraf_key}: CSV={csv_str}  Telegraf={tel_str}  FAIL")
+        else:
+            print(f"    {telegraf_key}: CSV={csv_str}  Telegraf={tel_str}  SKIP")
+
+    # --- Buffer levels ---
+    print(f"\n  Buffer levels (spot check):")
+    buffer_levels = influx_data.get("buffer_levels", {})
+    buf_events = df[(df["source_type"] == "buffer") & (df["event_type"] == "STATE_CHANGE")]
+    csv_buffers = sorted(buf_events["source"].unique())
+
+    for i, csv_b in enumerate(csv_buffers):
+        telegraf_key = f"Buffer{i+1}"
+        b_events = buf_events[buf_events["source"] == csv_b]
+        csv_level = b_events.iloc[-1]["buffer_level"] if len(b_events) > 0 else None
+        telegraf_level = buffer_levels.get(telegraf_key)
+
+        checks_total += 1
+        csv_str = str(csv_level) if csv_level is not None else "N/A"
+        tel_str = str(telegraf_level) if telegraf_level is not None else "N/A"
+
+        if csv_level is not None and telegraf_level is not None:
+            if abs(csv_level - telegraf_level) <= 1:
+                print(f"    {telegraf_key} final: CSV={csv_str}  Telegraf={tel_str}  PASS")
+                checks_passed += 1
+            else:
+                print(f"    {telegraf_key} final: CSV={csv_str}  Telegraf={tel_str}  FAIL")
+        else:
+            print(f"    {telegraf_key} final: CSV={csv_str}  Telegraf={tel_str}  SKIP")
+
+    # --- Data gaps ---
+    print(f"\n  Data gaps (Telegraf):")
+    gaps = influx_data.get("gaps_over_5s", 0)
+    checks_total += 1
+    print(f"    Gaps > 5s: {gaps}")
+    if gaps == 0:
+        print(f"    PASS: No significant gaps")
+        checks_passed += 1
+    elif gaps <= 3:
+        print(f"    WARN: {gaps} minor gaps detected")
+        checks_passed += 1  # Still pass for minor gaps
+    else:
+        print(f"    FAIL: {gaps} significant gaps detected")
+
+    # --- Verdict ---
+    print(f"\n  Pipeline verdict: ", end="")
+    if checks_passed == checks_total:
+        print(f"ALL CHECKS PASSED ({checks_passed}/{checks_total})")
+    else:
+        print(f"SOME CHECKS FAILED ({checks_passed}/{checks_total})")
+
+    return checks_passed, checks_total
+
+
 def main():
     parser = argparse.ArgumentParser(description="Analyze historian CSV files")
     parser.add_argument("path", help="CSV file path or directory (auto-picks latest)")
     parser.add_argument("--plot", action="store_true", help="Generate matplotlib plots")
+    parser.add_argument("--influxdb", action="store_true",
+                        help="Enable InfluxDB comparison (Telegraf-sourced data)")
+    parser.add_argument("--influxdb-url", default=None,
+                        help="InfluxDB URL (default: env INFLUXDB_URL or http://localhost:8086)")
+    parser.add_argument("--influxdb-token", default=None,
+                        help="InfluxDB token (default: env INFLUXDB_TOKEN)")
+    parser.add_argument("--influxdb-org", default=None,
+                        help="InfluxDB org (default: env INFLUXDB_ORG or 'simantha')")
+    parser.add_argument("--influxdb-bucket", default=None,
+                        help="InfluxDB bucket (default: env INFLUXDB_BUCKET or 'manufacturing')")
     args = parser.parse_args()
 
     # Resolve path
@@ -455,6 +796,25 @@ def main():
 
     if args.plot:
         plot_analysis(df, prod_summaries, csv_path)
+
+    # InfluxDB comparison (Telegraf OPC UA pipeline validation)
+    if args.influxdb:
+        influx_url = (args.influxdb_url
+                      or os.environ.get("INFLUXDB_URL", "http://localhost:8086"))
+        influx_token = (args.influxdb_token
+                        or os.environ.get("INFLUXDB_TOKEN"))
+        influx_org = (args.influxdb_org
+                      or os.environ.get("INFLUXDB_ORG", "simantha"))
+        influx_bucket = (args.influxdb_bucket
+                         or os.environ.get("INFLUXDB_BUCKET", "manufacturing"))
+
+        if not influx_token:
+            print("\nERROR: --influxdb-token or INFLUXDB_TOKEN env var is required")
+            sys.exit(1)
+
+        print(f"\nQuerying InfluxDB at {influx_url} ...")
+        influx_data = query_influxdb_telegraf(influx_url, influx_token, influx_org, influx_bucket)
+        compare_csv_telegraf(df, influx_data)
 
 
 if __name__ == "__main__":

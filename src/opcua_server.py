@@ -91,9 +91,20 @@ OEE_BUCKET_INTERVAL = 600  # seconds (10 minutes) — OEE recalculated at this i
 
 # ========== HELPER FUNCTIONS ==========
 
+
+def _nid(path, idx):
+    """Create an explicit string NodeId from a dot-separated path.
+
+    Gives every OPC UA node a stable, human-readable identifier like
+    ``ns=2;s=Line1.Machine1.OEE.OEE`` instead of an auto-generated numeric id.
+    """
+    return ua.NodeId(path, idx)
+
+
 def create_machine_node(parent_node, opcua_idx: int, machine_node_name: str, enable_health: bool = False,
                         enable_failure_modes: bool = False, failure_mode_names: list = None,
-                        enable_spc: bool = False, enable_quality_routing: bool = False):
+                        enable_spc: bool = False, enable_quality_routing: bool = False,
+                        node_prefix: str = ""):
     """
     Create OPC UA variables for a single machine.
 
@@ -105,83 +116,92 @@ def create_machine_node(parent_node, opcua_idx: int, machine_node_name: str, ena
         enable_failure_modes: Whether to create FailureModes/MaintenanceStrategy subnodes
         failure_mode_names: List of failure mode names (e.g., ["mechanical", "electrical"])
         enable_spc: Whether to create SPC subnode
+        node_prefix: Dot-separated prefix for explicit NodeIds (e.g., "Line1.Machine1")
 
     Returns:
         dict: Dictionary of variable objects
     """
-    machine_node = parent_node.add_object(opcua_idx, machine_node_name)
+    p = node_prefix  # shorthand
+    machine_node = parent_node.add_object(_nid(p, opcua_idx), machine_node_name)
 
     vars_dict = {}
-    vars_dict["state"] = machine_node.add_variable(opcua_idx, "State", "IDLE")
-    vars_dict["partcount"] = machine_node.add_variable(opcua_idx, "PartCount", 0)
-    vars_dict["utilisation"] = machine_node.add_variable(opcua_idx, "Utilisation", 0.0)
-    vars_dict["target_ppm"] = machine_node.add_variable(opcua_idx, "TargetPPM", 0.0)
-    vars_dict["actual_ppm"] = machine_node.add_variable(opcua_idx, "ActualPPM", 0.0)
+    vars_dict["state"] = machine_node.add_variable(_nid(f"{p}.State", opcua_idx), "State", "IDLE")
+    vars_dict["partcount"] = machine_node.add_variable(_nid(f"{p}.PartCount", opcua_idx), "PartCount", 0)
+    vars_dict["utilisation"] = machine_node.add_variable(_nid(f"{p}.Utilisation", opcua_idx), "Utilisation", 0.0)
+    vars_dict["target_ppm"] = machine_node.add_variable(_nid(f"{p}.TargetPPM", opcua_idx), "TargetPPM", 0.0)
+    vars_dict["actual_ppm"] = machine_node.add_variable(_nid(f"{p}.ActualPPM", opcua_idx), "ActualPPM", 0.0)
 
     # Time tracking (5 variables)
-    vars_dict["blocked_time"] = machine_node.add_variable(opcua_idx, "BlockedTime", 0.0)
-    vars_dict["starved_time"] = machine_node.add_variable(opcua_idx, "StarvedTime", 0.0)
-    vars_dict["down_time"] = machine_node.add_variable(opcua_idx, "DownTime", 0.0)
-    vars_dict["processing_time"] = machine_node.add_variable(opcua_idx, "ProcessingTime", 0.0)
-    vars_dict["idle_time"] = machine_node.add_variable(opcua_idx, "IdleTime", 0.0)
+    vars_dict["blocked_time"] = machine_node.add_variable(_nid(f"{p}.BlockedTime", opcua_idx), "BlockedTime", 0.0)
+    vars_dict["starved_time"] = machine_node.add_variable(_nid(f"{p}.StarvedTime", opcua_idx), "StarvedTime", 0.0)
+    vars_dict["down_time"] = machine_node.add_variable(_nid(f"{p}.DownTime", opcua_idx), "DownTime", 0.0)
+    vars_dict["processing_time"] = machine_node.add_variable(_nid(f"{p}.ProcessingTime", opcua_idx), "ProcessingTime", 0.0)
+    vars_dict["idle_time"] = machine_node.add_variable(_nid(f"{p}.IdleTime", opcua_idx), "IdleTime", 0.0)
 
     # Health (optional - only for machines with degradation)
     if enable_health:
-        vars_dict["health"] = machine_node.add_variable(opcua_idx, "HealthState", 0)
-        vars_dict["health_pct"] = machine_node.add_variable(opcua_idx, "HealthPercent", 100.0)
+        vars_dict["health"] = machine_node.add_variable(_nid(f"{p}.HealthState", opcua_idx), "HealthState", 0)
+        vars_dict["health_pct"] = machine_node.add_variable(_nid(f"{p}.HealthPercent", opcua_idx), "HealthPercent", 100.0)
 
     # OEE sub-node (7 variables)
-    oee_node = machine_node.add_object(opcua_idx, "OEE")
-    vars_dict["availability"] = oee_node.add_variable(opcua_idx, "Availability", 0.0)
-    vars_dict["performance"] = oee_node.add_variable(opcua_idx, "Performance", 0.0)
-    vars_dict["quality"] = oee_node.add_variable(opcua_idx, "Quality", 1.0)
-    vars_dict["oee"] = oee_node.add_variable(opcua_idx, "OEE", 0.0)
-    vars_dict["good_parts"] = oee_node.add_variable(opcua_idx, "GoodPartCount", 0)
-    vars_dict["defective_parts"] = oee_node.add_variable(opcua_idx, "DefectivePartCount", 0)
-    vars_dict["theoretical"] = oee_node.add_variable(opcua_idx, "TheoreticalOutput", 0.0)
+    oee_p = f"{p}.OEE"
+    oee_node = machine_node.add_object(_nid(oee_p, opcua_idx), "OEE")
+    vars_dict["availability"] = oee_node.add_variable(_nid(f"{oee_p}.Availability", opcua_idx), "Availability", 0.0)
+    vars_dict["performance"] = oee_node.add_variable(_nid(f"{oee_p}.Performance", opcua_idx), "Performance", 0.0)
+    vars_dict["quality"] = oee_node.add_variable(_nid(f"{oee_p}.Quality", opcua_idx), "Quality", 1.0)
+    vars_dict["oee"] = oee_node.add_variable(_nid(f"{oee_p}.OEE", opcua_idx), "OEE", 0.0)
+    vars_dict["good_parts"] = oee_node.add_variable(_nid(f"{oee_p}.GoodPartCount", opcua_idx), "GoodPartCount", 0)
+    vars_dict["defective_parts"] = oee_node.add_variable(_nid(f"{oee_p}.DefectivePartCount", opcua_idx), "DefectivePartCount", 0)
+    vars_dict["theoretical"] = oee_node.add_variable(_nid(f"{oee_p}.TheoreticalOutput", opcua_idx), "TheoreticalOutput", 0.0)
 
     # Alarms sub-node
-    alarm_vars = create_alarms_node(machine_node, opcua_idx, alarm_type="machine")
+    alarm_vars = create_alarms_node(machine_node, opcua_idx, alarm_type="machine",
+                                    node_prefix=f"{p}.Alarms")
     vars_dict.update({f"alarm_{k}": v for k, v in alarm_vars.items()})
 
     # FailureModes sub-node
     if enable_failure_modes and failure_mode_names:
-        fm_node = machine_node.add_object(opcua_idx, "FailureModes")
-        vars_dict["fm_active"] = fm_node.add_variable(opcua_idx, "ActiveFailureMode", "none")
+        fm_p = f"{p}.FailureModes"
+        fm_node = machine_node.add_object(_nid(fm_p, opcua_idx), "FailureModes")
+        vars_dict["fm_active"] = fm_node.add_variable(_nid(f"{fm_p}.ActiveFailureMode", opcua_idx), "ActiveFailureMode", "none")
 
         # Create variables for each failure mode
         for fm_name in failure_mode_names:
             prefix = fm_name.capitalize()
-            vars_dict[f"fm_{fm_name}_count"] = fm_node.add_variable(opcua_idx, f"{prefix}FailureCount", 0)
-            vars_dict[f"fm_{fm_name}_downtime"] = fm_node.add_variable(opcua_idx, f"{prefix}TotalDowntime", 0.0)
-            vars_dict[f"fm_{fm_name}_mtbf"] = fm_node.add_variable(opcua_idx, f"{prefix}MTBF", 0.0)
-            vars_dict[f"fm_{fm_name}_mttr"] = fm_node.add_variable(opcua_idx, f"{prefix}MTTR", 0.0)
+            vars_dict[f"fm_{fm_name}_count"] = fm_node.add_variable(_nid(f"{fm_p}.{prefix}FailureCount", opcua_idx), f"{prefix}FailureCount", 0)
+            vars_dict[f"fm_{fm_name}_downtime"] = fm_node.add_variable(_nid(f"{fm_p}.{prefix}TotalDowntime", opcua_idx), f"{prefix}TotalDowntime", 0.0)
+            vars_dict[f"fm_{fm_name}_mtbf"] = fm_node.add_variable(_nid(f"{fm_p}.{prefix}MTBF", opcua_idx), f"{prefix}MTBF", 0.0)
+            vars_dict[f"fm_{fm_name}_mttr"] = fm_node.add_variable(_nid(f"{fm_p}.{prefix}MTTR", opcua_idx), f"{prefix}MTTR", 0.0)
 
         # MaintenanceStrategy sub-node
-        ms_node = machine_node.add_object(opcua_idx, "MaintenanceStrategy")
-        vars_dict["ms_type"] = ms_node.add_variable(opcua_idx, "StrategyType", "corrective")
-        vars_dict["ms_next_pm"] = ms_node.add_variable(opcua_idx, "NextPMScheduled", -1.0)
-        vars_dict["ms_pm_count"] = ms_node.add_variable(opcua_idx, "PMCount", 0)
-        vars_dict["ms_cm_count"] = ms_node.add_variable(opcua_idx, "CMCount", 0)
+        ms_p = f"{p}.MaintenanceStrategy"
+        ms_node = machine_node.add_object(_nid(ms_p, opcua_idx), "MaintenanceStrategy")
+        vars_dict["ms_type"] = ms_node.add_variable(_nid(f"{ms_p}.StrategyType", opcua_idx), "StrategyType", "corrective")
+        vars_dict["ms_next_pm"] = ms_node.add_variable(_nid(f"{ms_p}.NextPMScheduled", opcua_idx), "NextPMScheduled", -1.0)
+        vars_dict["ms_pm_count"] = ms_node.add_variable(_nid(f"{ms_p}.PMCount", opcua_idx), "PMCount", 0)
+        vars_dict["ms_cm_count"] = ms_node.add_variable(_nid(f"{ms_p}.CMCount", opcua_idx), "CMCount", 0)
 
     # SPC sub-node
     if enable_spc:
-        spc_vars = create_spc_node(machine_node, opcua_idx, machine_prefix=machine_node_name)
+        spc_vars = create_spc_node(machine_node, opcua_idx, machine_prefix=machine_node_name,
+                                   node_prefix=f"{p}.SPC")
         vars_dict.update({f"spc_{k}": v for k, v in spc_vars.items()})
 
     # QualityRouting sub-node
     if enable_quality_routing:
-        qr_node = machine_node.add_object(opcua_idx, "QualityRouting")
-        vars_dict["qr_scrap_count"] = qr_node.add_variable(opcua_idx, "ScrapCount", 0)
-        vars_dict["qr_rework_count"] = qr_node.add_variable(opcua_idx, "ReworkCount", 0)
-        vars_dict["qr_rework_success_count"] = qr_node.add_variable(opcua_idx, "ReworkSuccessCount", 0)
-        vars_dict["qr_rework_success_rate"] = qr_node.add_variable(opcua_idx, "ReworkSuccessRate", 0.0)
-        vars_dict["qr_good_count"] = qr_node.add_variable(opcua_idx, "GoodCount", 0)
+        qr_p = f"{p}.QualityRouting"
+        qr_node = machine_node.add_object(_nid(qr_p, opcua_idx), "QualityRouting")
+        vars_dict["qr_scrap_count"] = qr_node.add_variable(_nid(f"{qr_p}.ScrapCount", opcua_idx), "ScrapCount", 0)
+        vars_dict["qr_rework_count"] = qr_node.add_variable(_nid(f"{qr_p}.ReworkCount", opcua_idx), "ReworkCount", 0)
+        vars_dict["qr_rework_success_count"] = qr_node.add_variable(_nid(f"{qr_p}.ReworkSuccessCount", opcua_idx), "ReworkSuccessCount", 0)
+        vars_dict["qr_rework_success_rate"] = qr_node.add_variable(_nid(f"{qr_p}.ReworkSuccessRate", opcua_idx), "ReworkSuccessRate", 0.0)
+        vars_dict["qr_good_count"] = qr_node.add_variable(_nid(f"{qr_p}.GoodCount", opcua_idx), "GoodCount", 0)
 
     return vars_dict
 
 
-def create_buffer_node(parent_node, opcua_idx: int, buffer_name: str, capacity: int):
+def create_buffer_node(parent_node, opcua_idx: int, buffer_name: str, capacity: int,
+                       node_prefix: str = ""):
     """
     Create OPC UA variables for a single buffer.
 
@@ -190,24 +210,28 @@ def create_buffer_node(parent_node, opcua_idx: int, buffer_name: str, capacity: 
         opcua_idx: OPC UA namespace index
         buffer_name: Buffer node name (e.g., "Buffer1", "Buffer2")
         capacity: Buffer capacity
+        node_prefix: Dot-separated prefix for explicit NodeIds (e.g., "Line1.Buffer1")
 
     Returns:
         dict: Dictionary of variable objects
     """
-    buffer_node = parent_node.add_object(opcua_idx, buffer_name)
+    p = node_prefix
+    buffer_node = parent_node.add_object(_nid(p, opcua_idx), buffer_name)
 
     vars_dict = {}
-    vars_dict["level"] = buffer_node.add_variable(opcua_idx, "CurrentLevel", 0)
-    vars_dict["capacity"] = buffer_node.add_variable(opcua_idx, "Capacity", capacity)
+    vars_dict["level"] = buffer_node.add_variable(_nid(f"{p}.CurrentLevel", opcua_idx), "CurrentLevel", 0)
+    vars_dict["capacity"] = buffer_node.add_variable(_nid(f"{p}.Capacity", opcua_idx), "Capacity", capacity)
 
     # Alarms sub-node
-    alarm_vars = create_alarms_node(buffer_node, opcua_idx, alarm_type="buffer")
+    alarm_vars = create_alarms_node(buffer_node, opcua_idx, alarm_type="buffer",
+                                    node_prefix=f"{p}.Alarms")
     vars_dict.update({f"alarm_{k}": v for k, v in alarm_vars.items()})
 
     return vars_dict
 
 
-def create_alarms_node(parent_node, opcua_idx: int, alarm_type: str = "machine"):
+def create_alarms_node(parent_node, opcua_idx: int, alarm_type: str = "machine",
+                       node_prefix: str = ""):
     """
     Create Alarms sub-node for a machine or buffer.
 
@@ -215,45 +239,51 @@ def create_alarms_node(parent_node, opcua_idx: int, alarm_type: str = "machine")
         parent_node: Parent OPC UA node (machine or buffer)
         opcua_idx: OPC UA namespace index
         alarm_type: "machine" or "buffer"
+        node_prefix: Dot-separated prefix for explicit NodeIds (e.g., "Line1.Machine1.Alarms")
 
     Returns:
         dict: Dictionary of alarm variable objects
     """
-    alarms_node = parent_node.add_object(opcua_idx, "Alarms")
+    p = node_prefix
+    alarms_node = parent_node.add_object(_nid(p, opcua_idx), "Alarms")
 
     vars_dict = {}
-    vars_dict["alarm_count"] = alarms_node.add_variable(opcua_idx, "ActiveAlarmCount", 0)
-    vars_dict["last_alarm_time"] = alarms_node.add_variable(opcua_idx, "LastAlarmTime", datetime.now())
-    vars_dict["last_alarm_message"] = alarms_node.add_variable(opcua_idx, "LastAlarmMessage", "")
-    vars_dict["last_alarm_severity"] = alarms_node.add_variable(opcua_idx, "LastAlarmSeverity", "")
+    vars_dict["alarm_count"] = alarms_node.add_variable(_nid(f"{p}.ActiveAlarmCount", opcua_idx), "ActiveAlarmCount", 0)
+    vars_dict["last_alarm_time"] = alarms_node.add_variable(_nid(f"{p}.LastAlarmTime", opcua_idx), "LastAlarmTime", datetime.now())
+    vars_dict["last_alarm_message"] = alarms_node.add_variable(_nid(f"{p}.LastAlarmMessage", opcua_idx), "LastAlarmMessage", "")
+    vars_dict["last_alarm_severity"] = alarms_node.add_variable(_nid(f"{p}.LastAlarmSeverity", opcua_idx), "LastAlarmSeverity", "")
 
     if alarm_type == "machine":
-        vars_dict["alarm_failure"] = alarms_node.add_variable(opcua_idx, "MachineFailureActive", False)
-        vars_dict["alarm_maintenance"] = alarms_node.add_variable(opcua_idx, "MaintenanceActive", False)
-        vars_dict["alarm_quality"] = alarms_node.add_variable(opcua_idx, "QualityAlertActive", False)
+        vars_dict["alarm_failure"] = alarms_node.add_variable(_nid(f"{p}.MachineFailureActive", opcua_idx), "MachineFailureActive", False)
+        vars_dict["alarm_maintenance"] = alarms_node.add_variable(_nid(f"{p}.MaintenanceActive", opcua_idx), "MaintenanceActive", False)
+        vars_dict["alarm_quality"] = alarms_node.add_variable(_nid(f"{p}.QualityAlertActive", opcua_idx), "QualityAlertActive", False)
     elif alarm_type == "buffer":
-        vars_dict["alarm_high"] = alarms_node.add_variable(opcua_idx, "HighLevelWarningActive", False)
-        vars_dict["alarm_low"] = alarms_node.add_variable(opcua_idx, "LowLevelWarningActive", False)
+        vars_dict["alarm_high"] = alarms_node.add_variable(_nid(f"{p}.HighLevelWarningActive", opcua_idx), "HighLevelWarningActive", False)
+        vars_dict["alarm_low"] = alarms_node.add_variable(_nid(f"{p}.LowLevelWarningActive", opcua_idx), "LowLevelWarningActive", False)
 
     return vars_dict
 
 
-def _add_prefixed_var(parent, idx, browse_name, default_val, prefix):
+def _add_prefixed_var(parent, idx, browse_name, default_val, display_prefix, nid_path=""):
     """Add an OPC UA variable with a prefixed DisplayName for clarity in UA browsers.
 
     BrowseName remains unchanged (e.g. "Cp") for backward-compatible path navigation.
     DisplayName becomes e.g. "Machine1_Cp" so it's unambiguous in flat views.
     """
-    v = parent.add_variable(idx, browse_name, default_val)
-    if prefix:
+    if nid_path:
+        v = parent.add_variable(_nid(nid_path, idx), browse_name, default_val)
+    else:
+        v = parent.add_variable(idx, browse_name, default_val)
+    if display_prefix:
         v.set_attribute(
             ua.AttributeIds.DisplayName,
-            ua.DataValue(ua.LocalizedText(f"{prefix}_{browse_name}"))
+            ua.DataValue(ua.LocalizedText(f"{display_prefix}_{browse_name}"))
         )
     return v
 
 
-def create_spc_node(parent_node, opcua_idx: int, machine_prefix: str = ""):
+def create_spc_node(parent_node, opcua_idx: int, machine_prefix: str = "",
+                    node_prefix: str = ""):
     """
     Create SPC (Statistical Process Control) sub-node for a machine.
 
@@ -261,100 +291,111 @@ def create_spc_node(parent_node, opcua_idx: int, machine_prefix: str = ""):
         parent_node: Parent OPC UA node (machine)
         opcua_idx: OPC UA namespace index
         machine_prefix: Prefix for DisplayName (e.g. "Machine1")
+        node_prefix: Dot-separated prefix for explicit NodeIds (e.g., "Line1.Machine1.SPC")
 
     Returns:
         dict: Dictionary of SPC variable objects
     """
-    spc_node = parent_node.add_object(opcua_idx, "SPC")
+    np_ = node_prefix  # shorthand (avoid shadowing numpy)
+    spc_node = parent_node.add_object(_nid(np_, opcua_idx), "SPC")
 
     vars_dict = {}
     p = machine_prefix
 
     # X-bar Chart sub-node
-    xbar_node = spc_node.add_object(opcua_idx, "XBarChart")
-    vars_dict["xbar_current"] = _add_prefixed_var(xbar_node, opcua_idx, "XBar", 0.0, p)
-    vars_dict["xbar_ucl"] = _add_prefixed_var(xbar_node, opcua_idx, "UCL", 0.0, p)
-    vars_dict["xbar_cl"] = _add_prefixed_var(xbar_node, opcua_idx, "CL", 0.0, p)
-    vars_dict["xbar_lcl"] = _add_prefixed_var(xbar_node, opcua_idx, "LCL", 0.0, p)
+    xbar_p = f"{np_}.XBarChart"
+    xbar_node = spc_node.add_object(_nid(xbar_p, opcua_idx), "XBarChart")
+    vars_dict["xbar_current"] = _add_prefixed_var(xbar_node, opcua_idx, "XBar", 0.0, p, f"{xbar_p}.XBar")
+    vars_dict["xbar_ucl"] = _add_prefixed_var(xbar_node, opcua_idx, "UCL", 0.0, p, f"{xbar_p}.UCL")
+    vars_dict["xbar_cl"] = _add_prefixed_var(xbar_node, opcua_idx, "CL", 0.0, p, f"{xbar_p}.CL")
+    vars_dict["xbar_lcl"] = _add_prefixed_var(xbar_node, opcua_idx, "LCL", 0.0, p, f"{xbar_p}.LCL")
 
     # R Chart sub-node
-    r_node = spc_node.add_object(opcua_idx, "RChart")
-    vars_dict["r_current"] = _add_prefixed_var(r_node, opcua_idx, "Range", 0.0, p)
-    vars_dict["r_ucl"] = _add_prefixed_var(r_node, opcua_idx, "UCL", 0.0, p)
-    vars_dict["r_cl"] = _add_prefixed_var(r_node, opcua_idx, "CL", 0.0, p)
-    vars_dict["r_lcl"] = _add_prefixed_var(r_node, opcua_idx, "LCL", 0.0, p)
+    r_p = f"{np_}.RChart"
+    r_node = spc_node.add_object(_nid(r_p, opcua_idx), "RChart")
+    vars_dict["r_current"] = _add_prefixed_var(r_node, opcua_idx, "Range", 0.0, p, f"{r_p}.Range")
+    vars_dict["r_ucl"] = _add_prefixed_var(r_node, opcua_idx, "UCL", 0.0, p, f"{r_p}.UCL")
+    vars_dict["r_cl"] = _add_prefixed_var(r_node, opcua_idx, "CL", 0.0, p, f"{r_p}.CL")
+    vars_dict["r_lcl"] = _add_prefixed_var(r_node, opcua_idx, "LCL", 0.0, p, f"{r_p}.LCL")
 
     # Capability sub-node
-    cap_node = spc_node.add_object(opcua_idx, "Capability")
-    vars_dict["cp"] = _add_prefixed_var(cap_node, opcua_idx, "Cp", 0.0, p)
-    vars_dict["cpk"] = _add_prefixed_var(cap_node, opcua_idx, "Cpk", 0.0, p)
-    vars_dict["pp"] = _add_prefixed_var(cap_node, opcua_idx, "Pp", 0.0, p)
-    vars_dict["ppk"] = _add_prefixed_var(cap_node, opcua_idx, "Ppk", 0.0, p)
-    vars_dict["sigma_level"] = _add_prefixed_var(cap_node, opcua_idx, "SigmaLevel", 0.0, p)
+    cap_p = f"{np_}.Capability"
+    cap_node = spc_node.add_object(_nid(cap_p, opcua_idx), "Capability")
+    vars_dict["cp"] = _add_prefixed_var(cap_node, opcua_idx, "Cp", 0.0, p, f"{cap_p}.Cp")
+    vars_dict["cpk"] = _add_prefixed_var(cap_node, opcua_idx, "Cpk", 0.0, p, f"{cap_p}.Cpk")
+    vars_dict["pp"] = _add_prefixed_var(cap_node, opcua_idx, "Pp", 0.0, p, f"{cap_p}.Pp")
+    vars_dict["ppk"] = _add_prefixed_var(cap_node, opcua_idx, "Ppk", 0.0, p, f"{cap_p}.Ppk")
+    vars_dict["sigma_level"] = _add_prefixed_var(cap_node, opcua_idx, "SigmaLevel", 0.0, p, f"{cap_p}.SigmaLevel")
 
     # Status sub-node
-    status_node = spc_node.add_object(opcua_idx, "Status")
-    vars_dict["in_control"] = _add_prefixed_var(status_node, opcua_idx, "InControl", True, p)
-    vars_dict["violations"] = _add_prefixed_var(status_node, opcua_idx, "Violations", "", p)
-    vars_dict["total_samples"] = _add_prefixed_var(status_node, opcua_idx, "TotalSamples", 0, p)
-    vars_dict["num_subgroups"] = _add_prefixed_var(status_node, opcua_idx, "NumSubgroups", 0, p)
+    stat_p = f"{np_}.Status"
+    status_node = spc_node.add_object(_nid(stat_p, opcua_idx), "Status")
+    vars_dict["in_control"] = _add_prefixed_var(status_node, opcua_idx, "InControl", True, p, f"{stat_p}.InControl")
+    vars_dict["violations"] = _add_prefixed_var(status_node, opcua_idx, "Violations", "", p, f"{stat_p}.Violations")
+    vars_dict["total_samples"] = _add_prefixed_var(status_node, opcua_idx, "TotalSamples", 0, p, f"{stat_p}.TotalSamples")
+    vars_dict["num_subgroups"] = _add_prefixed_var(status_node, opcua_idx, "NumSubgroups", 0, p, f"{stat_p}.NumSubgroups")
 
     return vars_dict
 
 
-def create_shift_node(parent_node, opcua_idx: int):
+def create_shift_node(parent_node, opcua_idx: int, node_prefix: str = ""):
     """
     Create Shift tracking sub-node.
 
     Args:
         parent_node: Parent OPC UA node (usually Line1)
         opcua_idx: OPC UA namespace index
+        node_prefix: Dot-separated prefix for explicit NodeIds (e.g., "Line1.Shift")
 
     Returns:
         dict: Dictionary of shift variable objects
     """
-    shift_node = parent_node.add_object(opcua_idx, "Shift")
+    p = node_prefix
+    shift_node = parent_node.add_object(_nid(p, opcua_idx), "Shift")
 
     vars_dict = {}
 
     # Current shift information
-    vars_dict["shift_number"] = shift_node.add_variable(opcua_idx, "CurrentShiftNumber", 1)
-    vars_dict["shift_name"] = shift_node.add_variable(opcua_idx, "CurrentShiftName", "")
-    vars_dict["shift_start_time"] = shift_node.add_variable(opcua_idx, "ShiftStartTime", 0.0)
-    vars_dict["shift_start_datetime"] = shift_node.add_variable(opcua_idx, "ShiftStartDateTime", datetime.now())
-    vars_dict["shift_end_time"] = shift_node.add_variable(opcua_idx, "ShiftEndTime", 0.0)
-    vars_dict["shift_duration"] = shift_node.add_variable(opcua_idx, "ShiftDuration", 0.0)
-    vars_dict["shift_elapsed"] = shift_node.add_variable(opcua_idx, "ShiftElapsedTime", 0.0)
-    vars_dict["shift_remaining"] = shift_node.add_variable(opcua_idx, "ShiftTimeRemaining", 0.0)
+    vars_dict["shift_number"] = shift_node.add_variable(_nid(f"{p}.CurrentShiftNumber", opcua_idx), "CurrentShiftNumber", 1)
+    vars_dict["shift_name"] = shift_node.add_variable(_nid(f"{p}.CurrentShiftName", opcua_idx), "CurrentShiftName", "")
+    vars_dict["shift_start_time"] = shift_node.add_variable(_nid(f"{p}.ShiftStartTime", opcua_idx), "ShiftStartTime", 0.0)
+    vars_dict["shift_start_datetime"] = shift_node.add_variable(_nid(f"{p}.ShiftStartDateTime", opcua_idx), "ShiftStartDateTime", datetime.now())
+    vars_dict["shift_end_time"] = shift_node.add_variable(_nid(f"{p}.ShiftEndTime", opcua_idx), "ShiftEndTime", 0.0)
+    vars_dict["shift_duration"] = shift_node.add_variable(_nid(f"{p}.ShiftDuration", opcua_idx), "ShiftDuration", 0.0)
+    vars_dict["shift_elapsed"] = shift_node.add_variable(_nid(f"{p}.ShiftElapsedTime", opcua_idx), "ShiftElapsedTime", 0.0)
+    vars_dict["shift_remaining"] = shift_node.add_variable(_nid(f"{p}.ShiftTimeRemaining", opcua_idx), "ShiftTimeRemaining", 0.0)
 
     # Current shift metrics (reset at shift end)
-    current_node = shift_node.add_object(opcua_idx, "CurrentShift")
-    vars_dict["current_parts"] = current_node.add_variable(opcua_idx, "PartsProduced", 0)
-    vars_dict["current_good"] = current_node.add_variable(opcua_idx, "GoodParts", 0)
-    vars_dict["current_defects"] = current_node.add_variable(opcua_idx, "DefectiveParts", 0)
-    vars_dict["current_defect_rate"] = current_node.add_variable(opcua_idx, "DefectRate", 0.0)
-    vars_dict["current_availability"] = current_node.add_variable(opcua_idx, "Availability", 0.0)
-    vars_dict["current_performance"] = current_node.add_variable(opcua_idx, "Performance", 0.0)
-    vars_dict["current_quality"] = current_node.add_variable(opcua_idx, "Quality", 1.0)
-    vars_dict["current_oee"] = current_node.add_variable(opcua_idx, "OEE", 0.0)
+    cs_p = f"{p}.CurrentShift"
+    current_node = shift_node.add_object(_nid(cs_p, opcua_idx), "CurrentShift")
+    vars_dict["current_parts"] = current_node.add_variable(_nid(f"{cs_p}.PartsProduced", opcua_idx), "PartsProduced", 0)
+    vars_dict["current_good"] = current_node.add_variable(_nid(f"{cs_p}.GoodParts", opcua_idx), "GoodParts", 0)
+    vars_dict["current_defects"] = current_node.add_variable(_nid(f"{cs_p}.DefectiveParts", opcua_idx), "DefectiveParts", 0)
+    vars_dict["current_defect_rate"] = current_node.add_variable(_nid(f"{cs_p}.DefectRate", opcua_idx), "DefectRate", 0.0)
+    vars_dict["current_availability"] = current_node.add_variable(_nid(f"{cs_p}.Availability", opcua_idx), "Availability", 0.0)
+    vars_dict["current_performance"] = current_node.add_variable(_nid(f"{cs_p}.Performance", opcua_idx), "Performance", 0.0)
+    vars_dict["current_quality"] = current_node.add_variable(_nid(f"{cs_p}.Quality", opcua_idx), "Quality", 1.0)
+    vars_dict["current_oee"] = current_node.add_variable(_nid(f"{cs_p}.OEE", opcua_idx), "OEE", 0.0)
 
     # Previous shift summary (for reporting)
-    prev_node = shift_node.add_object(opcua_idx, "PreviousShift")
-    vars_dict["prev_shift_number"] = prev_node.add_variable(opcua_idx, "ShiftNumber", 0)
-    vars_dict["prev_shift_name"] = prev_node.add_variable(opcua_idx, "ShiftName", "")
-    vars_dict["prev_parts"] = prev_node.add_variable(opcua_idx, "PartsProduced", 0)
-    vars_dict["prev_good"] = prev_node.add_variable(opcua_idx, "GoodParts", 0)
-    vars_dict["prev_defects"] = prev_node.add_variable(opcua_idx, "DefectiveParts", 0)
-    vars_dict["prev_defect_rate"] = prev_node.add_variable(opcua_idx, "DefectRate", 0.0)
-    vars_dict["prev_oee"] = prev_node.add_variable(opcua_idx, "OEE", 0.0)
+    ps_p = f"{p}.PreviousShift"
+    prev_node = shift_node.add_object(_nid(ps_p, opcua_idx), "PreviousShift")
+    vars_dict["prev_shift_number"] = prev_node.add_variable(_nid(f"{ps_p}.ShiftNumber", opcua_idx), "ShiftNumber", 0)
+    vars_dict["prev_shift_name"] = prev_node.add_variable(_nid(f"{ps_p}.ShiftName", opcua_idx), "ShiftName", "")
+    vars_dict["prev_parts"] = prev_node.add_variable(_nid(f"{ps_p}.PartsProduced", opcua_idx), "PartsProduced", 0)
+    vars_dict["prev_good"] = prev_node.add_variable(_nid(f"{ps_p}.GoodParts", opcua_idx), "GoodParts", 0)
+    vars_dict["prev_defects"] = prev_node.add_variable(_nid(f"{ps_p}.DefectiveParts", opcua_idx), "DefectiveParts", 0)
+    vars_dict["prev_defect_rate"] = prev_node.add_variable(_nid(f"{ps_p}.DefectRate", opcua_idx), "DefectRate", 0.0)
+    vars_dict["prev_oee"] = prev_node.add_variable(_nid(f"{ps_p}.OEE", opcua_idx), "OEE", 0.0)
 
     # Overall totals (never reset)
-    totals_node = shift_node.add_object(opcua_idx, "Totals")
-    vars_dict["total_parts"] = totals_node.add_variable(opcua_idx, "TotalPartsProduced", 0)
-    vars_dict["total_good"] = totals_node.add_variable(opcua_idx, "TotalGoodParts", 0)
-    vars_dict["total_defects"] = totals_node.add_variable(opcua_idx, "TotalDefectiveParts", 0)
-    vars_dict["total_defect_rate"] = totals_node.add_variable(opcua_idx, "TotalDefectRate", 0.0)
-    vars_dict["total_shifts"] = totals_node.add_variable(opcua_idx, "TotalShiftsCompleted", 0)
+    t_p = f"{p}.Totals"
+    totals_node = shift_node.add_object(_nid(t_p, opcua_idx), "Totals")
+    vars_dict["total_parts"] = totals_node.add_variable(_nid(f"{t_p}.TotalPartsProduced", opcua_idx), "TotalPartsProduced", 0)
+    vars_dict["total_good"] = totals_node.add_variable(_nid(f"{t_p}.TotalGoodParts", opcua_idx), "TotalGoodParts", 0)
+    vars_dict["total_defects"] = totals_node.add_variable(_nid(f"{t_p}.TotalDefectiveParts", opcua_idx), "TotalDefectiveParts", 0)
+    vars_dict["total_defect_rate"] = totals_node.add_variable(_nid(f"{t_p}.TotalDefectRate", opcua_idx), "TotalDefectRate", 0.0)
+    vars_dict["total_shifts"] = totals_node.add_variable(_nid(f"{t_p}.TotalShiftsCompleted", opcua_idx), "TotalShiftsCompleted", 0)
 
     return vars_dict
 
@@ -1440,37 +1481,37 @@ def build_opcua_server(config: dict):
     objects = server.get_objects_node()
 
     # Top-level line object
-    line1 = objects.add_object(idx, "Line1")
+    line1 = objects.add_object(_nid("Line1", idx), "Line1")
 
     # System / KPIs under the line
-    system_node = line1.add_object(idx, "System")
-    var_simtime = system_node.add_variable(idx, "SimTime", 0.0)
-    var_throughput = system_node.add_variable(idx, "Throughput", 0)
+    system_node = line1.add_object(_nid("Line1.System", idx), "System")
+    var_simtime = system_node.add_variable(_nid("Line1.System.SimTime", idx), "SimTime", 0.0)
+    var_throughput = system_node.add_variable(_nid("Line1.System.Throughput", idx), "Throughput", 0)
 
     # Line-level KPIs
-    line_kpi_node = line1.add_object(idx, "LineKPIs")
-    var_total_wip = line_kpi_node.add_variable(idx, "TotalWIP", 0)
+    line_kpi_node = line1.add_object(_nid("Line1.LineKPIs", idx), "LineKPIs")
+    var_total_wip = line_kpi_node.add_variable(_nid("Line1.LineKPIs.TotalWIP", idx), "TotalWIP", 0)
 
     # Line-level OEE
-    line_oee_node = line_kpi_node.add_object(idx, "LineOEE")
-    var_line_availability = line_oee_node.add_variable(idx, "Availability", 0.0)
-    var_line_performance = line_oee_node.add_variable(idx, "Performance", 0.0)
-    var_line_quality = line_oee_node.add_variable(idx, "Quality", 1.0)
-    var_line_oee = line_oee_node.add_variable(idx, "OEE", 0.0)
+    line_oee_node = line_kpi_node.add_object(_nid("Line1.LineKPIs.LineOEE", idx), "LineOEE")
+    var_line_availability = line_oee_node.add_variable(_nid("Line1.LineKPIs.LineOEE.Availability", idx), "Availability", 0.0)
+    var_line_performance = line_oee_node.add_variable(_nid("Line1.LineKPIs.LineOEE.Performance", idx), "Performance", 0.0)
+    var_line_quality = line_oee_node.add_variable(_nid("Line1.LineKPIs.LineOEE.Quality", idx), "Quality", 1.0)
+    var_line_oee = line_oee_node.add_variable(_nid("Line1.LineKPIs.LineOEE.OEE", idx), "OEE", 0.0)
 
     # Line-level scrap KPIs
-    var_total_scrap = line_kpi_node.add_variable(idx, "TotalScrap", 0)
-    var_scrap_rate = line_kpi_node.add_variable(idx, "ScrapRate", 0.0)
+    var_total_scrap = line_kpi_node.add_variable(_nid("Line1.LineKPIs.TotalScrap", idx), "TotalScrap", 0)
+    var_scrap_rate = line_kpi_node.add_variable(_nid("Line1.LineKPIs.ScrapRate", idx), "ScrapRate", 0.0)
 
     # EventLog node
-    event_log_node = line1.add_object(idx, "EventLog")
-    var_total_events = event_log_node.add_variable(idx, "TotalEventsGenerated", 0)
+    event_log_node = line1.add_object(_nid("Line1.EventLog", idx), "EventLog")
+    var_total_events = event_log_node.add_variable(_nid("Line1.EventLog.TotalEventsGenerated", idx), "TotalEventsGenerated", 0)
 
     # System controls (writable inputs to control simulation)
-    controls_node = system_node.add_object(idx, "Controls")
-    var_pause_line = controls_node.add_variable(idx, "cmdPauseLine", False)
+    controls_node = system_node.add_object(_nid("Line1.System.Controls", idx), "Controls")
+    var_pause_line = controls_node.add_variable(_nid("Line1.System.Controls.cmdPauseLine", idx), "cmdPauseLine", False)
     default_interarrival = config.get("source", {}).get("interarrival_time", 1.0)
-    var_interarrival = controls_node.add_variable(idx, "setInterarrivalTime", default_interarrival)
+    var_interarrival = controls_node.add_variable(_nid("Line1.System.Controls.setInterarrivalTime", idx), "setInterarrivalTime", default_interarrival)
 
     # Dynamic machine node creation
     machines_vars = {}
@@ -1494,16 +1535,18 @@ def build_opcua_server(config: dict):
 
         machine_vars = create_machine_node(line1, idx, machine_node_name, enable_health,
                                           enable_failure_modes, failure_mode_names,
-                                          enable_spc, enable_quality_routing)
+                                          enable_spc, enable_quality_routing,
+                                          node_prefix=f"Line1.{machine_node_name}")
         machines_vars[machine_name] = machine_vars
 
     # Scrap sink OPC UA nodes
     scrap_vars = {}
     for scrap_cfg in config.get("scrap_sinks", []):
         scrap_name = scrap_cfg["name"]
-        scrap_node = line1.add_object(idx, scrap_name)
+        scrap_p = f"Line1.{scrap_name}"
+        scrap_node = line1.add_object(_nid(scrap_p, idx), scrap_name)
         scrap_vars[scrap_name] = {
-            "level": scrap_node.add_variable(idx, "CurrentLevel", 0),
+            "level": scrap_node.add_variable(_nid(f"{scrap_p}.CurrentLevel", idx), "CurrentLevel", 0),
         }
 
     # Dynamic buffer creation
@@ -1513,19 +1556,21 @@ def build_opcua_server(config: dict):
         buffer_node_name = f"Buffer{i}"  # "Buffer1", "Buffer2", "Buffer3", ...
         capacity = buffer_cfg.get("capacity", 10)
 
-        buffer_vars = create_buffer_node(line1, idx, buffer_node_name, capacity)
+        buffer_vars = create_buffer_node(line1, idx, buffer_node_name, capacity,
+                                         node_prefix=f"Line1.{buffer_node_name}")
         buffers_vars[buffer_name] = buffer_vars
 
-    # Maintenance (unchanged)
-    maintenance_node = line1.add_object(idx, "Maintenance")
-    var_maint_active = maintenance_node.add_variable(idx, "MaintenanceActive", False)
-    var_maint_queue = maintenance_node.add_variable(idx, "QueueLength", 0)
-    var_total_repairs = maintenance_node.add_variable(idx, "TotalRepairs", 0)
+    # Maintenance
+    maint_p = "Line1.Maintenance"
+    maintenance_node = line1.add_object(_nid(maint_p, idx), "Maintenance")
+    var_maint_active = maintenance_node.add_variable(_nid(f"{maint_p}.MaintenanceActive", idx), "MaintenanceActive", False)
+    var_maint_queue = maintenance_node.add_variable(_nid(f"{maint_p}.QueueLength", idx), "QueueLength", 0)
+    var_total_repairs = maintenance_node.add_variable(_nid(f"{maint_p}.TotalRepairs", idx), "TotalRepairs", 0)
 
     # Shift tracking (optional)
     shift_vars = {}
     if "shifts" in config:
-        shift_vars = create_shift_node(line1, idx)
+        shift_vars = create_shift_node(line1, idx, node_prefix="Line1.Shift")
 
     # Writable controls
     writable_vars = [var_pause_line, var_interarrival]
