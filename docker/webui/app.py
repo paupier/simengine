@@ -332,7 +332,9 @@ def _read_opcua_values():
                 except Exception:
                     pass
                 machines[f"Machine{i}"] = m_data
-            except Exception:
+            except Exception as e:
+                if i == 1:
+                    print(f"[WebUI] Machine{i} read error: {e}")
                 break
 
         # Line-level KPIs
