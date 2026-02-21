@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simantha - Pipeline Validation</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background: #f8f9fa; }
+        .badge-pass { background: #198754; }
+        .badge-fail { background: #dc3545; }
+        .badge-warn { background: #fd7e14; }
+        .badge-skip { background: #6c757d; }
+        .verdict-pass { background: #198754; color: white; font-size: 1.4rem; padding: 16px; border-radius: 8px; text-align: center; }
+        .verdict-fail { background: #dc3545; color: white; font-size: 1.4rem; padding: 16px; border-radius: 8px; text-align: center; }
+        .status-connected { color: #198754; font-weight: bold; }
+        .status-disconnected { color: #dc3545; font-weight: bold; }
+        .section-card { margin-bottom: 16px; }
+        .stat-row { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #f0f0f0; font-size: 0.85rem; }
+        .stat-label { color: #6c757d; }
+        .stat-value { font-weight: 600; }
+        #loading-spinner { display: none; }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a href="/" class="navbar-brand mb-0 h1">Simantha Digital Twin</a>
+            <div>
+                <a href="/" class="btn btn-sm btn-outline-light me-2">Dashboard</a>
+                <a href="/reports" class="btn btn-sm btn-outline-info me-2">Reports</a>
+                <a href="/validation" class="btn btn-sm btn-warning me-2">Validation</a>
+                <a href="/config" class="btn btn-sm btn-outline-light me-2">Config</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-3">
+        <!-- InfluxDB Connection Status -->
+        <div class="card section-card">
+            <div class="card-header d-flex justify-content-between">
+                <strong>InfluxDB Connection</strong>
+                <span id="influx-status" class="status-disconnected">Checking...</span>
+            </div>
+            <div class="card-body">
+                <div class="stat-row"><span class="stat-label">URL</span><span class="stat-value" id="influx-url">-</span></div>
+                <div class="stat-row"><span class="stat-label">Status</span><span class="stat-value" id="influx-message">-</span></div>
+            </div>
+        </div>
+
+        <!-- File selector + Run button -->
+        <div class="card section-card">
+            <div class="card-body d-flex align-items-center gap-3">
+                <strong>CSV File:</strong>
+                <select id="file-select" class="form-select form-select-sm" style="width:auto;min-width:300px;">
+                    <option value="">-- Select CSV file --</option>
+                </select>
+                <button class="btn btn-warning btn-sm" onclick="runValidation()" id="btn-validate">Run Validation</button>
+                <div id="loading-spinner" class="spinner-border spinner-border-sm text-warning" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <span id="validate-status" class="text-muted small"></span>
+            </div>
+        </div>
+
+        <!-- Results (hidden until validation runs) -->
+        <div id="validation-results" style="display:none;">
+            <!-- Telegraf Summary -->
+            <div class="card section-card">
+                <div class="card-header"><strong>Telegraf Data Summary</strong></div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-3">
+                            <div class="stat-row"><span class="stat-label">Total Points</span><span class="stat-value" id="tel-points">-</span></div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="stat-row"><span class="stat-label">First SimTime</span><span class="stat-value" id="tel-first">-</span></div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="stat-row"><span class="stat-label">Last SimTime</span><span class="stat-value" id="tel-last">-</span></div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="stat-row"><span class="stat-label">Gaps > 5s</span><span class="stat-value" id="tel-gaps">-</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Validation Checks Table -->
+            <div class="card section-card">
+                <div class="card-header"><strong>Validation Checks</strong></div>
+                <div class="card-body">
+                    <table class="table table-sm table-hover" id="checks-table">
+                        <thead>
+                            <tr>
+                                <th>Check</th>
+                                <th>CSV Value</th>
+                                <th>Telegraf Value</th>
+                                <th>Result</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Verdict Banner -->
+            <div id="verdict-banner" class="section-card"></div>
+        </div>
+    </div>
+
+    <script>
+        // --- Check InfluxDB connectivity ---
+        async function checkInfluxDB() {
+            try {
+                const resp = await fetch('/api/validation/influxdb/status');
+                const data = await resp.json();
+                const statusEl = document.getElementById('influx-status');
+                document.getElementById('influx-url').textContent = data.url || '-';
+
+                if (data.connected) {
+                    statusEl.textContent = 'Connected';
+                    statusEl.className = 'status-connected';
+                    document.getElementById('influx-message').textContent = data.message || 'OK';
+                } else {
+                    statusEl.textContent = 'Disconnected';
+                    statusEl.className = 'status-disconnected';
+                    document.getElementById('influx-message').textContent = data.error || 'Cannot connect';
+                }
+            } catch (e) {
+                document.getElementById('influx-status').textContent = 'Error';
+                document.getElementById('influx-status').className = 'status-disconnected';
+            }
+        }
+
+        // --- Load file list ---
+        async function loadFiles() {
+            const resp = await fetch('/api/reports/files');
+            const data = await resp.json();
+            const select = document.getElementById('file-select');
+            select.innerHTML = '<option value="">-- Select CSV file --</option>';
+            for (const f of data.files) {
+                const opt = document.createElement('option');
+                opt.value = f.name;
+                opt.textContent = `${f.scenario} (${f.size_mb} MB) - ${f.modified.split('T')[0]}`;
+                select.appendChild(opt);
+            }
+        }
+
+        // --- Run validation ---
+        async function runValidation() {
+            const filename = document.getElementById('file-select').value;
+            if (!filename) { alert('Select a CSV file first'); return; }
+
+            document.getElementById('loading-spinner').style.display = '';
+            document.getElementById('btn-validate').disabled = true;
+            document.getElementById('validate-status').textContent = 'Running validation...';
+
+            try {
+                const resp = await fetch('/api/validation/run', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({filename})
+                });
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    alert('Validation failed: ' + (err.error || 'Unknown error'));
+                    return;
+                }
+                const result = await resp.json();
+                renderValidation(result);
+                document.getElementById('validation-results').style.display = '';
+                document.getElementById('validate-status').textContent = 'Done';
+            } catch (e) {
+                alert('Error: ' + e.message);
+            } finally {
+                document.getElementById('loading-spinner').style.display = 'none';
+                document.getElementById('btn-validate').disabled = false;
+            }
+        }
+
+        // --- Render validation results ---
+        function renderValidation(v) {
+            // Telegraf summary
+            document.getElementById('tel-points').textContent = (v.telegraf_total_points || 0).toLocaleString();
+            document.getElementById('tel-first').textContent = v.telegraf_first_simtime != null ? v.telegraf_first_simtime : '-';
+            document.getElementById('tel-last').textContent = v.telegraf_last_simtime != null ? v.telegraf_last_simtime : '-';
+            document.getElementById('tel-gaps').textContent = v.telegraf_gaps_over_5s;
+
+            // Checks table
+            const tbody = document.querySelector('#checks-table tbody');
+            tbody.innerHTML = '';
+            for (const check of v.checks) {
+                let badgeClass;
+                switch (check.status) {
+                    case 'PASS': badgeClass = 'badge-pass'; break;
+                    case 'FAIL': badgeClass = 'badge-fail'; break;
+                    case 'SKIP': badgeClass = 'badge-skip'; break;
+                    default: badgeClass = 'badge-warn';
+                }
+                tbody.innerHTML += `<tr>
+                    <td>${check.name}</td>
+                    <td><code>${check.csv_value}</code></td>
+                    <td><code>${check.telegraf_value}</code></td>
+                    <td><span class="badge ${badgeClass}">${check.status}</span></td>
+                </tr>`;
+            }
+
+            // Verdict banner
+            const banner = document.getElementById('verdict-banner');
+            if (v.verdict === 'PASS') {
+                banner.innerHTML = `<div class="verdict-pass">ALL CHECKS PASSED (${v.passed}/${v.total})</div>`;
+            } else {
+                banner.innerHTML = `<div class="verdict-fail">SOME CHECKS FAILED (${v.passed}/${v.total})</div>`;
+            }
+        }
+
+        // --- Init ---
+        checkInfluxDB();
+        loadFiles();
+    </script>
+</body>
+</html>

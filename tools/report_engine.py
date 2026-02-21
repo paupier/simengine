@@ -1,0 +1,849 @@
+"""
+Report Engine — importable analysis functions for historian CSV data.
+
+Each section of the analysis returns a JSON-serializable dict suitable for
+both CLI text formatting and Flask/Chart.js rendering.
+
+Used by:
+  - tools/analyze_historian.py (CLI text report)
+  - docker/webui/app.py (Flask API for web reports)
+"""
+import json
+import os
+from pathlib import Path
+
+try:
+    import pandas as pd
+except ImportError:
+    pd = None  # Deferred error when functions are called
+
+
+def _require_pandas():
+    if pd is None:
+        raise ImportError("pandas is required. Install with: pip install pandas")
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def find_latest_csv(directory):
+    """Find the most recent historian CSV file in a directory.
+
+    Returns the path string, or None if no CSV files found.
+    """
+    csvs = sorted(Path(directory).glob("*_events*.csv"), key=os.path.getmtime)
+    if not csvs:
+        return None
+    return str(csvs[-1])
+
+
+def load_historian_csv(path):
+    """Load historian CSV with appropriate dtypes."""
+    _require_pandas()
+    df = pd.read_csv(path, dtype={
+        "timestamp": float,
+        "event_type": str,
+        "source": str,
+        "source_type": str,
+        "severity": str,
+        "message": str,
+        "old_state": str,
+        "new_state": str,
+        "partcount": "Int64",
+        "good_parts": "Int64",
+        "defective_parts": "Int64",
+        "buffer_level": "Int64",
+        "oee": float,
+        "utilisation": float,
+        "shift_number": "Int64",
+        "shift_name": str,
+        "extra_json": str,
+    })
+    return df
+
+
+def parse_extra_json(series):
+    """Parse extra_json column into dicts, handling NaN/empty."""
+    def _parse(val):
+        if pd.isna(val) or val == "":
+            return {}
+        try:
+            return json.loads(val)
+        except (json.JSONDecodeError, TypeError):
+            return {}
+    return series.apply(_parse)
+
+
+def _downsample(timestamps, values, max_points=500):
+    """Downsample parallel lists to at most max_points for chart rendering.
+
+    Uses simple stride-based decimation preserving first and last points.
+    Returns (list_of_timestamps, list_of_values).
+    """
+    n = len(timestamps)
+    if n <= max_points:
+        return list(timestamps), list(values)
+    step = max(1, n // max_points)
+    indices = list(range(0, n, step))
+    if indices[-1] != n - 1:
+        indices.append(n - 1)
+    return [timestamps[i] for i in indices], [values[i] for i in indices]
+
+
+def _to_timeseries(timestamps, values, max_points=500):
+    """Convert parallel arrays to [{"t": float, "v": float}, ...] format,
+    downsampled to max_points."""
+    ts, vs = _downsample(list(timestamps), list(values), max_points)
+    return [{"t": t, "v": v} for t, v in zip(ts, vs)]
+
+
+def _safe_float(val):
+    """Convert a value to float, returning None if not possible."""
+    if val is None:
+        return None
+    try:
+        import math
+        f = float(val)
+        if math.isnan(f) or math.isinf(f):
+            return None
+        return f
+    except (ValueError, TypeError):
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Section 1: Overview
+# ---------------------------------------------------------------------------
+
+def analyze_overview(df):
+    """Section 1: event counts, time range, event type distribution."""
+    _require_pandas()
+    sim_start = float(df["timestamp"].min())
+    sim_end = float(df["timestamp"].max())
+    sim_duration_s = sim_end - sim_start
+    sim_duration_hrs = sim_duration_s / 3600
+    total_events = len(df)
+    events_per_min = total_events / max(sim_duration_hrs * 60, 1)
+
+    wall_start = str(df["wall_clock"].iloc[0]) if "wall_clock" in df.columns else None
+    wall_end = str(df["wall_clock"].iloc[-1]) if "wall_clock" in df.columns else None
+
+    # Event type distribution
+    event_type_dist = {}
+    for etype, count in df["event_type"].value_counts().items():
+        event_type_dist[etype] = {
+            "count": int(count),
+            "pct": round(100 * count / total_events, 1),
+        }
+
+    # Severity distribution
+    severity_dist = {}
+    for sev, count in df["severity"].value_counts().items():
+        severity_dist[sev] = int(count)
+
+    return {
+        "total_events": total_events,
+        "sim_start": sim_start,
+        "sim_end": sim_end,
+        "sim_duration_s": sim_duration_s,
+        "sim_duration_hrs": round(sim_duration_hrs, 1),
+        "events_per_min": round(events_per_min, 1),
+        "wall_start": wall_start,
+        "wall_end": wall_end,
+        "event_type_distribution": event_type_dist,
+        "severity_distribution": severity_dist,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Section 2: Continuity Check
+# ---------------------------------------------------------------------------
+
+def analyze_continuity(df):
+    """Section 2: production summary interval regularity, gaps."""
+    _require_pandas()
+    prod_summaries = df[df["event_type"] == "PRODUCTION_SUMMARY"].copy()
+    result = {
+        "production_summary_count": len(prod_summaries),
+        "status": "PASS",
+    }
+
+    if len(prod_summaries) > 1:
+        gaps = prod_summaries["timestamp"].diff()
+        expected_interval = float(gaps.median())
+        large_gaps = gaps[gaps > expected_interval * 3].dropna()
+        result["expected_interval_s"] = round(expected_interval, 0)
+        result["large_gap_count"] = len(large_gaps)
+
+        gap_details = []
+        for idx in large_gaps.index[:5]:
+            row = prod_summaries.loc[idx]
+            gap_details.append({
+                "timestamp": float(row["timestamp"]),
+                "gap_s": float(gaps.loc[idx]),
+            })
+        result["large_gaps"] = gap_details
+
+        if len(large_gaps) > 0:
+            result["status"] = "WARN"
+    else:
+        result["status"] = "WARN"
+        result["message"] = f"Too few production summaries ({len(prod_summaries)}) to check continuity"
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Section 3: Line OEE Analysis
+# ---------------------------------------------------------------------------
+
+def analyze_oee(df):
+    """Section 3: line OEE stats + timeseries."""
+    _require_pandas()
+    prod_summaries = df[df["event_type"] == "PRODUCTION_SUMMARY"].copy()
+    result = {
+        "sample_count": 0,
+        "status": "PASS",
+        "timeseries": [],
+    }
+
+    if len(prod_summaries) == 0:
+        result["status"] = "WARN"
+        result["message"] = "No production summaries found"
+        return result
+
+    extras = parse_extra_json(prod_summaries["extra_json"])
+    prod_summaries["line_oee"] = extras.apply(lambda x: x.get("line_oee", None))
+    prod_summaries["line_oee"] = pd.to_numeric(prod_summaries["line_oee"], errors="coerce")
+    valid_oee = prod_summaries["line_oee"].dropna()
+
+    if len(valid_oee) == 0:
+        result["status"] = "WARN"
+        result["message"] = "No line_oee data found in extra_json"
+        return result
+
+    result["sample_count"] = len(valid_oee)
+    result["mean"] = _safe_float(valid_oee.mean())
+    result["median"] = _safe_float(valid_oee.median())
+    result["std"] = _safe_float(valid_oee.std())
+    result["min"] = _safe_float(valid_oee.min())
+    result["min_timestamp"] = _safe_float(prod_summaries.loc[valid_oee.idxmin(), "timestamp"])
+    result["max"] = _safe_float(valid_oee.max())
+    result["max_timestamp"] = _safe_float(prod_summaries.loc[valid_oee.idxmax(), "timestamp"])
+
+    # OEE stability check (bucket behavior)
+    oee_changes = valid_oee.diff().abs().dropna()
+    if len(oee_changes) > 0:
+        unchanged = int((oee_changes < 0.0001).sum())
+        changed = int((oee_changes >= 0.0001).sum())
+        unchanged_pct = round(100 * unchanged / len(oee_changes), 1)
+        result["unchanged_between_summaries"] = unchanged
+        result["changed_between_summaries"] = changed
+        result["unchanged_pct"] = unchanged_pct
+
+        if unchanged / max(len(oee_changes), 1) > 0.8:
+            result["stability_status"] = "PASS"
+        elif unchanged / max(len(oee_changes), 1) > 0.5:
+            result["stability_status"] = "WARN"
+        else:
+            result["stability_status"] = "FAIL"
+
+    # OEE spikes to 1.0
+    spikes = int((valid_oee >= 0.999).sum())
+    spikes_pct = round(100 * spikes / len(valid_oee), 1)
+    result["spikes_to_1"] = spikes
+    result["spikes_to_1_pct"] = spikes_pct
+    if spikes == 0:
+        result["spike_status"] = "PASS"
+    elif spikes < len(valid_oee) * 0.01:
+        result["spike_status"] = "OK"
+    else:
+        result["spike_status"] = "WARN"
+
+    # Timeseries for charting
+    valid_rows = prod_summaries[prod_summaries["line_oee"].notna()]
+    result["timeseries"] = _to_timeseries(
+        valid_rows["timestamp"].tolist(),
+        valid_rows["line_oee"].tolist(),
+    )
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Section 4: Per-Machine OEE
+# ---------------------------------------------------------------------------
+
+def analyze_machine_oee(df):
+    """Section 4: per-machine OEE stats + timeseries."""
+    _require_pandas()
+    machine_events = df[
+        (df["source_type"] == "machine") & (df["event_type"] == "STATE_CHANGE")
+    ]
+    machines_list = sorted(machine_events["source"].unique())
+    result = {"machines": {}}
+
+    for m in machines_list:
+        m_events = machine_events[machine_events["source"] == m]
+        m_oee = m_events["oee"].dropna()
+        m_data = {"event_count": len(m_events)}
+
+        if len(m_oee) > 0:
+            m_data["oee_mean"] = _safe_float(m_oee.mean())
+            m_data["oee_median"] = _safe_float(m_oee.median())
+            m_data["oee_std"] = _safe_float(m_oee.std())
+            m_data["oee_min"] = _safe_float(m_oee.min())
+            m_data["oee_max"] = _safe_float(m_oee.max())
+            m_data["utilisation_mean"] = _safe_float(m_events["utilisation"].mean())
+
+            last_event = m_events.iloc[-1]
+            m_data["last_timestamp"] = _safe_float(last_event["timestamp"])
+            m_data["last_partcount"] = int(last_event["partcount"]) if pd.notna(last_event["partcount"]) else None
+            m_data["last_good_parts"] = int(last_event["good_parts"]) if pd.notna(last_event["good_parts"]) else None
+            defp = last_event["defective_parts"]
+            m_data["last_defective_parts"] = int(defp) if pd.notna(defp) else None
+
+            # Timeseries for charting
+            m_data["timeseries"] = _to_timeseries(
+                m_events["timestamp"].tolist(),
+                m_events["oee"].tolist(),
+            )
+        else:
+            m_data["timeseries"] = []
+
+        result["machines"][m] = m_data
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Section 5: Failure Analysis
+# ---------------------------------------------------------------------------
+
+def analyze_failures(df):
+    """Section 5: MTTF, MTTR, failure/repair counts + timeline."""
+    _require_pandas()
+    failures = df[
+        (df["event_type"] == "STATE_CHANGE") &
+        (df["new_state"].isin(["FAILED", "UNDER_REPAIR"]))
+    ]
+    repairs = df[
+        (df["event_type"] == "STATE_CHANGE") &
+        (df["old_state"].isin(["FAILED", "UNDER_REPAIR"])) &
+        (~df["new_state"].isin(["FAILED", "UNDER_REPAIR"]))
+    ]
+
+    machine_events = df[
+        (df["source_type"] == "machine") & (df["event_type"] == "STATE_CHANGE")
+    ]
+    machines_list = sorted(machine_events["source"].unique())
+    result = {
+        "total_failures": len(failures),
+        "total_repairs": len(repairs),
+        "machines": {},
+    }
+
+    for m in machines_list:
+        m_failures = failures[failures["source"] == m]
+        m_repairs = repairs[repairs["source"] == m]
+        m_data = {
+            "failure_count": len(m_failures),
+            "repair_count": len(m_repairs),
+            "failure_timeline": [],
+        }
+
+        if len(m_failures) > 1:
+            fail_times = m_failures["timestamp"].values
+            tbf = [float(fail_times[i + 1] - fail_times[i])
+                   for i in range(len(fail_times) - 1)]
+            if tbf:
+                import statistics
+                m_data["mttf_mean"] = round(statistics.mean(tbf), 0)
+                m_data["mttf_median"] = round(statistics.median(tbf), 0)
+
+        if len(m_failures) > 0 and len(m_repairs) > 0:
+            repair_durations = []
+            repair_times = sorted(m_repairs["timestamp"].values)
+            for ft in m_failures["timestamp"].values:
+                later_repairs = [rt for rt in repair_times if rt > ft]
+                if later_repairs:
+                    repair_durations.append(float(later_repairs[0] - ft))
+            if repair_durations:
+                import statistics
+                m_data["mttr_mean"] = round(statistics.mean(repair_durations), 1)
+                m_data["mttr_median"] = round(statistics.median(repair_durations), 1)
+
+        # Failure timeline for scatter chart
+        if len(m_failures) > 0:
+            fail_ts = m_failures["timestamp"].tolist()
+            fail_vals = [1.0] * len(fail_ts)  # y=1 for failure events
+            m_data["failure_timeline"] = _to_timeseries(fail_ts, fail_vals)
+
+        result["machines"][m] = m_data
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Section 6: Quality Routing
+# ---------------------------------------------------------------------------
+
+def analyze_quality_routing(df):
+    """Section 6: scrap/rework counts per machine."""
+    _require_pandas()
+    scraps = df[df["event_type"] == "SCRAP"]
+    reworks = df[df["event_type"] == "REWORK"]
+
+    machine_events = df[
+        (df["source_type"] == "machine") & (df["event_type"] == "STATE_CHANGE")
+    ]
+    machines_list = sorted(machine_events["source"].unique())
+
+    result = {
+        "total_scrap_events": len(scraps),
+        "total_rework_events": len(reworks),
+        "machines": {},
+    }
+
+    for m in machines_list:
+        m_scraps = scraps[scraps["source"] == m]
+        m_reworks = reworks[reworks["source"] == m]
+
+        if len(m_scraps) == 0 and len(m_reworks) == 0:
+            continue
+
+        m_data = {
+            "scrap_events": len(m_scraps),
+            "rework_events": len(m_reworks),
+        }
+
+        if len(m_scraps) > 0:
+            last_extra = parse_extra_json(m_scraps.iloc[-1:]["extra_json"]).iloc[0]
+            m_data["final_scrap_count"] = last_extra.get("scrap_count", None)
+
+        if len(m_reworks) > 0:
+            last_extra = parse_extra_json(m_reworks.iloc[-1:]["extra_json"]).iloc[0]
+            m_data["final_rework_count"] = last_extra.get("rework_count", None)
+            m_data["rework_success_count"] = last_extra.get("rework_success_count", None)
+            rework_total = last_extra.get("rework_count")
+            rework_success = last_extra.get("rework_success_count")
+            if isinstance(rework_total, (int, float)) and rework_total > 0:
+                if isinstance(rework_success, (int, float)):
+                    m_data["rework_success_rate"] = round(rework_success / rework_total, 3)
+
+        result["machines"][m] = m_data
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Section 7: Shift Analysis
+# ---------------------------------------------------------------------------
+
+def analyze_shifts(df):
+    """Section 7: shift changes, per-shift production."""
+    _require_pandas()
+    shifts = df[df["event_type"] == "SHIFT_CHANGE"]
+    result = {
+        "shift_change_count": len(shifts),
+        "shifts": [],
+    }
+
+    if len(shifts) > 0:
+        shift_extras = parse_extra_json(shifts["extra_json"])
+        for _, row in shifts.iterrows():
+            extra = shift_extras.loc[row.name]
+            result["shifts"].append({
+                "timestamp": float(row["timestamp"]),
+                "shift_number": int(row["shift_number"]) if pd.notna(row["shift_number"]) else None,
+                "shift_name": row["shift_name"] if pd.notna(row["shift_name"]) else None,
+                "prev_shift_name": extra.get("prev_shift_name"),
+                "prev_shift_parts": extra.get("prev_shift_parts"),
+                "prev_shift_oee": extra.get("prev_shift_oee"),
+            })
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Section 8: Buffer Dynamics
+# ---------------------------------------------------------------------------
+
+def analyze_buffer_dynamics(df):
+    """Section 8: buffer level stats + timeseries."""
+    _require_pandas()
+    buf_events = df[
+        (df["source_type"] == "buffer") & (df["event_type"] == "STATE_CHANGE")
+    ]
+    buffers_list = sorted(buf_events["source"].unique())
+    result = {"buffers": {}}
+
+    for b in buffers_list:
+        b_events = buf_events[buf_events["source"] == b]
+        levels = b_events["buffer_level"].dropna()
+        b_data = {"event_count": len(b_events)}
+
+        if len(levels) > 0:
+            max_level = int(levels.max())
+            b_data["level_mean"] = round(float(levels.mean()), 1)
+            b_data["level_min"] = int(levels.min())
+            b_data["level_max"] = max_level
+            b_data["level_std"] = round(float(levels.std()), 1)
+            b_data["full_pct"] = round(float((levels == max_level).sum()) / len(levels) * 100, 1)
+            b_data["empty_pct"] = round(float((levels == 0).sum()) / len(levels) * 100, 1)
+
+            # Timeseries for charting
+            b_data["timeseries"] = _to_timeseries(
+                b_events["timestamp"].tolist(),
+                b_events["buffer_level"].tolist(),
+            )
+        else:
+            b_data["timeseries"] = []
+
+        result["buffers"][b] = b_data
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Section 9: Throughput
+# ---------------------------------------------------------------------------
+
+def analyze_throughput(df):
+    """Section 9: cumulative throughput + PPM + timeseries."""
+    _require_pandas()
+    prod_summaries = df[df["event_type"] == "PRODUCTION_SUMMARY"].copy()
+    result = {
+        "status": "PASS",
+        "timeseries": [],
+    }
+
+    if len(prod_summaries) <= 1:
+        result["status"] = "WARN"
+        result["message"] = "Too few production summaries for throughput analysis"
+        return result
+
+    first = prod_summaries.iloc[0]
+    last = prod_summaries.iloc[-1]
+    elapsed = float(last["timestamp"] - first["timestamp"])
+    total_parts = int(last["partcount"]) if pd.notna(last["partcount"]) else 0
+
+    if elapsed > 0:
+        first_parts = int(first["partcount"]) if pd.notna(first["partcount"]) else 0
+        parts_delta = total_parts - first_parts
+        ppm = parts_delta / (elapsed / 60)
+        result["total_parts"] = total_parts
+        result["elapsed_s"] = round(elapsed, 0)
+        result["elapsed_hrs"] = round(elapsed / 3600, 1)
+        result["ppm"] = round(ppm, 2)
+        result["efficiency_pct"] = round(ppm / 60 * 100, 1)
+
+        # Timeseries for charting
+        result["timeseries"] = _to_timeseries(
+            prod_summaries["timestamp"].tolist(),
+            prod_summaries["partcount"].tolist(),
+        )
+    else:
+        result["status"] = "WARN"
+        result["message"] = "Zero elapsed time"
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Section 10: Anomaly Check
+# ---------------------------------------------------------------------------
+
+def analyze_anomalies(df):
+    """Section 10: data integrity checks."""
+    _require_pandas()
+    checks = []
+
+    # Check for negative partcounts
+    neg_parts = df[df["partcount"] < 0] if "partcount" in df.columns else pd.DataFrame()
+    checks.append({
+        "name": "Negative partcount",
+        "status": "FAIL" if len(neg_parts) > 0 else "PASS",
+        "count": len(neg_parts),
+        "message": f"{len(neg_parts)} events with negative partcount" if len(neg_parts) > 0 else "No negative partcounts",
+    })
+
+    # Check for OEE > 1.0
+    high_oee = df[df["oee"] > 1.001] if "oee" in df.columns else pd.DataFrame()
+    checks.append({
+        "name": "OEE > 1.0",
+        "status": "FAIL" if len(high_oee) > 0 else "PASS",
+        "count": len(high_oee),
+        "message": f"{len(high_oee)} events with OEE > 1.0" if len(high_oee) > 0 else "No OEE > 1.0",
+    })
+
+    # Check for timestamps going backwards
+    ts_diff = df["timestamp"].diff()
+    backwards = int((ts_diff < 0).sum())
+    checks.append({
+        "name": "Timestamps backwards",
+        "status": "FAIL" if backwards > 0 else "PASS",
+        "count": backwards,
+        "message": f"{backwards} timestamps go backwards" if backwards > 0 else "Timestamps monotonic",
+    })
+
+    # Check for missing expected event types
+    expected_types = {"STATE_CHANGE", "PRODUCTION_SUMMARY"}
+    actual_types = set(df["event_type"].unique())
+    missing = expected_types - actual_types
+    checks.append({
+        "name": "Required event types",
+        "status": "FAIL" if missing else "PASS",
+        "count": len(missing),
+        "message": f"Missing: {missing}" if missing else "All required types present",
+    })
+
+    anomaly_count = sum(1 for c in checks if c["status"] == "FAIL")
+    return {
+        "checks": checks,
+        "anomaly_count": anomaly_count,
+        "status": "FAIL" if anomaly_count > 0 else "PASS",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Full Analysis
+# ---------------------------------------------------------------------------
+
+def run_full_analysis(df):
+    """Run all 10 analysis sections. Returns combined dict."""
+    return {
+        "overview": analyze_overview(df),
+        "continuity": analyze_continuity(df),
+        "oee": analyze_oee(df),
+        "machine_oee": analyze_machine_oee(df),
+        "failures": analyze_failures(df),
+        "quality_routing": analyze_quality_routing(df),
+        "shifts": analyze_shifts(df),
+        "buffer_dynamics": analyze_buffer_dynamics(df),
+        "throughput": analyze_throughput(df),
+        "anomalies": analyze_anomalies(df),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Section 11: Pipeline Validation (CSV vs InfluxDB)
+# ---------------------------------------------------------------------------
+
+def validate_pipeline(df, influx_data):
+    """Compare CSV historian ground truth against Telegraf/InfluxDB OPC UA data.
+
+    Returns a dict with checks list and overall verdict.
+    """
+    _require_pandas()
+    checks = []
+
+    # --- Update rate ---
+    avg_rate = influx_data.get("avg_update_rate")
+    if avg_rate is not None and avg_rate > 0:
+        actual_rate = round(1.0 / avg_rate, 2)
+        rate_ok = abs(actual_rate - 1.0) < 0.05
+        checks.append({
+            "name": "Update rate",
+            "csv_value": "1.00/sec",
+            "telegraf_value": f"{actual_rate:.2f}/sec",
+            "status": "PASS" if rate_ok else "FAIL",
+        })
+    else:
+        checks.append({
+            "name": "Update rate",
+            "csv_value": "1.00/sec",
+            "telegraf_value": "N/A",
+            "status": "SKIP",
+        })
+
+    # --- Throughput comparison ---
+    prod_summaries = df[df["event_type"] == "PRODUCTION_SUMMARY"]
+    csv_final_partcount = None
+    if len(prod_summaries) > 0:
+        last_pc = prod_summaries.iloc[-1]["partcount"]
+        csv_final_partcount = int(last_pc) if pd.notna(last_pc) else None
+
+    telegraf_throughput = influx_data.get("final_throughput")
+    throughput_status = "SKIP"
+    if csv_final_partcount is not None and telegraf_throughput is not None:
+        diff = abs(csv_final_partcount - telegraf_throughput)
+        throughput_status = "PASS" if diff <= 2 else "FAIL"
+
+    checks.append({
+        "name": "Final throughput",
+        "csv_value": f"{csv_final_partcount:,}" if csv_final_partcount is not None else "N/A",
+        "telegraf_value": f"{telegraf_throughput:,}" if telegraf_throughput is not None else "N/A",
+        "status": throughput_status,
+    })
+
+    # --- OEE comparison ---
+    oee_ts = influx_data.get("oee_timeseries", [])
+    oee_status = "SKIP"
+    csv_oee_mean = None
+    telegraf_oee_mean = None
+
+    if len(oee_ts) > 0 and len(prod_summaries) > 0:
+        extras = parse_extra_json(prod_summaries["extra_json"])
+        csv_oee_vals = extras.apply(lambda x: x.get("line_oee", None))
+        csv_oee_vals = pd.to_numeric(csv_oee_vals, errors="coerce").dropna()
+        telegraf_oee_vals = [v["value"] for v in oee_ts if v["value"] is not None]
+
+        if len(csv_oee_vals) > 0 and len(telegraf_oee_vals) > 0:
+            csv_oee_mean = round(float(csv_oee_vals.mean()), 4)
+            telegraf_oee_mean = round(sum(telegraf_oee_vals) / len(telegraf_oee_vals), 4)
+            mean_diff = abs(csv_oee_mean - telegraf_oee_mean)
+            oee_status = "PASS" if mean_diff < 0.05 else "FAIL"
+
+    checks.append({
+        "name": "OEE mean",
+        "csv_value": f"{csv_oee_mean:.4f}" if csv_oee_mean is not None else "N/A",
+        "telegraf_value": f"{telegraf_oee_mean:.4f}" if telegraf_oee_mean is not None else "N/A",
+        "status": oee_status,
+    })
+
+    # --- Per-machine PartCount ---
+    machine_pcs = influx_data.get("machine_partcounts", {})
+    machine_events = df[(df["source_type"] == "machine") & (df["event_type"] == "STATE_CHANGE")]
+    csv_machines = sorted(machine_events["source"].unique())
+
+    for i, csv_m in enumerate(csv_machines):
+        telegraf_key = f"Machine{i + 1}"
+        m_events = machine_events[machine_events["source"] == csv_m]
+        csv_pc = None
+        if len(m_events) > 0 and pd.notna(m_events.iloc[-1]["partcount"]):
+            csv_pc = int(m_events.iloc[-1]["partcount"])
+        telegraf_pc = machine_pcs.get(telegraf_key)
+
+        pc_status = "SKIP"
+        if csv_pc is not None and telegraf_pc is not None:
+            pc_status = "PASS" if abs(csv_pc - telegraf_pc) <= 2 else "FAIL"
+
+        checks.append({
+            "name": f"{telegraf_key} PartCount",
+            "csv_value": f"{csv_pc:,}" if csv_pc is not None else "N/A",
+            "telegraf_value": f"{telegraf_pc:,}" if telegraf_pc is not None else "N/A",
+            "status": pc_status,
+        })
+
+    # --- Buffer levels ---
+    buffer_levels = influx_data.get("buffer_levels", {})
+    buf_events = df[(df["source_type"] == "buffer") & (df["event_type"] == "STATE_CHANGE")]
+    csv_buffers = sorted(buf_events["source"].unique())
+
+    for i, csv_b in enumerate(csv_buffers):
+        telegraf_key = f"Buffer{i + 1}"
+        b_events = buf_events[buf_events["source"] == csv_b]
+        csv_level = None
+        if len(b_events) > 0 and pd.notna(b_events.iloc[-1]["buffer_level"]):
+            csv_level = int(b_events.iloc[-1]["buffer_level"])
+        telegraf_level = buffer_levels.get(telegraf_key)
+
+        buf_status = "SKIP"
+        if csv_level is not None and telegraf_level is not None:
+            buf_status = "PASS" if abs(csv_level - telegraf_level) <= 1 else "FAIL"
+
+        checks.append({
+            "name": f"{telegraf_key} level",
+            "csv_value": str(csv_level) if csv_level is not None else "N/A",
+            "telegraf_value": str(telegraf_level) if telegraf_level is not None else "N/A",
+            "status": buf_status,
+        })
+
+    # --- Data gaps ---
+    gaps = influx_data.get("gaps_over_5s", 0)
+    gap_status = "PASS" if gaps == 0 else ("PASS" if gaps <= 3 else "FAIL")
+    checks.append({
+        "name": "Data gaps (>5s)",
+        "csv_value": "0",
+        "telegraf_value": str(gaps),
+        "status": gap_status,
+    })
+
+    # --- Verdict ---
+    passed = sum(1 for c in checks if c["status"] == "PASS")
+    total = sum(1 for c in checks if c["status"] != "SKIP")
+    all_passed = passed == total
+
+    return {
+        "checks": checks,
+        "passed": passed,
+        "total": total,
+        "verdict": "PASS" if all_passed else "FAIL",
+        "telegraf_total_points": influx_data.get("total_points", 0),
+        "telegraf_first_simtime": influx_data.get("first_simtime"),
+        "telegraf_last_simtime": influx_data.get("last_simtime"),
+        "telegraf_avg_update_rate": influx_data.get("avg_update_rate"),
+        "telegraf_gaps_over_5s": gaps,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Run Index (future multi-run comparison)
+# ---------------------------------------------------------------------------
+
+def append_run_index(csv_file, analysis, index_path=None):
+    """Auto-append run metadata to run_index.json after analysis.
+
+    Args:
+        csv_file: Path to the CSV file that was analyzed.
+        analysis: The dict returned by run_full_analysis().
+        index_path: Optional path to run_index.json. Defaults to
+                     results/historian/run_index.json relative to project root.
+    """
+    if index_path is None:
+        # Infer from csv_file location
+        csv_dir = Path(csv_file).parent
+        index_path = csv_dir / "run_index.json"
+
+    # Build run metadata
+    csv_name = Path(csv_file).name
+    # Extract scenario name from filename (pattern: scenario_YYYYMMDD_HHMMSS_events.csv)
+    parts = csv_name.rsplit("_events", 1)
+    run_id = parts[0] if parts else csv_name.replace(".csv", "")
+
+    # Try to extract scenario from run_id (everything before the date)
+    scenario = run_id
+    import re
+    date_match = re.search(r'_\d{8}_\d{6}$', run_id)
+    if date_match:
+        scenario = run_id[:date_match.start()]
+
+    overview = analysis.get("overview", {})
+    oee = analysis.get("oee", {})
+    throughput = analysis.get("throughput", {})
+    quality = analysis.get("quality_routing", {})
+
+    entry = {
+        "run_id": run_id,
+        "scenario": scenario,
+        "csv_file": csv_name,
+        "total_events": overview.get("total_events"),
+        "sim_duration_hrs": overview.get("sim_duration_hrs"),
+        "total_parts": throughput.get("total_parts"),
+        "line_oee_mean": oee.get("mean"),
+        "total_scrap_events": quality.get("total_scrap_events"),
+        "total_rework_events": quality.get("total_rework_events"),
+        "anomaly_count": analysis.get("anomalies", {}).get("anomaly_count"),
+    }
+
+    # Load existing index
+    index = []
+    index_path = Path(index_path)
+    if index_path.exists():
+        try:
+            with open(index_path, "r") as f:
+                index = json.load(f)
+        except (json.JSONDecodeError, IOError):
+            index = []
+
+    # Check if this run_id already exists
+    existing_ids = {e.get("run_id") for e in index}
+    if run_id not in existing_ids:
+        index.append(entry)
+        index_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(index_path, "w") as f:
+            json.dump(index, f, indent=2)
+
+    return entry

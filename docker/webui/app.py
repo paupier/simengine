@@ -91,6 +91,7 @@ def _save_scenario_to_file(cfg_path, name, data):
     with open(cfg_path, "w") as f:
         f.write(modified)
 
+
 app = Flask(__name__)
 app.config["TEMPLATES_AUTO_RELOAD"] = True
 app.json.sort_keys = False
@@ -107,6 +108,7 @@ sim_lock = threading.Lock()
 _SCRIPT_DIR = Path(__file__).resolve().parent
 _PROJECT_ROOT = _SCRIPT_DIR.parent.parent  # docker/webui/ → project root
 sys.path.insert(0, str(_PROJECT_ROOT / "src"))
+sys.path.insert(0, str(_PROJECT_ROOT / "tools"))
 
 CONFIG_PATH = Path(os.environ.get(
     "SIMANTHA_CONFIG_PATH",
@@ -634,6 +636,201 @@ def download_latest_historian():
     if not files:
         return jsonify({"error": "No historian files found"}), 404
     return send_from_directory(str(hist_dir), files[-1].name, as_attachment=True)
+
+
+# ---------------------------------------------------------------------------
+# Report engine (lazy import — pandas may not be installed in all envs)
+# ---------------------------------------------------------------------------
+_report_cache = {}  # {(filename, mtime): {"analysis": dict, "expires": float}}
+_REPORT_CACHE_TTL = 60  # seconds
+
+
+def _get_report_engine():
+    """Lazy-import report_engine to avoid hard pandas dependency at startup."""
+    try:
+        import report_engine
+        return report_engine
+    except ImportError:
+        return None
+
+
+def _get_historian_dir():
+    """Return the historian results directory."""
+    return _PROJECT_ROOT / "results" / "historian"
+
+
+def _analyze_csv(filename):
+    """Load and analyze a historian CSV file, with caching."""
+    hist_dir = _get_historian_dir()
+    filepath = hist_dir / filename
+    if not filepath.exists():
+        return None, "File not found"
+
+    re_mod = _get_report_engine()
+    if re_mod is None:
+        return None, "pandas is required for reports. Install with: pip install pandas"
+
+    mtime = filepath.stat().st_mtime
+    cache_key = (filename, mtime)
+    now = time.time()
+
+    # Check cache
+    if cache_key in _report_cache:
+        cached = _report_cache[cache_key]
+        if cached["expires"] > now:
+            return cached["analysis"], None
+
+    # Parse and analyze
+    try:
+        df = re_mod.load_historian_csv(str(filepath))
+        analysis = re_mod.run_full_analysis(df)
+        # Auto-append to run index
+        re_mod.append_run_index(str(filepath), analysis)
+    except Exception as e:
+        return None, f"Analysis failed: {e}"
+
+    # Cache result
+    _report_cache[cache_key] = {
+        "analysis": analysis,
+        "expires": now + _REPORT_CACHE_TTL,
+    }
+
+    return analysis, None
+
+
+# ---------------------------------------------------------------------------
+# Report routes
+# ---------------------------------------------------------------------------
+@app.route("/reports")
+def reports_page():
+    """Production run analysis page with charts."""
+    return render_template("reports.html")
+
+
+@app.route("/validation")
+def validation_page():
+    """Pipeline validation page."""
+    return render_template("validation.html")
+
+
+@app.route("/api/reports/files")
+def api_report_files():
+    """List historian CSV files available for analysis."""
+    hist_dir = _get_historian_dir()
+    if not hist_dir.exists():
+        return jsonify({"files": []})
+    files = sorted(hist_dir.glob("*_events*.csv"), key=os.path.getmtime, reverse=True)
+    result = []
+    for f in files:
+        # Try to extract scenario name from filename
+        name = f.stem
+        scenario = name.rsplit("_events", 1)[0] if "_events" in name else name
+        import re as _re
+        date_match = _re.search(r'_(\d{8}_\d{6})$', scenario)
+        if date_match:
+            scenario = scenario[:date_match.start()]
+        result.append({
+            "name": f.name,
+            "scenario": scenario,
+            "size_mb": round(f.stat().st_size / 1048576, 2),
+            "modified": dt.fromtimestamp(f.stat().st_mtime).isoformat(),
+        })
+    return jsonify({"files": result})
+
+
+@app.route("/api/reports/analyze", methods=["POST"])
+def api_report_analyze():
+    """Run full analysis on a historian CSV file."""
+    data = request.get_json(force=True) if request.data else {}
+    filename = data.get("filename")
+    if not filename:
+        return jsonify({"error": "Missing 'filename' field"}), 400
+    if ".." in filename or not filename.endswith(".csv"):
+        return jsonify({"error": "Invalid filename"}), 400
+
+    analysis, error = _analyze_csv(filename)
+    if error:
+        return jsonify({"error": error}), 400 if "not found" in error.lower() else 500
+
+    return jsonify(analysis)
+
+
+@app.route("/api/reports/runs")
+def api_report_runs():
+    """Return the run index for multi-run comparison."""
+    index_path = _get_historian_dir() / "run_index.json"
+    if not index_path.exists():
+        return jsonify({"runs": []})
+    try:
+        import json as _json
+        with open(index_path) as f:
+            runs = _json.load(f)
+        return jsonify({"runs": runs})
+    except Exception:
+        return jsonify({"runs": []})
+
+
+@app.route("/api/validation/run", methods=["POST"])
+def api_validation_run():
+    """Run CSV vs InfluxDB pipeline validation."""
+    data = request.get_json(force=True) if request.data else {}
+    filename = data.get("filename")
+    if not filename:
+        return jsonify({"error": "Missing 'filename' field"}), 400
+    if ".." in filename or not filename.endswith(".csv"):
+        return jsonify({"error": "Invalid filename"}), 400
+
+    re_mod = _get_report_engine()
+    if re_mod is None:
+        return jsonify({"error": "pandas is required"}), 500
+
+    hist_dir = _get_historian_dir()
+    filepath = hist_dir / filename
+    if not filepath.exists():
+        return jsonify({"error": "File not found"}), 404
+
+    # Get InfluxDB connection details from env
+    influx_url = os.environ.get("INFLUXDB_URL", "http://influxdb:8086")
+    influx_token = os.environ.get("INFLUXDB_TOKEN", "simantha-dev-token")
+    influx_org = os.environ.get("INFLUXDB_ORG", "simantha")
+    influx_bucket = os.environ.get("INFLUXDB_BUCKET", "manufacturing")
+
+    try:
+        # Import the CLI query function (it has the InfluxDB logic)
+        sys.path.insert(0, str(_PROJECT_ROOT / "tools"))
+        from analyze_historian import query_influxdb_telegraf
+        influx_data = query_influxdb_telegraf(influx_url, influx_token, influx_org, influx_bucket)
+
+        df = re_mod.load_historian_csv(str(filepath))
+        validation = re_mod.validate_pipeline(df, influx_data)
+        return jsonify(validation)
+    except ImportError:
+        return jsonify({"error": "influxdb-client package is required"}), 500
+    except Exception as e:
+        return jsonify({"error": f"Validation failed: {e}"}), 500
+
+
+@app.route("/api/validation/influxdb/status")
+def api_influxdb_status():
+    """Check InfluxDB connectivity."""
+    influx_url = os.environ.get("INFLUXDB_URL", "http://influxdb:8086")
+    try:
+        from influxdb_client import InfluxDBClient
+        influx_token = os.environ.get("INFLUXDB_TOKEN", "simantha-dev-token")
+        influx_org = os.environ.get("INFLUXDB_ORG", "simantha")
+        client = InfluxDBClient(url=influx_url, token=influx_token, org=influx_org)
+        health = client.health()
+        client.close()
+        return jsonify({
+            "connected": health.status == "pass",
+            "url": influx_url,
+            "status": health.status,
+            "message": health.message,
+        })
+    except ImportError:
+        return jsonify({"connected": False, "url": influx_url, "error": "influxdb-client not installed"})
+    except Exception as e:
+        return jsonify({"connected": False, "url": influx_url, "error": str(e)})
 
 
 # ---------------------------------------------------------------------------

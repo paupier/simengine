@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simantha - Production Reports</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <style>
+        body { background: #f8f9fa; }
+        .kpi-card { text-align: center; padding: 12px; }
+        .kpi-value { font-size: 1.6rem; font-weight: bold; color: #0d6efd; }
+        .kpi-label { font-size: 0.8rem; color: #6c757d; }
+        .chart-container { position: relative; height: 280px; }
+        .section-card { margin-bottom: 16px; }
+        .badge-pass { background: #198754; }
+        .badge-fail { background: #dc3545; }
+        .badge-warn { background: #fd7e14; }
+        .badge-skip { background: #6c757d; }
+        .stat-row { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #f0f0f0; font-size: 0.85rem; }
+        .stat-label { color: #6c757d; }
+        .stat-value { font-weight: 600; }
+        #loading-spinner { display: none; }
+        .coming-soon { opacity: 0.5; pointer-events: none; position: relative; }
+        .coming-soon::after { content: "Coming Soon"; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #6c757d; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.8rem; }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a href="/" class="navbar-brand mb-0 h1">Simantha Digital Twin</a>
+            <div>
+                <a href="/" class="btn btn-sm btn-outline-light me-2">Dashboard</a>
+                <a href="/reports" class="btn btn-sm btn-info me-2">Reports</a>
+                <a href="/validation" class="btn btn-sm btn-outline-warning me-2">Validation</a>
+                <a href="/config" class="btn btn-sm btn-outline-light me-2">Config</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-3">
+        <!-- File selector -->
+        <div class="card section-card">
+            <div class="card-body d-flex align-items-center gap-3">
+                <strong>Historian File:</strong>
+                <select id="file-select" class="form-select form-select-sm" style="width:auto;min-width:300px;">
+                    <option value="">-- Select CSV file --</option>
+                </select>
+                <button class="btn btn-primary btn-sm" onclick="runAnalysis()" id="btn-analyze">Analyze</button>
+                <div id="loading-spinner" class="spinner-border spinner-border-sm text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <span id="analyze-status" class="text-muted small"></span>
+            </div>
+        </div>
+
+        <!-- Report content (hidden until analysis runs) -->
+        <div id="report-content" style="display:none;">
+
+            <!-- Section 1: Overview cards -->
+            <div class="row mb-3">
+                <div class="col"><div class="card kpi-card"><div class="kpi-value" id="ov-events">-</div><div class="kpi-label">Total Events</div></div></div>
+                <div class="col"><div class="card kpi-card"><div class="kpi-value" id="ov-duration">-</div><div class="kpi-label">Duration (hrs)</div></div></div>
+                <div class="col"><div class="card kpi-card"><div class="kpi-value" id="ov-epm">-</div><div class="kpi-label">Events/min</div></div></div>
+                <div class="col"><div class="card kpi-card"><div class="kpi-value" id="ov-parts">-</div><div class="kpi-label">Total Parts</div></div></div>
+                <div class="col"><div class="card kpi-card"><div class="kpi-value" id="ov-oee">-</div><div class="kpi-label">Line OEE (avg)</div></div></div>
+            </div>
+
+            <!-- Event type distribution -->
+            <div class="card section-card">
+                <div class="card-header"><strong>Event Type Distribution</strong></div>
+                <div class="card-body"><div class="chart-container"><canvas id="chart-event-types"></canvas></div></div>
+            </div>
+
+            <div class="row">
+                <!-- Section 3: Line OEE -->
+                <div class="col-md-6">
+                    <div class="card section-card">
+                        <div class="card-header"><strong>Line OEE Over Time</strong></div>
+                        <div class="card-body">
+                            <div class="chart-container"><canvas id="chart-line-oee"></canvas></div>
+                            <div class="mt-2" id="oee-stats"></div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Section 4: Per-Machine OEE -->
+                <div class="col-md-6">
+                    <div class="card section-card">
+                        <div class="card-header"><strong>Per-Machine OEE</strong></div>
+                        <div class="card-body">
+                            <div class="chart-container"><canvas id="chart-machine-oee"></canvas></div>
+                            <div class="mt-2" id="machine-oee-stats"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                <!-- Section 9: Throughput -->
+                <div class="col-md-6">
+                    <div class="card section-card">
+                        <div class="card-header"><strong>Cumulative Throughput</strong></div>
+                        <div class="card-body">
+                            <div class="chart-container"><canvas id="chart-throughput"></canvas></div>
+                            <div class="mt-2" id="throughput-stats"></div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Section 8: Buffer Dynamics -->
+                <div class="col-md-6">
+                    <div class="card section-card">
+                        <div class="card-header"><strong>Buffer Levels Over Time</strong></div>
+                        <div class="card-body">
+                            <div class="chart-container"><canvas id="chart-buffers"></canvas></div>
+                            <div class="mt-2" id="buffer-stats"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                <!-- Section 5: Failures -->
+                <div class="col-md-6">
+                    <div class="card section-card">
+                        <div class="card-header"><strong>Failure Timeline</strong></div>
+                        <div class="card-body">
+                            <div class="chart-container"><canvas id="chart-failures"></canvas></div>
+                            <div class="mt-2" id="failure-stats"></div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Section 6: Quality Routing -->
+                <div class="col-md-6">
+                    <div class="card section-card">
+                        <div class="card-header"><strong>Scrap / Rework per Machine</strong></div>
+                        <div class="card-body">
+                            <div class="chart-container"><canvas id="chart-quality"></canvas></div>
+                            <div class="mt-2" id="quality-stats"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Section 7: Shifts -->
+            <div class="card section-card" id="shift-section" style="display:none;">
+                <div class="card-header"><strong>Shift Analysis</strong></div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6"><div class="chart-container"><canvas id="chart-shifts"></canvas></div></div>
+                        <div class="col-md-6" id="shift-table"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Section 10: Anomaly Check -->
+            <div class="card section-card">
+                <div class="card-header"><strong>Anomaly Check</strong></div>
+                <div class="card-body">
+                    <table class="table table-sm" id="anomaly-table">
+                        <thead><tr><th>Check</th><th>Result</th><th>Details</th></tr></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Compare Runs (placeholder) -->
+            <div class="card section-card coming-soon">
+                <div class="card-header"><strong>Compare Runs</strong></div>
+                <div class="card-body" style="min-height:80px;">
+                    <p class="text-muted">Multi-run comparison across different seeds, defect rates, and scenarios.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Chart instances (for cleanup on re-analyze)
+        let charts = {};
+
+        function destroyCharts() {
+            for (const key in charts) {
+                if (charts[key]) charts[key].destroy();
+            }
+            charts = {};
+        }
+
+        // --- Load file list ---
+        async function loadFiles() {
+            const resp = await fetch('/api/reports/files');
+            const data = await resp.json();
+            const select = document.getElementById('file-select');
+            select.innerHTML = '<option value="">-- Select CSV file --</option>';
+            for (const f of data.files) {
+                const opt = document.createElement('option');
+                opt.value = f.name;
+                opt.textContent = `${f.scenario} (${f.size_mb} MB) - ${f.modified.split('T')[0]}`;
+                select.appendChild(opt);
+            }
+        }
+
+        // --- Run analysis ---
+        async function runAnalysis() {
+            const filename = document.getElementById('file-select').value;
+            if (!filename) { alert('Select a CSV file first'); return; }
+
+            document.getElementById('loading-spinner').style.display = '';
+            document.getElementById('btn-analyze').disabled = true;
+            document.getElementById('analyze-status').textContent = 'Analyzing...';
+
+            try {
+                const resp = await fetch('/api/reports/analyze', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({filename})
+                });
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    alert('Analysis failed: ' + (err.error || 'Unknown error'));
+                    return;
+                }
+                const analysis = await resp.json();
+                renderReport(analysis);
+                document.getElementById('report-content').style.display = '';
+                document.getElementById('analyze-status').textContent = 'Done';
+            } catch (e) {
+                alert('Error: ' + e.message);
+            } finally {
+                document.getElementById('loading-spinner').style.display = 'none';
+                document.getElementById('btn-analyze').disabled = false;
+            }
+        }
+
+        // --- Render full report ---
+        function renderReport(a) {
+            destroyCharts();
+
+            // Overview cards
+            document.getElementById('ov-events').textContent = (a.overview.total_events || 0).toLocaleString();
+            document.getElementById('ov-duration').textContent = a.overview.sim_duration_hrs;
+            document.getElementById('ov-epm').textContent = a.overview.events_per_min;
+            document.getElementById('ov-parts').textContent = a.throughput.total_parts ? a.throughput.total_parts.toLocaleString() : '-';
+            document.getElementById('ov-oee').textContent = a.oee.mean ? (a.oee.mean * 100).toFixed(1) + '%' : '-';
+
+            renderEventTypes(a.overview);
+            renderLineOee(a.oee);
+            renderMachineOee(a.machine_oee);
+            renderThroughput(a.throughput);
+            renderBuffers(a.buffer_dynamics);
+            renderFailures(a.failures);
+            renderQuality(a.quality_routing);
+            renderShifts(a.shifts);
+            renderAnomalies(a.anomalies);
+        }
+
+        // --- Chart: Event Type Distribution ---
+        function renderEventTypes(ov) {
+            const labels = Object.keys(ov.event_type_distribution);
+            const values = labels.map(k => ov.event_type_distribution[k].count);
+            const colors = ['#0d6efd','#198754','#dc3545','#fd7e14','#6f42c1','#20c997','#ffc107','#6c757d'];
+
+            charts.eventTypes = new Chart(document.getElementById('chart-event-types'), {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{label: 'Count', data: values, backgroundColor: colors.slice(0, labels.length)}]
+                },
+                options: {indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: {legend: {display: false}}}
+            });
+        }
+
+        // --- Chart: Line OEE ---
+        function renderLineOee(oee) {
+            if (!oee.timeseries || oee.timeseries.length === 0) return;
+            const labels = oee.timeseries.map(p => (p.t / 3600).toFixed(2));
+            const values = oee.timeseries.map(p => p.v);
+
+            charts.lineOee = new Chart(document.getElementById('chart-line-oee'), {
+                type: 'line',
+                data: {labels, datasets: [{label: 'Line OEE', data: values, borderColor: '#0d6efd', borderWidth: 1.5, pointRadius: 0, fill: false}]},
+                options: {responsive: true, maintainAspectRatio: false, scales: {y: {min: 0, max: 1.05, title: {display: true, text: 'OEE'}}, x: {title: {display: true, text: 'Sim Time (hrs)'}}}, plugins: {legend: {display: false}}}
+            });
+
+            let html = '';
+            if (oee.mean != null) html += `<div class="stat-row"><span class="stat-label">Mean</span><span class="stat-value">${(oee.mean*100).toFixed(1)}%</span></div>`;
+            if (oee.std != null) html += `<div class="stat-row"><span class="stat-label">Std</span><span class="stat-value">${(oee.std*100).toFixed(1)}%</span></div>`;
+            if (oee.stability_status) html += `<div class="stat-row"><span class="stat-label">Stability</span><span class="badge badge-${oee.stability_status.toLowerCase()}">${oee.stability_status}</span></div>`;
+            document.getElementById('oee-stats').innerHTML = html;
+        }
+
+        // --- Chart: Per-Machine OEE ---
+        function renderMachineOee(moee) {
+            const machineNames = Object.keys(moee.machines);
+            if (machineNames.length === 0) return;
+            const colors = ['#0d6efd','#dc3545','#198754','#fd7e14','#6f42c1','#20c997'];
+            const datasets = machineNames.map((m, i) => {
+                const ts = moee.machines[m].timeseries || [];
+                return {
+                    label: m,
+                    data: ts.map(p => ({x: (p.t / 3600).toFixed(2), y: p.v})),
+                    borderColor: colors[i % colors.length],
+                    borderWidth: 1,
+                    pointRadius: 0,
+                    fill: false
+                };
+            });
+            // Use first machine's timestamps as shared labels
+            const firstTs = moee.machines[machineNames[0]].timeseries || [];
+            const labels = firstTs.map(p => (p.t / 3600).toFixed(2));
+
+            // Rebuild datasets using aligned data arrays
+            const alignedDatasets = machineNames.map((m, i) => {
+                const ts = moee.machines[m].timeseries || [];
+                return {
+                    label: m,
+                    data: ts.map(p => p.v),
+                    borderColor: colors[i % colors.length],
+                    borderWidth: 1,
+                    pointRadius: 0,
+                    fill: false
+                };
+            });
+
+            charts.machineOee = new Chart(document.getElementById('chart-machine-oee'), {
+                type: 'line',
+                data: {labels, datasets: alignedDatasets},
+                options: {responsive: true, maintainAspectRatio: false, scales: {y: {min: 0, max: 1.05}}, plugins: {legend: {position: 'bottom', labels: {boxWidth: 12}}}}
+            });
+
+            let html = '<table class="table table-sm small"><thead><tr><th>Machine</th><th>OEE Mean</th><th>Util</th></tr></thead><tbody>';
+            for (const m of machineNames) {
+                const d = moee.machines[m];
+                html += `<tr><td>${m}</td><td>${d.oee_mean ? (d.oee_mean*100).toFixed(1)+'%' : '-'}</td><td>${d.utilisation_mean ? (d.utilisation_mean*100).toFixed(1)+'%' : '-'}</td></tr>`;
+            }
+            html += '</tbody></table>';
+            document.getElementById('machine-oee-stats').innerHTML = html;
+        }
+
+        // --- Chart: Throughput ---
+        function renderThroughput(tp) {
+            if (!tp.timeseries || tp.timeseries.length === 0) return;
+            const labels = tp.timeseries.map(p => (p.t / 3600).toFixed(2));
+            const values = tp.timeseries.map(p => p.v);
+
+            charts.throughput = new Chart(document.getElementById('chart-throughput'), {
+                type: 'line',
+                data: {labels, datasets: [{label: 'Parts', data: values, borderColor: '#198754', borderWidth: 1.5, pointRadius: 0, fill: true, backgroundColor: 'rgba(25,135,84,0.1)'}]},
+                options: {responsive: true, maintainAspectRatio: false, scales: {x: {title: {display: true, text: 'Sim Time (hrs)'}}, y: {title: {display: true, text: 'Cumulative Parts'}}}, plugins: {legend: {display: false}}}
+            });
+
+            let html = '';
+            if (tp.ppm) html += `<div class="stat-row"><span class="stat-label">PPM</span><span class="stat-value">${tp.ppm.toFixed(2)}</span></div>`;
+            if (tp.efficiency_pct) html += `<div class="stat-row"><span class="stat-label">Efficiency</span><span class="stat-value">${tp.efficiency_pct.toFixed(1)}%</span></div>`;
+            document.getElementById('throughput-stats').innerHTML = html;
+        }
+
+        // --- Chart: Buffer Levels ---
+        function renderBuffers(buf) {
+            const bufNames = Object.keys(buf.buffers);
+            if (bufNames.length === 0) return;
+            const colors = ['#6f42c1','#20c997','#fd7e14','#0d6efd'];
+
+            const firstTs = buf.buffers[bufNames[0]].timeseries || [];
+            const labels = firstTs.map(p => (p.t / 3600).toFixed(2));
+            const datasets = bufNames.map((b, i) => ({
+                label: b,
+                data: (buf.buffers[b].timeseries || []).map(p => p.v),
+                borderColor: colors[i % colors.length],
+                borderWidth: 1,
+                pointRadius: 0,
+                fill: false
+            }));
+
+            charts.buffers = new Chart(document.getElementById('chart-buffers'), {
+                type: 'line',
+                data: {labels, datasets},
+                options: {responsive: true, maintainAspectRatio: false, scales: {y: {min: 0, title: {display: true, text: 'Level'}}}, plugins: {legend: {position: 'bottom', labels: {boxWidth: 12}}}}
+            });
+
+            let html = '<table class="table table-sm small"><thead><tr><th>Buffer</th><th>Mean</th><th>Full%</th><th>Empty%</th></tr></thead><tbody>';
+            for (const b of bufNames) {
+                const d = buf.buffers[b];
+                html += `<tr><td>${b}</td><td>${d.level_mean ?? '-'}</td><td>${d.full_pct ?? '-'}%</td><td>${d.empty_pct ?? '-'}%</td></tr>`;
+            }
+            html += '</tbody></table>';
+            document.getElementById('buffer-stats').innerHTML = html;
+        }
+
+        // --- Chart: Failure Timeline ---
+        function renderFailures(fail) {
+            const machineNames = Object.keys(fail.machines);
+            const colors = ['#dc3545','#fd7e14','#6f42c1','#0d6efd'];
+
+            const datasets = [];
+            machineNames.forEach((m, i) => {
+                const timeline = fail.machines[m].failure_timeline || [];
+                if (timeline.length > 0) {
+                    datasets.push({
+                        label: m,
+                        data: timeline.map(p => ({x: (p.t / 3600).toFixed(2), y: i + 1})),
+                        backgroundColor: colors[i % colors.length],
+                        pointRadius: 4,
+                    });
+                }
+            });
+
+            if (datasets.length > 0) {
+                charts.failures = new Chart(document.getElementById('chart-failures'), {
+                    type: 'scatter',
+                    data: {datasets},
+                    options: {responsive: true, maintainAspectRatio: false, scales: {x: {title: {display: true, text: 'Sim Time (hrs)'}}, y: {display: false}}, plugins: {legend: {position: 'bottom', labels: {boxWidth: 12}}}}
+                });
+            }
+
+            let html = '<table class="table table-sm small"><thead><tr><th>Machine</th><th>Failures</th><th>Repairs</th><th>MTTF</th><th>MTTR</th></tr></thead><tbody>';
+            for (const m of machineNames) {
+                const d = fail.machines[m];
+                html += `<tr><td>${m}</td><td>${d.failure_count}</td><td>${d.repair_count}</td>`;
+                html += `<td>${d.mttf_mean ? d.mttf_mean+'s' : '-'}</td>`;
+                html += `<td>${d.mttr_mean ? d.mttr_mean+'s' : '-'}</td></tr>`;
+            }
+            html += '</tbody></table>';
+            document.getElementById('failure-stats').innerHTML = html;
+        }
+
+        // --- Chart: Quality Routing ---
+        function renderQuality(qr) {
+            const machineNames = Object.keys(qr.machines);
+            if (machineNames.length === 0) {
+                document.getElementById('quality-stats').innerHTML = '<p class="text-muted small">No scrap/rework data</p>';
+                return;
+            }
+
+            const scrapData = machineNames.map(m => qr.machines[m].scrap_events || 0);
+            const reworkData = machineNames.map(m => qr.machines[m].rework_events || 0);
+
+            charts.quality = new Chart(document.getElementById('chart-quality'), {
+                type: 'bar',
+                data: {
+                    labels: machineNames,
+                    datasets: [
+                        {label: 'Scrap', data: scrapData, backgroundColor: '#dc3545'},
+                        {label: 'Rework', data: reworkData, backgroundColor: '#fd7e14'}
+                    ]
+                },
+                options: {responsive: true, maintainAspectRatio: false, plugins: {legend: {position: 'bottom', labels: {boxWidth: 12}}}}
+            });
+
+            let html = `<div class="stat-row"><span class="stat-label">Total Scrap Events</span><span class="stat-value">${qr.total_scrap_events}</span></div>`;
+            html += `<div class="stat-row"><span class="stat-label">Total Rework Events</span><span class="stat-value">${qr.total_rework_events}</span></div>`;
+            document.getElementById('quality-stats').innerHTML = html;
+        }
+
+        // --- Shift Analysis ---
+        function renderShifts(sh) {
+            if (sh.shift_change_count === 0) {
+                document.getElementById('shift-section').style.display = 'none';
+                return;
+            }
+            document.getElementById('shift-section').style.display = '';
+
+            // Chart: shift production comparison
+            const labels = sh.shifts.map(s => s.prev_shift_name || `Shift ${s.shift_number}`);
+            const parts = sh.shifts.map(s => s.prev_shift_parts || 0);
+            const oees = sh.shifts.map(s => s.prev_shift_oee || 0);
+
+            charts.shifts = new Chart(document.getElementById('chart-shifts'), {
+                type: 'bar',
+                data: {
+                    labels,
+                    datasets: [
+                        {label: 'Parts', data: parts, backgroundColor: '#0d6efd', yAxisID: 'y'},
+                        {label: 'OEE', data: oees, backgroundColor: '#198754', yAxisID: 'y1'}
+                    ]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    scales: {
+                        y: {position: 'left', title: {display: true, text: 'Parts'}},
+                        y1: {position: 'right', min: 0, max: 1, title: {display: true, text: 'OEE'}, grid: {drawOnChartArea: false}}
+                    },
+                    plugins: {legend: {position: 'bottom', labels: {boxWidth: 12}}}
+                }
+            });
+
+            // Table
+            let html = '<table class="table table-sm small"><thead><tr><th>Time</th><th>To Shift</th><th>Prev Shift</th><th>Parts</th><th>OEE</th></tr></thead><tbody>';
+            for (const s of sh.shifts) {
+                html += `<tr><td>${Math.floor(s.timestamp)}s</td><td>${s.shift_name || '-'}</td>`;
+                html += `<td>${s.prev_shift_name || '-'}</td>`;
+                html += `<td>${s.prev_shift_parts ?? '-'}</td>`;
+                html += `<td>${s.prev_shift_oee != null ? (s.prev_shift_oee * 100).toFixed(1) + '%' : '-'}</td></tr>`;
+            }
+            html += '</tbody></table>';
+            document.getElementById('shift-table').innerHTML = html;
+        }
+
+        // --- Anomaly Check ---
+        function renderAnomalies(anom) {
+            const tbody = document.querySelector('#anomaly-table tbody');
+            tbody.innerHTML = '';
+            for (const check of anom.checks) {
+                const badgeClass = check.status === 'PASS' ? 'badge-pass' : (check.status === 'FAIL' ? 'badge-fail' : 'badge-warn');
+                tbody.innerHTML += `<tr><td>${check.name}</td><td><span class="badge ${badgeClass}">${check.status}</span></td><td class="small">${check.message}</td></tr>`;
+            }
+        }
+
+        // --- Init ---
+        loadFiles();
+    </script>
+</body>
+</html>
