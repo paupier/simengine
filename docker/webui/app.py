@@ -298,6 +298,7 @@ def _read_opcua_values():
 
         # Read machine states dynamically
         machines = {}
+        machine_errors = []
         for i in range(1, 20):  # Up to 19 machines
             try:
                 machine = line1.get_child([f"2:Machine{i}"])
@@ -333,8 +334,8 @@ def _read_opcua_values():
                     pass
                 machines[f"Machine{i}"] = m_data
             except Exception as e:
-                if i == 1:
-                    print(f"[WebUI] Machine{i} read error: {e}")
+                if i <= 3:
+                    machine_errors.append(f"Machine{i}: {type(e).__name__}: {e}")
                 break
 
         # Line-level KPIs
@@ -365,7 +366,7 @@ def _read_opcua_values():
         except Exception:
             pass
 
-        return {
+        result = {
             "sim_time": sim_time,
             "throughput": throughput,
             "pause_line": pause_line,
@@ -375,6 +376,9 @@ def _read_opcua_values():
             "line_kpis": line_kpis,
             "shift": shift_info,
         }
+        if machine_errors:
+            result["machine_errors"] = machine_errors
+        return result
     except Exception as e:
         import traceback
         print(f"[WebUI] OPC UA read error: {e}")

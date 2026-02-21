@@ -133,7 +133,7 @@ def create_machine_node(parent_node, opcua_idx: int, machine_node_name: str, ena
         dict: Dictionary of variable objects
     """
     p = node_prefix  # shorthand
-    machine_node = parent_node.add_object(_nid(p, opcua_idx), machine_node_name)
+    machine_node = parent_node.add_object(_nid(p, opcua_idx), _qn(machine_node_name, opcua_idx))
 
     vars_dict = {}
     vars_dict["state"] = machine_node.add_variable(_nid(f"{p}.State", opcua_idx), _qn("State", opcua_idx), "IDLE")
@@ -227,7 +227,7 @@ def create_buffer_node(parent_node, opcua_idx: int, buffer_name: str, capacity: 
         dict: Dictionary of variable objects
     """
     p = node_prefix
-    buffer_node = parent_node.add_object(_nid(p, opcua_idx), buffer_name)
+    buffer_node = parent_node.add_object(_nid(p, opcua_idx), _qn(buffer_name, opcua_idx))
 
     vars_dict = {}
     vars_dict["level"] = buffer_node.add_variable(_nid(f"{p}.CurrentLevel", opcua_idx), _qn("CurrentLevel", opcua_idx), 0)
@@ -1555,7 +1555,7 @@ def build_opcua_server(config: dict):
     for scrap_cfg in config.get("scrap_sinks", []):
         scrap_name = scrap_cfg["name"]
         scrap_p = f"Line1.{scrap_name}"
-        scrap_node = line1.add_object(_nid(scrap_p, idx), scrap_name)
+        scrap_node = line1.add_object(_nid(scrap_p, idx), _qn(scrap_name, idx))
         scrap_vars[scrap_name] = {
             "level": scrap_node.add_variable(_nid(f"{scrap_p}.CurrentLevel", idx), _qn("CurrentLevel", idx), 0),
         }
