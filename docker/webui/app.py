@@ -680,7 +680,8 @@ def _get_report_engine():
     try:
         import report_engine
         return report_engine
-    except ImportError:
+    except ImportError as e:
+        print(f"[WebUI] report_engine import failed: {e}")
         return None
 
 

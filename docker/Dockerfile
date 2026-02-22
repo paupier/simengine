@@ -23,6 +23,9 @@ COPY config/ /app/config/
 COPY docker/webui/ /app/docker/webui/
 COPY docker/telegraf/generate_telegraf_conf.py /app/docker/telegraf/generate_telegraf_conf.py
 
+# Copy analysis tools (report_engine, analyze_historian)
+COPY tools/ /app/tools/
+
 # Copy Grafana dashboards (for volume mount reference)
 COPY grafana/dashboards/ /app/grafana/dashboards/
 
