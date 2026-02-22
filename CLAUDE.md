@@ -15,6 +15,7 @@ pip install -r requirements.txt
 # Run the OPC UA server (default: balanced_line scenario)
 python src/opcua_server.py
 python src/opcua_server.py --scenario full_feature_line --seed 42
+python src/opcua_server.py --scenario warm_up_line --trace  # with warm-up and event tracing
 
 # Run all tests (CI-equivalent, excludes slow integration tests)
 pytest tests/ -v --ignore=tests/test_advanced_scenarios.py --ignore=tests/test_opcua_integration.py
@@ -45,7 +46,7 @@ docker compose -f docker/docker-compose.yml up --build -d
 ### Entry Point
 
 `src/opcua_server.py` is the main entry point. It:
-1. Parses CLI args (`--scenario`, `--seed`)
+1. Parses CLI args (`--scenario`, `--seed`, `--trace`)
 2. Loads config via `config_loader.py` from `config/line_models.yaml`
 3. Creates Simantha objects (Source → Buffer → Machine → Buffer → ... → Sink)
 4. Builds the OPC UA address space with per-machine/buffer/alarm nodes
@@ -76,9 +77,12 @@ QualityRoutingMixin (src/quality_machine.py) — scrap/rework via output_addon_p
 
 simantha.Machine
   └── AdvancedMachine (src/advanced_machine.py) — failure modes, scipy distributions
+
+simantha.Maintainer
+  └── PriorityMaintainer (src/priority_maintainer.py) — FIFO/SPT/priority/bottleneck scheduling
 ```
 
-Features are composed via mixins. Adding a new axis (e.g., EnergyMixin) requires only the mixin class plus one-line combinations, not a class explosion. Use `isinstance(obj, QualityRoutingMixin)` to check for quality routing capability.
+Features are composed via mixins. Adding a new axis (e.g., EnergyMixin) requires only the mixin class plus one-line combinations, not a class explosion. Use `isinstance(obj, QualityRoutingMixin)` to check for quality routing capability. `PriorityMaintainer` extends `Maintainer` with `choose_maintenance_action()` override supporting configurable repair scheduling.
 
 ### Key Modules
 
@@ -91,6 +95,7 @@ Features are composed via mixins. Adding a new axis (e.g., EnergyMixin) requires
 | `event_historian.py` | `EventHistorian` ABC → `CSVHistorian`, `InfluxDBHistorian`, `CompositeHistorian` |
 | `neo4j_historian.py` | `Neo4jHistorian` (optional graph DB backend) |
 | `quality_machine.py` | `QualityRoutingMixin`, scrap/rework routing, `_redirect_to()` buffer bookkeeping |
+| `priority_maintainer.py` | `PriorityMaintainer` with FIFO, SPT, priority, and bottleneck-first scheduling |
 
 ### Flask Web UI (`docker/webui/`)
 
@@ -105,12 +110,17 @@ The web UI runs both locally and in Docker via environment variable defaults:
 Routes:
 - `/` — Main dashboard with live KPIs, per-machine OEE/PPM/SPC, shift progress
 - `/config` — Visual scenario editor with CRUD and YAML preview
+- `/reports` — Post-run analysis (OEE charts, throughput, anomaly detection, run comparison)
+- `/validation` — Data pipeline health check (OPC UA → Telegraf → InfluxDB)
 - `/api/scenarios` — List scenarios
 - `/api/scenario/<name>` — GET/PUT single scenario config
 - `/api/scenario` — POST to create new scenario
 - `/api/start`, `/api/stop`, `/api/control` — Simulation lifecycle
 - `/api/status` — Live status with OPC UA values (OEE, PPM, SPC, shifts, scrap)
 - `/api/logs` — Recent simulation log lines
+- `/api/reports/analyze`, `/api/reports/runs` — Report generation and run history
+- `/api/validation/run`, `/api/validation/influxdb/status` — Pipeline validation
+- `/api/historian/files`, `/api/historian/download` — CSV historian file access
 
 ### Test Infrastructure
 
@@ -122,12 +132,19 @@ Shared test factories live in `tests/factories.py`:
 
 ### Configuration
 
-`config/line_models.yaml` defines 16 scenarios (balanced, bottleneck, failure, SPC, shifts, historian, scrap, rework, full_feature, etc.). Each scenario specifies machines, buffers, optional maintainer, failure_modes, quality_routing, shifts, historian backends, and SPC config.
+`config/line_models.yaml` defines 20 scenarios (balanced, bottleneck, failure, SPC, shifts, historian, scrap, rework, full_feature, warm_up, priority_maintenance, multi_state_degradation, full_feature_8_machine, etc.). Each scenario specifies machines, buffers, optional maintainer, failure_modes, quality_routing, shifts, historian backends, and SPC config.
 
 Per-machine options include:
 - `cycle_time` — direct cycle time in seconds
 - `target_ppm` — parts per minute target (derives `cycle_time = 60 / target_ppm`; takes precedence if both given)
 - `spc.measurement_noise` — coefficient of variation for SPC measurement noise (default: 0.02)
+- `health_states` — multi-state degradation config: `h_max` (number of failed state), `p_degrade` (per-step probability), `cbm_threshold`
+
+Per-scenario options include:
+- `warm_up_time` — seconds of warm-up before data collection starts (default: 0)
+- `maintainer.strategy` — repair scheduling: `fifo` (default), `spt`, `priority`, `bottleneck`
+- `maintainer.machine_priorities` — dict of machine name → priority number (for `priority` strategy)
+- `enterprise`, `site`, `area`, `line_name` — ISA-95 hierarchy naming (all optional with defaults)
 
 ### Event Historian Design
 
@@ -224,10 +241,18 @@ Enterprise (WeylandIndustries)/
 ```
 
 Only two variables are writable by OPC UA clients:
-- `CmdPauseLine` (bool) — global pause/resume
-- `SetInterarrivalTime` (float) — part arrival rate on the source
+- `CmdPauseLine` (bool) — global pause/resume (under OperationsState/Controls)
+- `SetInterarrivalTime` (float) — part arrival rate on the source (under OperationsState/Controls)
 
 The `opcua_vars` dict serves as an abstraction layer — internal keys (e.g., `opcua_vars["machines"]["M1"]["state"]`) are unchanged from the main loop's perspective. Only the OPC UA NodeId strings changed.
+
+## Telegraf Config Generation
+
+`docker/telegraf/generate_telegraf_conf.py` dynamically generates `telegraf.conf` from scenario config. It mirrors the same conditionals used in `build_opcua_server()` to create matching Telegraf OPC UA input nodes. Field names use abbreviated prefixes (`M{i}_`, `B{i}_`, `Scrap{i}_`, `Shift_`) for InfluxDB. Run standalone:
+
+```bash
+python docker/telegraf/generate_telegraf_conf.py --config config/line_models.yaml --scenario full_feature_line --output docker/telegraf/telegraf.conf
+```
 
 ## Randomness and Reproducibility
 

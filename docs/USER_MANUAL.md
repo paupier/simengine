@@ -1,7 +1,7 @@
 # Simantha OPC UA - Complete User Manual
 
-**Version:** 2.0
-**Last Updated:** 2026-02-14
+**Version:** 2.1
+**Last Updated:** 2026-02-22
 **Difficulty:** Beginner to Advanced
 
 ---
@@ -72,7 +72,7 @@ Simantha OPC UA is a **manufacturing digital twin** that simulates a production 
 ### Software Requirements
 
 **Required:**
-- **Python:** 3.8 or newer (3.11 recommended)
+- **Python:** 3.9 or newer (3.11 recommended; 3.12 not yet supported)
 - **pip:** Python package installer
 - **Git:** For cloning the repository (optional, can download ZIP)
 
@@ -226,22 +226,21 @@ Press Ctrl+C to stop.
    - Server should connect (green icon)
 
 3. **Browse Address Space:**
-   - Expand: **Objects** → **Line1**
-   - You'll see:
-     - System
-     - LineKPIs
-     - Machine1
-     - Buffer1
-     - Machine2
-     - Maintenance
+   - Expand: **Objects** → **WeylandIndustries** → **LV426_Colony** → **AtmosphereProcessor01** → **Nostromo_BioProductPakaging_Equipment**
+   - You'll see ISA-95 structure:
+     - Identification (line metadata)
+     - OperationsState (SimTime, controls)
+     - OperationsPerformance (throughput, WIP, scrap)
+     - Resources (Machine1, Buffer1, Machine2, etc.)
+     - SupportFunctions (Maintenance, ShiftManagement)
 
 4. **View Live Data:**
    - Drag variables to the **Data Access View** (bottom panel)
-   - Try these first:
-     - `Line1/System/SimTime` - Simulation time
-     - `Line1/System/Throughput` - Total parts produced
-     - `Line1/Machine1/State` - Machine 1 state
-     - `Line1/Buffer1/CurrentLevel` - Buffer level
+   - Try these first (under the Equipment node):
+     - `OperationsState/SimTime` - Simulation time
+     - `OperationsPerformance/Throughput` - Total parts produced
+     - `Resources/Machine1/OperationsState/State` - Machine 1 state
+     - `Resources/Buffer1/Level` - Buffer level
 
 **You should see values updating in real-time!** 🎉
 
@@ -346,7 +345,7 @@ Source  →  M1  →  Buffer1  →  M2  →  Sink
 - **M2:** Second machine (1 second cycle time)
 - **Sink:** Collects finished parts
 
-### Machine States (6 States)
+### Machine States (8 States)
 
 | State | Description | Typical Cause |
 |-------|-------------|---------------|
@@ -357,6 +356,7 @@ Source  →  M1  →  Buffer1  →  M2  →  Sink
 | **PAUSED** | Simulation paused | User control via OPC UA |
 | **FAILED** | Machine has failed | Health degradation (with degradation enabled) |
 | **UNDER_REPAIR** | Being repaired by maintainer | After failure (with maintainer) |
+| **DEGRADED** | Machine operational but degrading | Health > 0 but not yet failed (multi-state degradation) |
 
 ### Key Performance Indicators (KPIs)
 
@@ -454,25 +454,32 @@ try:
     # Get root objects node
     root = client.get_objects_node()
 
-    # Navigate to variables using browse path
-    line1 = root.get_child(["2:Line1"])
-    system = line1.get_child(["2:System"])
-    sim_time = system.get_child(["2:SimTime"])
-    throughput = system.get_child(["2:Throughput"])
+    # Navigate ISA-95 hierarchy to the Equipment node
+    enterprise = root.get_child(["2:WeylandIndustries"])
+    site = enterprise.get_child(["2:LV426_Colony"])
+    area = site.get_child(["2:AtmosphereProcessor01"])
+    equip = area.get_child(["2:Nostromo_BioProductPakaging_Equipment"])
 
-    # Read values
+    # Read system variables
+    ops_state = equip.get_child(["2:OperationsState"])
+    sim_time = ops_state.get_child(["2:SimTime"])
+    ops_perf = equip.get_child(["2:OperationsPerformance"])
+    throughput = ops_perf.get_child(["2:Throughput"])
+
     print(f"Simulation Time: {sim_time.get_value()}")
     print(f"Throughput: {throughput.get_value()}")
 
     # Write to control variable
-    controls = system.get_child(["2:Controls"])
-    pause = controls.get_child(["2:cmdPauseLine"])
+    controls = ops_state.get_child(["2:Controls"])
+    pause = controls.get_child(["2:CmdPauseLine"])
     pause.set_value(True)  # Pause the line
     print("Line paused!")
 
 finally:
     client.disconnect()
 ```
+
+> **Note:** The ISA-95 hierarchy names (`WeylandIndustries`, `LV426_Colony`, etc.) are configurable in the scenario YAML via `enterprise`, `site`, `area`, and `line_name` keys.
 
 **Save as `test_client.py` and run:**
 ```bash
@@ -1207,74 +1214,53 @@ python src/opcua_server.py --scenario full_feature_line --seed 42
 
 ## 9. OPC UA Address Space Reference
 
+### ISA-95/ISO 23247 Hierarchy
+
+The address space follows the ISA-95 (IEC 62264) equipment hierarchy:
+
+```
+Objects / {Enterprise} / {Site} / {Area} / {Line}_Equipment /
+```
+
+Default names: `WeylandIndustries / LV426_Colony / AtmosphereProcessor01 / Nostromo_BioProductPakaging_Equipment`. These are configurable via YAML keys (`enterprise`, `site`, `area`, `line_name`).
+
 ### Top-Level Structure
 
-All nodes live under `Objects / Line1 /`:
+Under the Equipment node:
 
 | Node | Description |
 |------|-------------|
-| `System/` | Simulation time, throughput, controls |
-| `LineKPIs/` | Line-level WIP, OEE, scrap metrics |
-| `Machine1/` ... `MachineN/` | Per-machine state, time tracking, OEE, alarms, SPC, quality routing |
-| `Buffer1/` ... `BufferN/` | Buffer levels and alarms |
-| `Maintenance/` | Maintainer status and repair counts |
-| `Shift/` | Shift tracking and per-shift metrics *(if shifts configured)* |
-| `ScrapBin1/` ... `ScrapBinN/` | Scrap sink levels *(if scrap_sinks configured)* |
-| `EventLog/` | Event counter |
+| `Identification/` | Line metadata (EquipmentID, Class, Description) |
+| `OperationsState/` | SimTime, LineState, LineMode, Controls (writable) |
+| `OperationsPerformance/` | Throughput, TotalWIP, TotalScrap, ScrapRate |
+| `OEE/` | Line-level Availability, Performance, Quality, OEE |
+| `Resources/` | Machine, Buffer, and ScrapBin nodes |
+| `SupportFunctions/` | Maintenance, ShiftManagement |
+| `EventLog/` | TotalEventsGenerated |
+
+**Writable Variables (under `OperationsState/Controls/`):**
+
+| Variable | Access | Type | Description |
+|----------|--------|------|-------------|
+| `CmdPauseLine` | **WRITE** | Boolean | Pause/resume entire line |
+| `SetInterarrivalTime` | **WRITE** | Double | Part arrival delay (0 = fast as possible) |
 
 ---
 
-### `Line1 / System /`
+### `Resources / MachineN /` *(per machine)*
 
-| Variable | Access | Type | Description |
-|----------|--------|------|-------------|
-| `SimTime` | READ | Double | Simulation time in seconds |
-| `Throughput` | READ | Int32 | Total parts produced (monotonic) |
+Each machine node has ISA-95 sub-groups:
 
-**`System / Controls /`**
-
-| Variable | Access | Type | Description |
-|----------|--------|------|-------------|
-| `cmdPauseLine` | **WRITE** | Boolean | Pause/resume entire line |
-| `setInterarrivalTime` | **WRITE** | Double | Part arrival delay (0 = fast as possible) |
-
----
-
-### `Line1 / LineKPIs /`
-
-| Variable | Access | Type | Description |
-|----------|--------|------|-------------|
-| `TotalWIP` | READ | Int32 | Total WIP in all buffers |
-| `TotalScrap` | READ | Int32 | Total parts scrapped across all machines *(if scrap_sinks configured)* |
-| `ScrapRate` | READ | Double | TotalScrap / (Throughput + TotalScrap) *(if scrap_sinks configured)* |
-
-**`LineKPIs / LineOEE /`**
-
-| Variable | Access | Type | Description |
-|----------|--------|------|-------------|
-| `Availability` | READ | Double | Line availability (bottleneck) |
-| `Performance` | READ | Double | Line performance (bottleneck) |
-| `Quality` | READ | Double | Line quality |
-| `OEE` | READ | Double | Availability x Performance x Quality |
-
----
-
-### `Line1 / MachineN /` *(per machine)*
-
-| Variable | Access | Type | Description |
-|----------|--------|------|-------------|
-| `State` | READ | String | IDLE, PROCESSING, BLOCKED, STARVED, PAUSED, FAILED, UNDER_REPAIR |
-| `PartCount` | READ | Int32 | Parts processed (monotonic) |
-| `Utilisation` | READ | Double | ProcessingTime / TotalTime (0.0-1.0) |
-| `TargetPPM` | READ | Double | Target parts per minute (from config) |
-| `ActualPPM` | READ | Double | Actual parts per minute (measured) |
-| `BlockedTime` | READ | Double | Time spent waiting for downstream |
-| `StarvedTime` | READ | Double | Time spent waiting for upstream |
-| `DownTime` | READ | Double | Time spent failed or under repair |
-| `ProcessingTime` | READ | Double | Time spent actively processing |
-| `IdleTime` | READ | Double | Time spent idle |
-| `HealthState` | READ | Int32 | 0 = healthy, 1 = failed |
-| `HealthPercent` | READ | Double | Health percentage |
+| Sub-group | Variable | Type | Description |
+|-----------|----------|------|-------------|
+| `Identification/` | `EquipmentID`, `EquipmentClass` | String | Machine identity |
+| `OperationsState/` | `State` | String | IDLE, PROCESSING, BLOCKED, STARVED, PAUSED, FAILED, UNDER_REPAIR, DEGRADED |
+| | `HealthState` | Int32 | 0 = healthy, N = failed |
+| | `HealthPercent` | Double | Health percentage |
+| | `BlockedTime`, `StarvedTime`, `DownTime`, `ProcessingTime`, `IdleTime` | Double | Cumulative state times |
+| `OperationsPerformance/` | `PartCount` | Int32 | Parts processed (monotonic) |
+| | `Utilisation` | Double | ProcessingTime / TotalTime |
+| | `TargetPPM`, `ActualPPM` | Double | Target and actual parts per minute |
 
 **`MachineN / OEE /`**
 
@@ -1293,10 +1279,7 @@ All nodes live under `Objects / Line1 /`:
 | Variable | Access | Type | Description |
 |----------|--------|------|-------------|
 | `ActiveAlarmCount` | READ | Int32 | Number of active alarms |
-| `LastAlarmTime` | READ | DateTime | Most recent alarm timestamp |
-| `LastAlarmMessage` | READ | String | Most recent alarm text |
-| `LastAlarmSeverity` | READ | String | CRITICAL / MEDIUM / LOW / INFO |
-| `MachineFailureActive` | READ | Boolean | Failure alarm active |
+| `MachineFailedActive` | READ | Boolean | Failure alarm active |
 | `MaintenanceActive` | READ | Boolean | Maintenance alarm active |
 | `QualityAlertActive` | READ | Boolean | Quality alert active |
 
@@ -1353,11 +1336,11 @@ All nodes live under `Objects / Line1 /`:
 
 ---
 
-### `Line1 / BufferN /` *(per buffer)*
+### `Resources / BufferN /` *(per buffer)*
 
 | Variable | Access | Type | Description |
 |----------|--------|------|-------------|
-| `CurrentLevel` | READ | Int32 | Current WIP count |
+| `Level` | READ | Int32 | Current WIP count |
 | `Capacity` | READ | Int32 | Max buffer capacity |
 
 **`BufferN / Alarms /`**
@@ -1370,15 +1353,15 @@ All nodes live under `Objects / Line1 /`:
 
 ---
 
-### `Line1 / ScrapBinN /` *(per scrap sink, if configured)*
+### `Resources / ScrapBinN /` *(per scrap sink, if configured)*
 
 | Variable | Access | Type | Description |
 |----------|--------|------|-------------|
-| `CurrentLevel` | READ | Int32 | Number of scrapped parts in this bin |
+| `Level` | READ | Int32 | Number of scrapped parts in this bin |
 
 ---
 
-### `Line1 / Maintenance /`
+### `SupportFunctions / Maintenance /`
 
 | Variable | Access | Type | Description |
 |----------|--------|------|-------------|
@@ -1388,7 +1371,7 @@ All nodes live under `Objects / Line1 /`:
 
 ---
 
-### `Line1 / Shift /` *(if `shifts` configured)*
+### `SupportFunctions / ShiftManagement /` *(if `shifts` configured)*
 
 | Variable | Access | Type | Description |
 |----------|--------|------|-------------|
@@ -1400,7 +1383,7 @@ All nodes live under `Objects / Line1 /`:
 | `ShiftElapsedTime` | READ | Double | Time spent in current shift |
 | `ShiftTimeRemaining` | READ | Double | Countdown to next shift |
 
-**`Shift / CurrentShift /`** *(resets at each shift boundary)*
+**`ShiftManagement / CurrentShift /`** *(resets at each shift boundary)*
 
 | Variable | Access | Type | Description |
 |----------|--------|------|-------------|
@@ -1413,7 +1396,7 @@ All nodes live under `Objects / Line1 /`:
 | `Quality` | READ | Double | Shift quality (0.0-1.0) |
 | `OEE` | READ | Double | Shift OEE = A x P x Q |
 
-**`Shift / PreviousShift /`** *(snapshot of last completed shift)*
+**`ShiftManagement / PreviousShift /`** *(snapshot of last completed shift)*
 
 | Variable | Access | Type | Description |
 |----------|--------|------|-------------|
@@ -1425,7 +1408,7 @@ All nodes live under `Objects / Line1 /`:
 | `DefectRate` | READ | Double | Defect rate of previous shift |
 | `OEE` | READ | Double | OEE of previous shift |
 
-**`Shift / Totals /`** *(cumulative across all shifts, NEVER reset)*
+**`ShiftManagement / Totals /`** *(cumulative across all shifts, NEVER reset)*
 
 | Variable | Access | Type | Description |
 |----------|--------|------|-------------|
@@ -1437,7 +1420,7 @@ All nodes live under `Objects / Line1 /`:
 
 ---
 
-### `Line1 / EventLog /`
+### `EventLog /`
 
 | Variable | Access | Type | Description |
 |----------|--------|------|-------------|
@@ -1470,6 +1453,7 @@ python src/opcua_server.py [OPTIONS]
 |----------|-------------|---------|---------|
 | `--scenario` | Scenario name from YAML | balanced_line | `--scenario failure_line` |
 | `--seed` | Random seed (reproducibility) | None (random) | `--seed 42` |
+| `--trace` | Enable DES event tracing (pickle output) | off | `--trace` |
 
 **Examples:**
 
@@ -1823,7 +1807,7 @@ ModuleNotFoundError: No module named 'simantha'
 
 3. **Check Python version:**
    ```bash
-   python --version  # Should be 3.8+
+   python --version  # Should be 3.9+
    ```
 
 ---
@@ -2100,5 +2084,5 @@ For updates and contributions:
 
 ---
 
-*Document Version: 2.0*
-*Last Updated: 2026-02-14*
+*Document Version: 2.1*
+*Last Updated: 2026-02-22*

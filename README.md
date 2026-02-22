@@ -1,6 +1,6 @@
 # Simantha OPC UA Integration
 
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: Public Domain](https://img.shields.io/badge/License-Public%20Domain-green.svg)](https://github.com/usnistgov/simantha/blob/master/LICENSE)
 [![OPC UA](https://img.shields.io/badge/OPC%20UA-Compliant-orange.svg)](https://opcfoundation.org/)
 
@@ -10,27 +10,21 @@ A real-time **digital twin** of a manufacturing production line using [Simantha]
 
 ## 📋 Project Status
 
-**Status:** All 14 development phases complete
-**Last Updated:** 2026-02-14
+**Status:** Feature-complete manufacturing digital twin
+**Last Updated:** 2026-02-22
 
-### Phase Completion Status
+### Key Capabilities
 
-| Phase | Status | Features |
-|-------|--------|----------|
-| **Phase 1:** Simantha Baseline | ✅ **Complete** | 2-machine serial line with 3 scenarios (balanced, bottleneck, failures) |
-| **Phase 2:** OPC UA Read-Only | ✅ **Complete** | Real-time KPI monitoring via OPC UA |
-| **Phase 3:** Bidirectional Control | ✅ **Complete** | Global pause, arrival rate control |
-| **Phase 4:** Health & Degradation | ✅ **Complete** | Machine health tracking, maintenance modeling, failure events |
-| **Phase 5:** Enhanced State Logic | ✅ **Complete** | 6-state machine (IDLE/PROCESSING/BLOCKED/STARVED/FAILED/UNDER_REPAIR/PAUSED), real utilization, time tracking |
-| **Phase 6:** OEE Calculation | ✅ **Complete** | Per-machine and line-level OEE (Availability × Performance × Quality) |
-| **Phase 7:** Multi-Buffer Lines | ✅ **Complete** | 3+ machines, config-driven topologies |
-| **Phase 8:** Quality Modeling | ✅ **Complete** | Health-correlated defect tracking, real Quality OEE |
-| **Phase 9:** OPC UA Alarms & Events | ✅ **Complete** | Real-time alarm generation (failure, maintenance, quality alerts) |
-| **Phase 10:** Advanced Failure Modes | ✅ **Complete** | Multiple failure modes with scipy distributions (Weibull, exponential, lognormal), competing risks, MTBF/MTTR tracking |
-| **Phase 11:** SPC Quality Analytics | ✅ **Complete** | X-bar/R control charts, Cp/Cpk capability analysis, Western Electric rules, Six Sigma quality levels |
-| **Phase 12:** Shift Tracking | ✅ **Complete** | 8-hour shift patterns, per-shift metrics reset, shift-based OEE, automatic rotation |
-| **Phase 13:** Historical Data & Viz | ✅ **Complete** | Event-based CSV/InfluxDB/Neo4j logging, Grafana dashboards, graph DB topology & part tracing |
-| **Phase 14:** Scrap & Rework Routing | ✅ **Complete** | Quality-based part routing, scrap sinks, virtual rework, health-correlated defects inside simulation |
+| Area | Features |
+|------|----------|
+| **Simulation** | N-machine serial lines (2-10+), config-driven topologies, 20 built-in scenarios |
+| **OPC UA** | ISA-95/ISO 23247 aligned address space, bidirectional control (pause, arrival rate) |
+| **Reliability** | Multi-state health degradation, advanced failure modes (Weibull, exponential, lognormal), competing risks |
+| **Maintenance** | Corrective/preventive/predictive strategies, priority maintainer (FIFO, SPT, priority, bottleneck) |
+| **Quality** | Health-correlated defects, scrap/rework routing, SPC (X-bar/R, Cp/Cpk, Western Electric rules) |
+| **Production** | OEE (per-machine & line-level), shift management, warm-up periods, target PPM tracking |
+| **Data** | Event historians (CSV/InfluxDB/Neo4j), Grafana dashboards, dynamic Telegraf config generation |
+| **Web UI** | Flask dashboard with live KPIs, config editor, reports, and pipeline validation |
 
 ---
 
@@ -58,7 +52,7 @@ This project creates a **realistic manufacturing digital twin** that:
 - ✅ **SPC Analytics** - X-bar/R control charts, Cp/Cpk capability, Western Electric rules
 - ✅ **Shift Management** - Configurable shift rotation with per-shift metrics and OEE
 - ✅ **Alarms & Events** - Machine failure, quality, maintenance, and buffer alerts
-- ✅ **Enhanced State Detection** - 7 states: IDLE, PROCESSING, BLOCKED, STARVED, PAUSED, FAILED, UNDER_REPAIR
+- ✅ **Enhanced State Detection** - 8 states: IDLE, PROCESSING, BLOCKED, STARVED, PAUSED, FAILED, UNDER_REPAIR, DEGRADED
 - ✅ **Time Tracking** - Cumulative time in each state per machine
 - ✅ **Event Historian** - CSV, InfluxDB 2.x, Neo4j backends with edge-detection logging
 - ✅ **Grafana Dashboards** - Manufacturing overview, state timeline, alarm log, shift comparison
@@ -71,7 +65,7 @@ This project creates a **realistic manufacturing digital twin** that:
 
 ### Prerequisites
 
-- **Python 3.8+** with pip
+- **Python 3.9+** with pip (tested on 3.9, 3.10, 3.11)
 - **OPC UA Client** for testing (e.g., [UA Expert](https://www.unified-automation.com/products/development-tools/uaexpert.html))
 
 ### Installation
@@ -110,9 +104,21 @@ python src/opcua_server.py --scenario shift_line
 # Scrap & rework routing with defect sinks
 python src/opcua_server.py --scenario scrap_line
 
+# Warm-up period (skip transient phase for steady-state metrics)
+python src/opcua_server.py --scenario warm_up_line
+
+# Priority maintenance with bottleneck-first repair scheduling
+python src/opcua_server.py --scenario priority_maintenance_line
+
 # ALL features combined (failures, SPC, shifts, historian, scrap/rework)
 # --seed seeds both Python random and numpy for full reproducibility
 python src/opcua_server.py --scenario full_feature_line --seed 42
+
+# 8-machine max-scale scenario
+python src/opcua_server.py --scenario full_feature_8_machine_line --seed 42
+
+# Enable DES event tracing (outputs environment_trace.pkl)
+python src/opcua_server.py --scenario failure_line --trace
 ```
 
 **Expected output:**
@@ -134,7 +140,7 @@ python docker/webui/app.py
 # Open http://localhost:8080
 ```
 
-Features: scenario selection, live dashboard (per-machine OEE/PPM/SPC/shifts/scrap), and config editor at `/config`.
+Features: scenario selection, live dashboard (per-machine OEE/PPM/SPC/shifts/scrap), config editor at `/config`, post-run reports at `/reports`, and pipeline validation at `/validation`.
 
 **Docker mode (full stack):**
 ```bash
@@ -151,159 +157,119 @@ Includes the Web UI, InfluxDB for time-series storage, and Grafana for dashboard
 4. Drag variables to Data Access View to monitor live values
 
 **What to watch:**
-- `Machine1/HealthPercent` drops from 100 → 0 when M1 fails
-- `Maintenance/MaintenanceActive` becomes True during repairs
-- `Buffer1/CurrentLevel` drains when M1 is down
-- `System/Throughput` pauses during failures, resumes after repair
-- `Shift/CurrentShiftName` changes at shift boundaries (if using shift scenarios)
-- `Shift/ShiftTimeRemaining` counts down to next shift change
+
+The address space follows an ISA-95/ISO 23247 hierarchy. Browse to:
+`Objects → WeylandIndustries → LV426_Colony → AtmosphereProcessor01 → Nostromo_BioProductPakaging_Equipment`
+
+Under the Equipment node:
+- `Resources/Machine1/OperationsState/HealthPercent` drops from 100 → 0 when M1 fails
+- `SupportFunctions/Maintenance/MaintenanceActive` becomes True during repairs
+- `Resources/Buffer1/Level` drains when M1 is down
+- `OperationsPerformance/Throughput` pauses during failures, resumes after repair
+- `SupportFunctions/ShiftManagement/CurrentShiftName` changes at shift boundaries
+- `SupportFunctions/ShiftManagement/ShiftTimeRemaining` counts down to next shift change
+
+> **Note:** The enterprise/site/area/line names are configurable in your scenario YAML. The defaults above are playful placeholders.
 
 ---
 
 ## 🏗️ Architecture
 
 ```
-┌─────────────────┐
-│  OPC UA Client  │  (UA Expert, SCADA, MES)
-│   (Monitor &    │
-│    Control)     │
-└────────┬────────┘
-         │ OPC UA Protocol (opc.tcp://)
-         ▼
-┌─────────────────┐
-│  OPC UA Server  │  (python-opcua)
-│  Address Space  │  - Read-only: KPIs, states, health
-│  & Handlers     │  - Writable: cmdPauseLine, setInterarrivalTime
-└────────┬────────┘
-         │ Python API
-         ▼
-┌─────────────────┐
-│    Simantha     │  Discrete-Event Simulation
-│   Simulation    │  - Source → M1 → Buffer → M2 → Sink
-│     Engine      │  - Health degradation modeling
-│                 │  - Maintenance intervention
-└─────────────────┘
+┌─────────────────┐     ┌──────────────┐
+│  OPC UA Client  │     │   Flask UI   │  http://localhost:8080
+│ (UA Expert, MES)│     │ (Dashboard,  │  /config, /reports, /validation
+└────────┬────────┘     │  Config, etc)│
+         │ OPC UA       └──────┬───────┘
+         │ Protocol            │ OPC UA Client API
+         ▼                     ▼
+┌──────────────────────────────────────┐
+│         OPC UA Server (ISA-95)       │  (python-opcua)
+│  Enterprise/Site/Area/Line hierarchy │
+│  Writable: cmdPauseLine,             │
+│            setInterarrivalTime       │
+└────────────────┬─────────────────────┘
+                 │ Python API
+                 ▼
+┌──────────────────────────────────────┐
+│         Simantha Simulation          │  Discrete-Event Simulation
+│  Source → M1 → B1 → M2 → ... → Sink│  N-machine serial topology
+│  Health degradation, failures, SPC   │  Quality routing, shifts
+│  Maintenance (priority scheduling)   │
+└──────────────┬───────────────────────┘
+               │ Events
+               ▼
+┌──────────────────────────────────────┐
+│  Event Historian (CSV/InfluxDB/Neo4j)│
+│  Telegraf → InfluxDB → Grafana       │  (Docker stack)
+└──────────────────────────────────────┘
 ```
 
 ---
 
-## 📊 OPC UA Address Space
+## 📊 OPC UA Address Space (ISA-95/ISO 23247)
 
-### Current Structure
+The address space follows the ISA-95 (IEC 62264) equipment hierarchy. Enterprise/Site/Area/Line names are configurable in your scenario YAML.
+
+### Hierarchy Overview
 
 ```
 Objects/
-  └─ Line1/
-      ├─ System/
-      │    ├─ SimTime (double, READ-ONLY)           # Simulation time in seconds
-      │    ├─ Throughput (int, READ-ONLY)           # Total parts produced (monotonic)
-      │    └─ Controls/
-      │         ├─ cmdPauseLine (bool, WRITABLE)    # Pause entire line
-      │         └─ setInterarrivalTime (double, WRITABLE)  # Part arrival rate (0=fast, >0=delay)
-      │
-      ├─ LineKPIs/
-      │    ├─ TotalWIP (int, READ-ONLY)             # Work-in-process (buffer level)
-      │    ├─ TotalScrap (int, READ-ONLY)           # Total scrapped parts
-      │    ├─ ScrapRate (double, READ-ONLY)         # Scrap / (Output + Scrap)
-      │    └─ LineOEE/                              # Line-level OEE metrics
-      │         ├─ Availability (double, READ-ONLY) # Min of all machines (bottleneck)
-      │         ├─ Performance (double, READ-ONLY)  # Min of all machines (bottleneck)
-      │         ├─ Quality (double, READ-ONLY)      # Min of all machines (1.0 when no defects)
-      │         └─ OEE (double, READ-ONLY)          # Availability × Performance × Quality
-      │
-      ├─ Machine1/ (M1)
-      │    ├─ State (string, READ-ONLY)             # IDLE, PROCESSING, BLOCKED, STARVED, PAUSED, FAILED, UNDER_REPAIR
-      │    ├─ PartCount (int, READ-ONLY)            # Parts processed (monotonic)
-      │    ├─ Utilisation (double, READ-ONLY)       # ProcessingTime / TotalTime (range: 0.0-1.0)
-      │    ├─ TargetPPM (double, READ-ONLY)         # Target parts per minute (from config)
-      │    ├─ ActualPPM (double, READ-ONLY)         # Actual parts per minute (measured)
-      │    ├─ HealthState (int, READ-ONLY)          # 0=healthy, 1=failed
-      │    ├─ HealthPercent (double, READ-ONLY)     # 100=healthy, 0=failed
-      │    ├─ BlockedTime (double, READ-ONLY)       # Time spent waiting for downstream
-      │    ├─ StarvedTime (double, READ-ONLY)       # Time spent waiting for upstream
-      │    ├─ DownTime (double, READ-ONLY)          # Time spent failed or under repair
-      │    ├─ ProcessingTime (double, READ-ONLY)    # Time spent actively processing parts
-      │    ├─ IdleTime (double, READ-ONLY)          # Time spent idle (waiting for work)
-      │    └─ OEE/                                  # OEE metrics (bucketed, updates every 10 min)
-      │         ├─ Availability (double, READ-ONLY) # (SimTime - Downtime) / SimTime
-      │         ├─ Performance (double, READ-ONLY)  # PartsMade / TheoreticalOutput
-      │         ├─ Quality (double, READ-ONLY)      # GoodParts / TotalParts (1.0 when no defects)
-      │         ├─ OEE (double, READ-ONLY)          # Availability × Performance × Quality
-      │         ├─ GoodPartCount (int, READ-ONLY)   # Parts without defects (quality tracking)
-      │         ├─ DefectivePartCount (int, READ-ONLY) # Defective parts (quality tracking)
-      │         └─ TheoreticalOutput (double, READ-ONLY) # Diagnostic: max possible output
-      │    └─ QualityRouting/                        # (if quality_routing enabled)
-      │         ├─ ScrapCount (int, READ-ONLY)       # Parts sent to scrap sink
-      │         ├─ ReworkCount (int, READ-ONLY)      # Total rework attempts
-      │         ├─ ReworkSuccessCount (int, READ-ONLY) # Successful reworks
-      │         ├─ ReworkSuccessRate (double, READ-ONLY) # Success / Attempts
-      │         └─ GoodCount (int, READ-ONLY)        # Parts passing quality check
-      │
-      ├─ Buffer1/
-      │    ├─ CurrentLevel (int, READ-ONLY)         # Current WIP count
-      │    └─ Capacity (int, READ-ONLY)             # Max buffer capacity (10)
-      │
-      ├─ Machine2/ (M2)
-      │    ├─ State (string, READ-ONLY)             # IDLE, PROCESSING, BLOCKED, STARVED, PAUSED
-      │    ├─ PartCount (int, READ-ONLY)            # Parts processed (monotonic)
-      │    ├─ Utilisation (double, READ-ONLY)       # ProcessingTime / TotalTime (range: 0.0-1.0)
-      │    ├─ BlockedTime (double, READ-ONLY)       # Time spent waiting for downstream
-      │    ├─ StarvedTime (double, READ-ONLY)       # Time spent waiting for upstream
-      │    ├─ DownTime (double, READ-ONLY)          # Time spent down (M2 has no degradation, so always 0)
-      │    ├─ ProcessingTime (double, READ-ONLY)    # Time spent actively processing parts
-      │    ├─ IdleTime (double, READ-ONLY)          # Time spent idle (waiting for work)
-      │    └─ OEE/                                  # OEE metrics (bucketed, updates every 10 min)
-      │         ├─ Availability (double, READ-ONLY) # (SimTime - Downtime) / SimTime
-      │         ├─ Performance (double, READ-ONLY)  # PartsMade / TheoreticalOutput
-      │         ├─ Quality (double, READ-ONLY)      # GoodParts / TotalParts (1.0 when no defects)
-      │         ├─ OEE (double, READ-ONLY)          # Availability × Performance × Quality
-      │         ├─ GoodPartCount (int, READ-ONLY)   # Parts without defects (quality tracking)
-      │         ├─ DefectivePartCount (int, READ-ONLY) # Defective parts (quality tracking)
-      │         └─ TheoreticalOutput (double, READ-ONLY) # Diagnostic: max possible output
-      │
-      ├─ Maintenance/
-      │    ├─ MaintenanceActive (bool, READ-ONLY)   # True when repairing
-      │    ├─ QueueLength (int, READ-ONLY)          # Machines waiting for repair
-      │    └─ TotalRepairs (int, READ-ONLY)         # Completed repairs count
-      │
-      ├─ ScrapBin1/                                  # (if scrap_sinks configured)
-      │    └─ CurrentLevel (int, READ-ONLY)         # Scrapped parts count
-      │
-      ├─ ScrapBin2/                                  # (one node per scrap sink)
-      │    └─ CurrentLevel (int, READ-ONLY)
-      │
-      └─ Shift/                                     # (if shifts configured)
-           ├─ CurrentShiftNumber (int, READ-ONLY)   # Sequential counter (1, 2, 3...)
-           ├─ CurrentShiftName (string, READ-ONLY)  # "Day Shift", "Evening Shift", etc.
-           ├─ ShiftElapsedTime (double, READ-ONLY)  # Time in current shift
-           ├─ ShiftTimeRemaining (double, READ-ONLY)# Countdown to next shift
-           ├─ CurrentShift/                          # Resets each shift boundary
-           │    ├─ PartsProduced (int, READ-ONLY)
-           │    ├─ DefectRate (double, READ-ONLY)
-           │    └─ OEE (double, READ-ONLY)
-           ├─ PreviousShift/                         # Last completed shift snapshot
-           │    ├─ ShiftName (string, READ-ONLY)
-           │    ├─ PartsProduced (int, READ-ONLY)
-           │    └─ OEE (double, READ-ONLY)
-           └─ Totals/                                # Cumulative, never reset
-                ├─ TotalPartsProduced (int, READ-ONLY)
-                └─ TotalShiftsCompleted (int, READ-ONLY)
+  └─ {Enterprise}/                          # e.g. WeylandIndustries
+      └─ {Site}/                            # e.g. LV426_Colony
+          └─ {Area}/                        # e.g. AtmosphereProcessor01
+              ├─ {Line}_Equipment/          # Equipment model (live process data)
+              │   ├─ Identification/        # Line name, description
+              │   ├─ OperationsState/       # SimTime, LineState, controls
+              │   ├─ OperationsPerformance/ # Throughput, WIP, scrap KPIs, line OEE
+              │   ├─ Resources/
+              │   │   ├─ Machine1/ ... MachineN/    # Per-machine nodes
+              │   │   ├─ Buffer1/ ... BufferN/      # Per-buffer nodes
+              │   │   └─ ScrapBin1/ ... ScrapBinN/  # Scrap sinks (if configured)
+              │   └─ SupportFunctions/
+              │       ├─ Maintenance/               # Maintainer status
+              │       └─ ShiftManagement/           # Shift tracking (if configured)
+              │
+              └─ {Line}_Asset/              # Physical asset model (static metadata)
+                  ├─ Identification/        # Model, manufacturer, serial
+                  ├─ M1_Asset/ ... MN_Asset/# Per-machine physical specs
+                  └─ MaintenanceLog/        # Total repairs
 ```
 
-### Variable Access Rights
+### Per-Machine Node Structure
 
-**Read-Only (Monitoring):**
-All KPIs, states, health metrics, buffer levels, maintenance status
+Each `MachineN/` under Resources contains:
 
-**Writable (Control):**
-- `System/Controls/cmdPauseLine` - Pause/resume entire line (binary command)
-- `System/Controls/setInterarrivalTime` - Adjust part arrival rate (setpoint)
+```
+MachineN/
+  ├─ Identification/          Name, CycleTime, TargetPPM
+  ├─ OperationsState/         State, HealthState, HealthPercent, BlockedTime, StarvedTime,
+  │                           DownTime, ProcessingTime, IdleTime
+  ├─ OperationsPerformance/   PartCount, Utilisation, ActualPPM
+  ├─ OEE/                     Availability, Performance, Quality, OEE,
+  │                           GoodPartCount, DefectivePartCount, TheoreticalOutput
+  ├─ Alarms/                  ActiveAlarmCount, MachineFailedActive, MaintenanceActive, QualityAlertActive
+  ├─ FailureModes/            ActiveFailureMode, {Mode}FailureCount/TotalDowntime/MTBF/MTTR  (if advanced failures)
+  ├─ MaintenanceStrategy/     StrategyType, NextPMScheduled, PMCount, CMCount               (if advanced failures)
+  ├─ QualityRouting/          ScrapCount, ReworkCount, ReworkSuccessCount/Rate, GoodCount    (if quality routing)
+  └─ SPC/                     XBarChart/, RChart/, Capability/, Status/                     (if SPC)
+```
+
+**Machine States (8):** IDLE, PROCESSING, BLOCKED, STARVED, PAUSED, FAILED, UNDER_REPAIR, DEGRADED
+
+### Writable Variables (Control)
+
+Only two variables accept writes from OPC UA clients:
+- `OperationsState/Controls/cmdPauseLine` (Boolean) - Pause/resume entire line
+- `OperationsState/Controls/setInterarrivalTime` (Double) - Part arrival delay (0 = fast as possible)
+
+All other variables are read-only.
 
 ---
 
 ## 🧪 Testing & Scenarios
 
-### Available Scenarios (16 total)
+### Available Scenarios (20 total)
 
 | Scenario | Machines | Features | Complexity |
 |----------|----------|----------|------------|
@@ -322,22 +288,29 @@ All KPIs, states, health metrics, buffer levels, maintenance status
 | `scrap_line` | 2 | Scrap sinks + health-correlated routing | Intermediate |
 | `rework_line` | 2 | Virtual rework before scrapping | Intermediate |
 | `full_feature_line` | 2 | **All features combined** (failures, SPC, shifts, historian, scrap/rework) | Expert |
+| `full_feature_8_machine_line` | 8 | Max-scale: all features on 8 machines | Expert |
+| `warm_up_line` | 2 | Warm-up period for steady-state metrics | Intermediate |
+| `priority_maintenance_line` | 3 | Priority maintainer with bottleneck-first strategy | Advanced |
+| `priority_user_line` | 3 | Priority maintainer with user-defined priorities | Advanced |
+| `multi_state_degradation_line` | 2 | Multi-state health degradation (5 states) | Advanced |
 
 ### Run Tests
 
 ```bash
-# All tests
-pytest tests/ -v
+# All tests (excludes slow integration tests)
+pytest tests/ -v --ignore=tests/test_advanced_scenarios.py --ignore=tests/test_opcua_integration.py
 
 # Specific test suites
-pytest tests/test_spc_analytics.py -v        # SPC (23 tests)
-pytest tests/test_failure_modes.py -v         # Failure modes (29 tests)
 pytest tests/test_config_validation.py -v     # Config validation (48 tests)
 pytest tests/test_event_historian.py -v       # Event historian (38 tests)
+pytest tests/test_report_engine.py -v         # Report engine (36 tests)
+pytest tests/test_quality_routing.py -v       # Scrap & rework routing (30 tests)
+pytest tests/test_failure_modes.py -v         # Failure modes (29 tests)
+pytest tests/test_spc_analytics.py -v         # SPC (23 tests)
 pytest tests/test_neo4j_historian.py -v       # Neo4j historian (23 tests)
-pytest tests/test_quality_routing.py -v      # Scrap & rework routing (30 tests)
-pytest tests/test_opcua_integration.py -v     # OPC UA integration
-pytest tests/test_scenarios.py -v             # Scenario validation
+pytest tests/test_new_features.py -v          # New features (55 tests)
+pytest tests/test_telegraf_generator.py -v    # Telegraf config gen
+pytest tests/test_opcua_integration.py -v     # OPC UA integration (long-running)
 ```
 
 ### Verify Real-Time OPC UA Server
@@ -388,14 +361,15 @@ This naturally creates bottlenecks, buffer utilization, and WIP fluctuations.
 
 ```python
 sim_time = 0.0
+warm_up_time = int(config.get("warm_up_time", 0))
 while True:
     # Read controls, modify source.interarrival_time if needed
     if not paused:
         sim_time += sim_step  # ALWAYS increment before simulate()
-        system.simulate(simulation_time=sim_time)  # First call at time=1.0
+        system.simulate(warm_up_time=warm_up_time, simulation_time=sim_time)
 ```
 
-**Never call `system.simulate(simulation_time=0)` or with time ≤ 0**
+**Never call `system.simulate(simulation_time=0)` or with time ≤ 0.** The `warm_up_time` parameter causes Simantha to skip data collection during the transient phase, producing more accurate steady-state metrics.
 
 ### Monotonic Counter Pattern
 
@@ -416,43 +390,51 @@ if current_sink_level > prev_sink_level:
 ```
 simantha-opcua/
 ├─ src/
-│   ├─ opcua_server.py            # Main OPC UA server
-│   ├─ simantha_baseline.py       # Baseline scenarios (batch mode)
+│   ├─ opcua_server.py            # Main entry point: OPC UA server + simulation loop
 │   ├─ config_loader.py           # YAML configuration loader + validation
-│   ├─ failure_modes.py           # Statistical failure distributions
-│   ├─ advanced_machine.py        # AdvancedMachine class
-│   ├─ spc_analytics.py           # SPC control charts & capability
+│   ├─ advanced_machine.py        # AdvancedMachine class (failure mode integration)
+│   ├─ quality_machine.py         # QualityRoutingMixin + scrap/rework routing
+│   ├─ priority_maintainer.py     # PriorityMaintainer (FIFO/SPT/priority/bottleneck)
+│   ├─ failure_modes.py           # Statistical failure distributions (Weibull, etc.)
+│   ├─ spc_analytics.py           # SPC control charts & capability analysis
 │   ├─ shift_manager.py           # Shift tracking & rotation
 │   ├─ event_historian.py         # CSV/InfluxDB event historian
 │   ├─ neo4j_historian.py         # Neo4j graph DB historian
-│   └─ quality_machine.py         # QualityRoutingMixin + scrap routing
+│   └─ simantha_baseline.py       # Standalone baseline scenarios (batch mode)
 │
 ├─ config/
-│   └─ line_models.yaml           # Scenario definitions (16 scenarios)
+│   └─ line_models.yaml           # Scenario definitions (20 scenarios)
 │
-├─ tests/
-│   ├─ conftest.py                # Pytest fixtures (OPC UA server/client)
+├─ tests/                          # ~400 tests
 │   ├─ factories.py               # Shared test factories (make_event, make_part, etc.)
-│   ├─ test_opcua_integration.py  # OPC UA integration tests
-│   ├─ test_scenarios.py          # Scenario validation tests
+│   ├─ test_new_features.py       # Warm-up, priority maintainer, degradation (55 tests)
 │   ├─ test_config_validation.py  # Configuration validation (48 tests)
-│   ├─ test_failure_modes.py      # Failure mode unit tests (29 tests)
-│   ├─ test_distribution_validation.py  # Statistical distribution tests
-│   ├─ test_advanced_scenarios.py # Advanced scenario integration tests
-│   ├─ test_spc_analytics.py      # SPC analytics unit tests (23 tests)
 │   ├─ test_event_historian.py    # Event historian tests (38 tests)
-│   ├─ test_neo4j_historian.py    # Neo4j historian tests (23 tests)
-│   ├─ test_quality_routing.py   # Scrap & rework routing tests (30 tests)
-│   └─ validate_opcua_server.py   # Server validation script
+│   ├─ test_report_engine.py      # Report engine tests (36 tests)
+│   ├─ test_quality_routing.py    # Scrap & rework routing tests (30 tests)
+│   ├─ test_failure_modes.py      # Failure mode unit tests (29 tests)
+│   ├─ test_spc_analytics.py      # SPC analytics (23 tests)
+│   ├─ test_neo4j_historian.py    # Neo4j historian (23 tests)
+│   ├─ test_telegraf_generator.py # Dynamic Telegraf config generation
+│   ├─ test_distribution_validation.py  # Statistical distribution tests (slow)
+│   └─ ...                        # Integration, scenario, topology tests
 │
 ├─ docker/
 │   ├─ webui/
 │   │   ├─ app.py                 # Flask web dashboard (local + Docker)
-│   │   └─ templates/             # HTML templates
-│   └─ docker-compose.yml        # Full stack: Web UI + InfluxDB + Grafana
+│   │   └─ templates/             # HTML: dashboard, config editor, reports, validation
+│   ├─ telegraf/
+│   │   ├─ generate_telegraf_conf.py  # Dynamic Telegraf config from scenario YAML
+│   │   └─ telegraf.conf              # Generated/fallback Telegraf config
+│   ├─ docker-compose.yml         # Full stack: Web UI + InfluxDB + Telegraf + Grafana
+│   └─ entrypoint.sh              # Container startup (generates Telegraf config)
+│
+├─ tools/
+│   ├─ report_engine.py           # Post-run analysis: OEE, throughput, anomalies
+│   └─ analyze_historian.py       # InfluxDB/Telegraf pipeline validation
 │
 ├─ grafana/
-│   ├─ dashboards/                # 4 Grafana dashboard JSON templates
+│   ├─ dashboards/                # Grafana dashboard JSON templates
 │   └─ README.md                  # InfluxDB + Grafana setup guide
 │
 ├─ docs/
@@ -461,7 +443,7 @@ simantha-opcua/
 │   └─ address_space.md           # OPC UA address space reference
 │
 ├─ requirements.txt               # Python dependencies
-├─ LICENSE
+├─ CLAUDE.md                      # Developer guidance for AI assistants
 └─ README.md
 ```
 
@@ -497,243 +479,28 @@ simantha-opcua/
 
 ## 🗺️ Roadmap
 
-### Completed Phases
+### Recent Additions (2026-02-21)
 
-| Phase | Features |
-|-------|----------|
-| **Phase 5** | Enhanced State Logic - 6-state machine, BLOCKED/STARVED detection, time tracking |
-| **Phase 6** | OEE Calculation - Per-machine & line-level Availability x Performance x Quality |
-| **Phase 7** | Multi-Buffer Lines - Config-driven N-machine topologies, YAML scenarios |
-| **Phase 8** | Quality Modeling - Health-correlated defects, individual part tracking, First Pass Yield |
-| **Phase 9** | OPC UA Alarms - Machine failure, maintenance, quality, buffer alerts with edge detection |
-| **Phase 10** | Advanced Failures - Weibull/exponential distributions, competing risks, MTBF/MTTR |
-| **Phase 11** | SPC Analytics - X-bar/R charts, Cp/Cpk capability, Western Electric rules, Six Sigma |
-| **Phase 12** | Shift Tracking - 8-hour shift rotation, per-shift metrics reset, shift-based OEE |
-| **Phase 13** | Historical Data - Event-based CSV/InfluxDB/Neo4j logging, Grafana dashboards |
-| **Phase 14** | Scrap & Rework Routing - Quality-based part routing, scrap sinks, virtual rework |
+- **Warm-up periods** — `warm_up_time` config parameter skips transient data collection
+- **Priority Maintainer** — `PriorityMaintainer` with FIFO, SPT, priority, and bottleneck-first scheduling
+- **Multi-state degradation** — `health_states` config with configurable h_max, p_degrade, and CBM thresholds
+- **DEGRADED state** — New machine state for health > 0 but not yet failed
+- **ISA-95 address space** — OPC UA hierarchy aligned to IEC 62264 / ISO 23247
+- **Dynamic Telegraf config** — Auto-generated from scenario YAML for any number of machines
+- **Web UI reports** — Post-run analysis at `/reports` with OEE charts and anomaly detection
+- **Pipeline validation** — Data pipeline health check at `/validation`
+- **8-machine scenario** — `full_feature_8_machine_line` for max-scale testing
+- **Event tracing** — `--trace` CLI flag for DES event trace output
+
+### Future
+
+- **Planned Failures** — `Machine(planned_failure=(time, duration))` for scheduled downtime
+- **Parallel Replications** — `iterate_simulation(replications=30)` batch analysis mode
+- **Part Type Customization** — Custom Part subclass with product_family, order_id
+- **Parallel Lines & Assembly** — Multi-line coordination
+- **Energy/Sustainability Modeling**
 
 See the [User Manual](docs/user_manual.md) for detailed documentation.
-
-### Shift Tracking & Management ✅
-
-**Status:** Complete (2026-02-08)
-
-Production shift management with automatic rotation, per-shift metrics, and cumulative totals.
-
-**Key Features:**
-
-- **Automatic Shift Rotation**: Configurable shift schedules (2-shift, 3-shift, custom)
-- **Per-Shift Metrics Reset**: Parts, defects, OEE reset at each shift boundary
-- **Cumulative Totals**: Overall production totals preserved across all shifts
-- **Previous Shift Summary**: Compare current vs. previous shift performance
-- **Time Tracking**: Elapsed time and countdown to next shift change
-- **Per-Machine Tracking**: Failure counts and state time per machine per shift
-- **Backward Compatible**: Optional feature, only enabled when `shifts` block present in config
-
-**Configuration:**
-
-```yaml
-# Add to any scenario in config/line_models.yaml
-shifts:
-  schedule:
-    - name: "Day Shift"
-      duration: 28800        # 8 hours in seconds
-      start_offset: 0
-    - name: "Evening Shift"
-      duration: 28800
-      start_offset: 28800
-    - name: "Night Shift"
-      duration: 28800
-      start_offset: 57600
-```
-
-**Available Scenarios:**
-
-- `shift_line`: 2-machine line with 3-shift rotation (beginner)
-- `advanced_shift_line`: Full-featured line with shifts + advanced failures + SPC (expert)
-
-**Run:**
-
-```bash
-python src/opcua_server.py --scenario shift_line
-python src/opcua_server.py --scenario advanced_shift_line
-```
-
-**OPC UA Variables (Shift Tracking):**
-
-```plaintext
-Line1/Shift/
-  CurrentShiftNumber     (Int32)   - Sequential counter (1, 2, 3...)
-  CurrentShiftName       (String)  - "Day Shift", "Evening Shift", etc.
-  ShiftElapsedTime       (Double)  - Time spent in current shift
-  ShiftTimeRemaining     (Double)  - Countdown to next shift
-
-  CurrentShift/                    - Resets at each shift boundary
-    PartsProduced        (Int32)
-    GoodParts            (Int32)
-    DefectiveParts       (Int32)
-    DefectRate           (Double)
-    Availability         (Double)
-    Performance          (Double)
-    Quality              (Double)
-    OEE                  (Double)
-
-  PreviousShift/                   - Snapshot of last completed shift
-    ShiftNumber          (Int32)
-    ShiftName            (String)
-    PartsProduced        (Int32)
-    OEE                  (Double)
-
-  Totals/                          - Cumulative, NEVER reset
-    TotalPartsProduced   (Int32)
-    TotalGoodParts       (Int32)
-    TotalDefectiveParts  (Int32)
-    TotalDefectRate      (Double)
-    TotalShiftsCompleted (Int32)
-```
-
----
-
-### Historical Data & Visualization
-
-Event-based logging to CSV, InfluxDB 2.x, and Neo4j with Grafana dashboard templates.
-
-**Run:**
-
-```bash
-python src/opcua_server.py --scenario historian_line
-```
-
-**Features:**
-
-- Event-based logging (state changes, alarms, shifts, SPC violations) - NOT every simulation step
-- CSV backend (zero dependencies, always-on)
-- InfluxDB 2.x backend (time-series DB for Grafana)
-- Neo4j backend (graph DB for topology + part traceability)
-- 4 Grafana dashboard templates (overview, state timeline, alarm log, shift comparison)
-- Environment variable substitution for secrets (`${INFLUXDB_TOKEN}`)
-- File rotation (size-based and shift-based)
-
-**Configuration (in YAML):**
-
-```yaml
-historian:
-  enabled: true
-  csv:
-    enabled: true
-    output_dir: "results/historian"
-  influxdb:
-    enabled: false
-    url: "http://localhost:8086"
-    token: "${INFLUXDB_TOKEN}"
-    org: "simantha"
-    bucket: "manufacturing"
-  neo4j:
-    enabled: false
-    uri: "bolt://localhost:7687"
-    user: "neo4j"
-    password: "${NEO4J_PASSWORD}"
-    track_parts: true
-  events:
-    state_changes: true
-    alarms: true
-    shift_changes: true
-    production_summary: true
-    production_summary_interval: 60
-```
-
-See [grafana/README.md](grafana/README.md) for InfluxDB + Grafana setup instructions.
-
----
-
-### Scrap & Rework Routing ✅
-
-**Status:** Complete (2026-02-09)
-
-Quality-based part routing that diverts defective parts to scrap sinks, with optional virtual rework before scrapping.
-
-**Key Features:**
-
-- **Quality Routing Inside Simulation**: Defect decisions made per-part in `output_addon_process()`, not statistically in the main loop
-- **Scrap Sinks**: Dedicated bins that collect defective parts (not in the main serial chain)
-- **Virtual Rework**: Probabilistic rework at the station — successful rework clears the defect
-- **Health Correlation**: Defect rate increases with machine degradation (`defect_rate * (1 + health_multiplier * health_state)`)
-- **Buffer Reservation Fix**: Proper bookkeeping when redirecting parts mid-flow
-- **Historian Events**: SCRAP and REWORK events logged with edge detection
-- **Full Feature Scenario**: `full_feature_line` combines ALL phases (failures, SPC, shifts, historian, scrap/rework)
-
-**Architecture:**
-```
-Source → M1 → B1 → M2 → Sink    (main serial chain)
-              │           │
-              ↓           ↓
-          ScrapBin1   ScrapBin2   (scrap sinks, NOT in downstream)
-```
-
-**Configuration:**
-```yaml
-machines:
-  - name: M1
-    cycle_time: 1              # or use target_ppm: 60 (derives cycle_time = 60/target_ppm)
-    quality_routing:
-      enabled: true
-      mode: scrap_and_rework    # scrap, rework, or scrap_and_rework
-      defect_rate: 0.05
-      health_multiplier: 5.0
-      enable_health_correlation: true
-      rework_success_rate: 0.7
-      max_rework: 3
-      scrap_sink: ScrapBin1
-
-scrap_sinks:
-  - name: ScrapBin1
-```
-
-**Available Scenarios:**
-
-- `scrap_line`: 2-machine line with scrap sinks and health-correlated quality routing
-- `rework_line`: 2-machine line with virtual rework (70% success rate) before scrapping
-- `full_feature_line`: All features combined — advanced failures, SPC, shifts, historian, scrap & rework
-
-**Run:**
-```bash
-python src/opcua_server.py --scenario scrap_line --seed 42
-python src/opcua_server.py --scenario rework_line --seed 42
-python src/opcua_server.py --scenario full_feature_line --seed 42
-```
-
-**OPC UA Variables (Scrap & Rework):**
-```plaintext
-Machine1/QualityRouting/           (only for machines with quality_routing)
-  ScrapCount         (Int32)       Parts diverted to scrap sink
-  ReworkCount        (Int32)       Total rework attempts
-  ReworkSuccessCount (Int32)       Successful reworks (part saved)
-  ReworkSuccessRate  (Double)      Success / Attempts
-  GoodCount          (Int32)       Parts passing quality check
-
-LineKPIs/
-  TotalScrap         (Int32)       Total scrapped parts across all sinks
-  ScrapRate          (Double)      Scrap / (Output + Scrap)
-
-ScrapBin1/                         (one node per scrap sink)
-  CurrentLevel       (Int32)       Accumulated scrapped parts
-```
-
-**CSV Historian Output:**
-
-When running with historian enabled, scrap and rework events are logged to CSV:
-```
-results/historian/full_feature_line_20260209_143000_events.csv
-```
-
-Event types include: `STATE_CHANGE`, `ALARM`, `SHIFT_CHANGE`, `SCRAP`, `REWORK`, `PRODUCTION_SUMMARY`
-
----
-
-### Future Phases
-
-- **Parallel Lines & Assembly** - Multi-line coordination
-- **Energy/Sustainability Modeling**
 
 ---
 
