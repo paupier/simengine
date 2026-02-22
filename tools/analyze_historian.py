@@ -407,11 +407,12 @@ def query_influxdb_telegraf(influx_url, influx_token, influx_org, influx_bucket)
     result["oee_timeseries"] = oee_values
 
     # 5. Per-machine partcounts
+    # Field names are prefixed: M1_PartCount, M2_PartCount, etc.
     flux_parts = f'''
     from(bucket: "{influx_bucket}")
       |> range(start: 0)
       |> filter(fn: (r) => r._measurement == "opcua")
-      |> filter(fn: (r) => r._field == "PartCount")
+      |> filter(fn: (r) => r._field =~ /_PartCount$/)
       |> filter(fn: (r) => r.source_type == "machine")
       |> last()
     '''
@@ -424,11 +425,12 @@ def query_influxdb_telegraf(influx_url, influx_token, influx_org, influx_bucket)
     result["machine_partcounts"] = machine_partcounts
 
     # 6. Buffer levels
+    # Field names are prefixed: B1_Level, B2_Level, etc.
     flux_buf = f'''
     from(bucket: "{influx_bucket}")
       |> range(start: 0)
       |> filter(fn: (r) => r._measurement == "opcua")
-      |> filter(fn: (r) => r._field == "CurrentLevel")
+      |> filter(fn: (r) => r._field =~ /_Level$/)
       |> filter(fn: (r) => r.source_type == "buffer")
       |> last()
     '''

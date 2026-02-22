@@ -72,18 +72,19 @@ class AdvancedMachine(Machine):
         self.total_pm_count = 0  # Preventive maintenance count
         self.total_cm_count = 0  # Corrective maintenance count
 
-        # Create minimal 2-state degradation matrix for Simantha compatibility
+        # Use provided degradation_matrix from kwargs (e.g., multi-state from config),
+        # or create minimal 2-state matrix for Simantha compatibility.
         # State 0 = healthy, State 1 = failed
         # Matrix is NOT used for sampling (we override those methods),
         # but Simantha needs it for state count and internal bookkeeping
-        degradation_matrix = [
+        degradation_matrix = kwargs.pop("degradation_matrix", [
             [0.99, 0.01],  # Healthy → Failed (probabilities not used)
             [0.0, 1.0],     # Failed is absorbing (probabilities not used)
-        ]
+        ])
 
-        # If maintenance strategy is predictive, set CBM threshold
-        cbm_threshold = None
-        if self.maintenance_strategy.get("type") == "predictive":
+        # CBM threshold: prefer kwargs (from config), else from maintenance_strategy
+        cbm_threshold = kwargs.pop("cbm_threshold", None)
+        if cbm_threshold is None and self.maintenance_strategy.get("type") == "predictive":
             cbm_threshold = self.maintenance_strategy.get("cbm_threshold", 1)
 
         # Initialize parent Machine class

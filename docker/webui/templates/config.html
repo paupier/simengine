@@ -18,25 +18,58 @@
             max-height: 500px;
             overflow-y: auto;
         }
-        .machine-section, .buffer-section {
+        .machine-section {
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 14px;
+            margin-bottom: 12px;
+            background: white;
+        }
+        .buffer-section {
             border: 1px solid #dee2e6;
             border-radius: 6px;
-            padding: 12px;
-            margin-bottom: 10px;
+            padding: 10px;
+            margin-bottom: 8px;
         }
-        .remove-btn { cursor: pointer; color: #dc3545; }
-        .tooltip-hint { cursor: help; color: #6c757d; font-size: 0.75rem; }
+        .remove-btn { cursor: pointer; color: #dc3545; font-size: 1.2rem; }
+        .remove-btn:hover { color: #b02a37; }
+        .help-icon {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 16px; height: 16px; border-radius: 50%;
+            background: #e9ecef; color: #6c757d;
+            font-size: 0.65rem; font-weight: bold; cursor: help;
+            margin-left: 3px; vertical-align: middle;
+        }
+        .help-icon:hover { background: #0d6efd; color: white; }
         .ppm-formula { font-size: 0.75rem; color: #6c757d; font-style: italic; margin-top: 2px; }
         #scenario-description { font-size: 0.85rem; color: #6c757d; margin-top: 4px; }
-        .feature-detail {
-            font-size: 0.75rem;
-            color: #6c757d;
-            background: #f8f9fa;
-            border-left: 3px solid #dee2e6;
-            padding: 4px 8px;
-            margin: 4px 0;
-            font-family: 'Courier New', monospace;
+        .feature-badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+        .feature-badge {
+            font-size: 0.7rem; padding: 2px 8px; border-radius: 10px;
+            background: #e9ecef; color: #495057;
         }
+        .feature-badge.active { background: #0d6efd22; color: #0d6efd; border: 1px solid #0d6efd44; }
+        .feature-badge.active-green { background: #19875422; color: #198754; border: 1px solid #19875444; }
+        .feature-badge.active-orange { background: #fd7e1422; color: #fd7e14; border: 1px solid #fd7e1444; }
+        .feature-badge.active-purple { background: #6f42c122; color: #6f42c1; border: 1px solid #6f42c144; }
+        .detail-panel {
+            font-size: 0.78rem; color: #495057;
+            background: #f8f9fa; border-radius: 6px;
+            padding: 10px 12px; margin-top: 8px;
+            border-left: 3px solid #0d6efd;
+        }
+        .detail-panel dt { font-weight: 600; color: #212529; }
+        .detail-panel dd { margin-bottom: 4px; margin-left: 0; }
+        .detail-toggle {
+            font-size: 0.75rem; color: #6c757d; cursor: pointer;
+            border: none; background: none; padding: 0;
+        }
+        .detail-toggle:hover { color: #0d6efd; }
+        .feature-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+        .feature-item { display: flex; align-items: center; gap: 4px; }
+        .degradation-inline { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
+        .degradation-inline label { font-size: 0.75rem; color: #6c757d; margin: 0; white-space: nowrap; }
+        .degradation-inline input { width: 65px; }
     </style>
 </head>
 <body>
@@ -84,14 +117,26 @@
                         <h6>Buffers</h6>
                         <div id="buffers-container"></div>
 
-                        <!-- Features -->
-                        <h6>Features</h6>
+                        <!-- Line-level settings -->
+                        <h6>Line Settings</h6>
+                        <div class="row g-2 mb-3">
+                            <div class="col-md-4">
+                                <label class="form-label small">Warm-Up Time (s)
+                                    <span class="help-icon" data-bs-toggle="tooltip" data-bs-placement="top"
+                                        title="Seconds of warm-up before data collection starts. During warm-up, the simulation runs but metrics (sink.level, parts_made, OEE) are not recorded. Use this to reach steady-state before measuring performance. Typical values: 300-600s for lines with failures.">?</span>
+                                </label>
+                                <input type="number" class="form-control form-control-sm" id="warm-up-time" value="0" min="0" step="60" placeholder="0">
+                            </div>
+                        </div>
+
+                        <h6>Line-Level Features</h6>
                         <div class="row mb-3">
                             <div class="col-md-4">
                                 <div class="form-check">
                                     <input class="form-check-input" type="checkbox" id="feat-maintainer">
                                     <label class="form-check-label" for="feat-maintainer">Maintainer
-                                        <span class="tooltip-hint" data-bs-toggle="tooltip" title="Shared repair resource for machines with degradation/failures">(?)</span>
+                                        <span class="help-icon" data-bs-toggle="tooltip" data-bs-placement="top"
+                                            title="Shared repair resource that services failed machines. Required when machines have degradation or failure modes. Supports FIFO, SPT, priority, and bottleneck scheduling strategies.">?</span>
                                     </label>
                                 </div>
                             </div>
@@ -99,7 +144,8 @@
                                 <div class="form-check">
                                     <input class="form-check-input" type="checkbox" id="feat-shifts">
                                     <label class="form-check-label" for="feat-shifts">Shifts
-                                        <span class="tooltip-hint" data-bs-toggle="tooltip" title="Shift rotation with per-shift metric resets">(?)</span>
+                                        <span class="help-icon" data-bs-toggle="tooltip" data-bs-placement="top"
+                                            title="Shift rotation system (e.g. 3 x 8-hour shifts). Production metrics reset at each shift boundary. Shift-level KPIs are tracked separately and published via OPC UA.">?</span>
                                     </label>
                                 </div>
                             </div>
@@ -107,7 +153,8 @@
                                 <div class="form-check">
                                     <input class="form-check-input" type="checkbox" id="feat-historian">
                                     <label class="form-check-label" for="feat-historian">Historian
-                                        <span class="tooltip-hint" data-bs-toggle="tooltip" title="Event logging to CSV, InfluxDB, or Neo4j">(?)</span>
+                                        <span class="help-icon" data-bs-toggle="tooltip" data-bs-placement="top"
+                                            title="Event logging to CSV, InfluxDB, or Neo4j. Only logs state transitions (not every simulation step) for efficient storage. Enables the Reports and Validation pages.">?</span>
                                     </label>
                                 </div>
                             </div>
@@ -140,6 +187,25 @@
         let scenarioData = null;
         let scenarioMeta = {};
 
+        // --- Tooltip content (longer explanations) ---
+        const TIPS = {
+            name: 'Unique machine identifier (e.g. M1, M2). Used in topology routing and OPC UA node naming. Must match buffer upstream/downstream references.',
+            cycle: 'Time in seconds to process one part. Lower = faster. If Target PPM is set, this field is calculated automatically (cycle = 60 / PPM).',
+            ppm: 'Target parts per minute. When set, overrides Cycle Time (cycle = 60 / PPM). Leave empty to set Cycle Time directly instead.',
+            defect: 'Probability (0.0 to 1.0) that each produced part is defective. With Quality Routing enabled, defective parts are sent to scrap sinks or rework. Without it, defects are counted but parts still flow normally.',
+            spc: 'Statistical Process Control: monitors process variation using X-bar/R control charts and calculates Cp/Cpk capability indices. Detects out-of-control conditions via Western Electric rules.',
+            failures: 'Advanced failure modes with statistical MTTF/MTTR distributions (Weibull, exponential, lognormal). Supports multiple competing failure modes per machine (e.g. mechanical + electrical).',
+            qr: 'Routes defective parts to scrap sinks or rework stations. Supports health-correlated defect rates (machines degrade = more defects). Rework has configurable success rate and max attempts.',
+            degradation: 'Multi-state health degradation model. Machine health transitions through states (0 = healthy to h_max = failed). Enables Condition-Based Maintenance (CBM) when health exceeds threshold.',
+            hmax: 'Number of the failed health state. Total states = h_max + 1 (e.g. h_max=4 means states 0,1,2,3,4 where 4=failed). More states = more gradual degradation.',
+            pdegrade: 'Per-simulation-step probability of moving to the next degradation state. Lower = slower degradation. Typical range: 0.001 to 0.05.',
+            cbm: 'Condition-Based Maintenance threshold. When health state reaches this level, a repair is triggered before total failure. Set to 0 to disable CBM (only repair on failure).',
+        };
+
+        function tip(key) {
+            return `<span class="help-icon" data-bs-toggle="tooltip" data-bs-placement="top" title="${TIPS[key]}">?</span>`;
+        }
+
         // --- Load scenario list ---
         async function loadScenarioList() {
             const resp = await fetch('/api/scenarios');
@@ -165,7 +231,6 @@
             currentScenario = name;
             document.getElementById('name-group').style.display = 'none';
 
-            // Show scenario description
             const meta = scenarioMeta[name];
             document.getElementById('scenario-description').textContent =
                 meta && meta.description ? meta.description : '';
@@ -184,7 +249,6 @@
             document.getElementById('scenario-select').value = '';
             document.getElementById('scenario-description').textContent = '';
 
-            // Default: 2 machines, 1 buffer
             scenarioData = {
                 machines: [
                     {name: 'M1', cycle_time: 1.0, failure_rate: 0.0, repair_time: 10.0},
@@ -208,12 +272,12 @@
 
             rebuildBuffers();
 
+            document.getElementById('warm-up-time').value = cfg.warm_up_time || 0;
             document.getElementById('feat-maintainer').checked =
                 cfg.maintainer && cfg.maintainer.enabled;
             document.getElementById('feat-shifts').checked = !!cfg.shifts;
             document.getElementById('feat-historian').checked = !!cfg.historian;
 
-            // Sync PPM formulas for machines loaded with target_ppm
             document.querySelectorAll('.machine-section').forEach(section => {
                 syncPpmToCycle(section);
             });
@@ -224,58 +288,157 @@
             const hasPpm = m.target_ppm ? true : false;
             const cycleVal = hasPpm ? (60.0 / m.target_ppm).toFixed(2) : (m.cycle_time || 1);
             const cycleDisabled = hasPpm ? 'disabled' : '';
-            // Read defect rate from quality_routing if present, else top-level
             const defectRate = (m.quality_routing && m.quality_routing.defect_rate != null)
                 ? m.quality_routing.defect_rate : (m.defect_rate || 0);
+
+            const hasDeg = m.enable_degradation;
+            const degDisplay = hasDeg ? '' : 'display:none;';
+
             return `
             <div class="machine-section" id="machine-${idx}">
-                <div class="d-flex justify-content-between mb-2">
+                <div class="d-flex justify-content-between align-items-center mb-2">
                     <strong>Machine ${idx + 1}</strong>
-                    <span class="remove-btn" onclick="removeMachine(${idx})">&times; Remove</span>
+                    <span class="remove-btn" onclick="removeMachine(${idx})" title="Remove this machine">&times;</span>
                 </div>
+
+                <!-- Row 1: Core parameters -->
                 <div class="row g-2">
-                    <div class="col-md-3">
-                        <label class="form-label small">Name <span class="tooltip-hint" data-bs-toggle="tooltip" title="Machine identifier used in topology routing">(?)</span></label>
+                    <div class="col-md-2">
+                        <label class="form-label small">Name ${tip('name')}</label>
                         <input type="text" class="form-control form-control-sm m-name" value="${m.name || ''}">
                     </div>
                     <div class="col-md-3">
-                        <label class="form-label small">Cycle Time <span class="tooltip-hint" data-bs-toggle="tooltip" title="Seconds to process one part (derived from PPM if set)">(?)</span></label>
+                        <label class="form-label small">Cycle Time (s) ${tip('cycle')}</label>
                         <input type="number" class="form-control form-control-sm m-cycle" value="${cycleVal}" step="0.1" min="0.1" ${cycleDisabled}
                                oninput="syncCycleToPpm(this.closest('.machine-section'))">
                     </div>
                     <div class="col-md-3">
-                        <label class="form-label small">Target PPM <span class="tooltip-hint" data-bs-toggle="tooltip" title="Parts per minute target; overrides Cycle Time">(?)</span></label>
+                        <label class="form-label small">Target PPM ${tip('ppm')}</label>
                         <input type="number" class="form-control form-control-sm m-ppm" value="${m.target_ppm || ''}" step="1" min="0" placeholder="optional"
                                oninput="syncPpmToCycle(this.closest('.machine-section'))">
                     </div>
-                    <div class="col-md-3">
-                        <label class="form-label small">Defect Rate <span class="tooltip-hint" data-bs-toggle="tooltip" title="Probability (0.0-1.0) that each part is defective">(?)</span></label>
+                    <div class="col-md-2">
+                        <label class="form-label small">Defect Rate ${tip('defect')}</label>
                         <input type="number" class="form-control form-control-sm m-defect" value="${defectRate}" step="0.01" min="0" max="1">
                     </div>
                 </div>
                 <div class="ppm-formula" id="ppm-formula-${idx}"></div>
-                <div class="row g-2 mt-1">
-                    <div class="col-md-4">
-                        <div class="form-check form-check-inline">
-                            <input class="form-check-input m-spc" type="checkbox" ${m.enable_spc ? 'checked' : ''}>
-                            <label class="form-check-label small">SPC <span class="tooltip-hint" data-bs-toggle="tooltip" title="Statistical Process Control monitoring (X-bar/R, Cp/Cpk)">(?)</span></label>
-                        </div>
+
+                <!-- Row 2: Feature toggles -->
+                <div class="feature-row">
+                    <div class="feature-item">
+                        <input class="form-check-input m-spc" type="checkbox" ${m.enable_spc ? 'checked' : ''}>
+                        <label class="form-check-label small">SPC ${tip('spc')}</label>
                     </div>
-                    <div class="col-md-4">
-                        <div class="form-check form-check-inline">
-                            <input class="form-check-input m-failures" type="checkbox" ${m.enable_advanced_failures ? 'checked' : ''}>
-                            <label class="form-check-label small">Adv. Failures <span class="tooltip-hint" data-bs-toggle="tooltip" title="Multiple failure modes with MTTF/MTTR distributions">(?)</span></label>
-                        </div>
+                    <div class="feature-item">
+                        <input class="form-check-input m-failures" type="checkbox" ${m.enable_advanced_failures ? 'checked' : ''}>
+                        <label class="form-check-label small">Adv. Failures ${tip('failures')}</label>
                     </div>
-                    <div class="col-md-4">
-                        <div class="form-check form-check-inline">
-                            <input class="form-check-input m-qr" type="checkbox" ${m.quality_routing && m.quality_routing.enabled ? 'checked' : ''}>
-                            <label class="form-check-label small">Quality Routing <span class="tooltip-hint" data-bs-toggle="tooltip" title="Route defective parts to scrap sinks or rework">(?)</span></label>
-                        </div>
+                    <div class="feature-item">
+                        <input class="form-check-input m-qr" type="checkbox" ${m.quality_routing && m.quality_routing.enabled ? 'checked' : ''}>
+                        <label class="form-check-label small">Quality Routing ${tip('qr')}</label>
+                    </div>
+                    <div class="feature-item">
+                        <input class="form-check-input m-degradation" type="checkbox" ${hasDeg ? 'checked' : ''}
+                               onchange="toggleDegradation(this.closest('.machine-section'))">
+                        <label class="form-check-label small">Degradation ${tip('degradation')}</label>
                     </div>
                 </div>
-                ${buildFeatureDetails(m)}
+
+                <!-- Degradation fields (inline, compact) -->
+                <div class="degradation-fields" style="${degDisplay}">
+                    <div class="degradation-inline">
+                        <label>Failed State ${tip('hmax')}</label>
+                        <input type="number" class="form-control form-control-sm m-hmax" value="${(m.health_states && m.health_states.h_max) || 1}" min="1" step="1">
+                        <label>Degrade Prob ${tip('pdegrade')}</label>
+                        <input type="number" class="form-control form-control-sm m-pdegrade" value="${(m.health_states && m.health_states.p_degrade) || 0.01}" min="0" max="1" step="0.001">
+                        <label>CBM Threshold ${tip('cbm')}</label>
+                        <input type="number" class="form-control form-control-sm m-cbm" value="${(m.health_states && m.health_states.cbm_threshold) || 0}" min="0" step="1">
+                    </div>
+                </div>
+
+                <!-- Feature summary badges + collapsible details -->
+                ${buildFeatureSummary(m, idx)}
             </div>`;
+        }
+
+        function buildFeatureSummary(m, idx) {
+            const badges = [];
+            const details = [];
+
+            // SPC
+            if (m.enable_spc && m.spc) {
+                const s = m.spc;
+                badges.push(`<span class="feature-badge active">SPC</span>`);
+                let d = `<dt>SPC Configuration</dt><dd>`;
+                d += `Characteristic: ${s.characteristic || 'cycle_time'}`;
+                if (s.usl != null) d += ` | Limits: [${s.lsl}, ${s.usl}]`;
+                if (s.target != null) d += ` | Target: ${s.target}`;
+                d += `<br>Subgroups: ${s.subgroup_size || 5} samples x ${s.num_subgroups || 25} groups`;
+                d += ` | Western Electric: ${s.enable_western_electric !== false ? 'enabled' : 'disabled'}`;
+                if (s.measurement_noise) d += ` | Noise: ${(s.measurement_noise * 100).toFixed(0)}%`;
+                d += `</dd>`;
+                details.push(d);
+            } else if (m.enable_spc) {
+                badges.push(`<span class="feature-badge active">SPC</span>`);
+            }
+
+            // Failure modes
+            if (m.enable_advanced_failures && m.failure_modes && m.failure_modes.length > 0) {
+                badges.push(`<span class="feature-badge active-orange">${m.failure_modes.length} Failure Mode${m.failure_modes.length > 1 ? 's' : ''}</span>`);
+                let d = `<dt>Failure Modes</dt>`;
+                for (const fm of m.failure_modes) {
+                    d += `<dd><strong>${fm.name}</strong> (${fm.type}): MTTF ${formatDist(fm.mttf)} | MTTR ${formatDist(fm.mttr)}</dd>`;
+                }
+                if (m.maintenance_strategy) {
+                    const ms = m.maintenance_strategy;
+                    d += `<dd>Strategy: <strong>${ms.type}</strong>`;
+                    if (ms.pm_interval) d += ` | PM interval: ${ms.pm_interval}`;
+                    if (ms.cbm_threshold) d += ` | CBM threshold: ${ms.cbm_threshold}`;
+                    d += `</dd>`;
+                }
+                details.push(d);
+            } else if (m.enable_advanced_failures) {
+                badges.push(`<span class="feature-badge active-orange">Adv. Failures</span>`);
+            }
+
+            // Degradation
+            if (m.enable_degradation && m.health_states && m.health_states.h_max > 1) {
+                const hs = m.health_states;
+                badges.push(`<span class="feature-badge active-purple">${hs.h_max + 1}-State Health</span>`);
+            } else if (m.enable_degradation) {
+                badges.push(`<span class="feature-badge active-purple">Degradation</span>`);
+            }
+
+            // Quality routing
+            if (m.quality_routing && m.quality_routing.enabled) {
+                const qr = m.quality_routing;
+                const modeLabel = qr.mode === 'scrap_and_rework' ? 'Scrap + Rework' : (qr.mode || 'Scrap');
+                badges.push(`<span class="feature-badge active-green">${modeLabel}</span>`);
+                if (qr.defect_rate || qr.rework_success_rate) {
+                    let d = `<dt>Quality Routing</dt><dd>`;
+                    d += `Mode: ${qr.mode || 'scrap'}`;
+                    if (qr.defect_rate) d += ` | Defect rate: ${(qr.defect_rate * 100).toFixed(1)}%`;
+                    if (qr.enable_health_correlation) d += ` | Health correlation: x${qr.health_multiplier || 3}`;
+                    if (qr.rework_success_rate) d += `<br>Rework: ${(qr.rework_success_rate * 100).toFixed(0)}% success rate, max ${qr.max_rework || 3} attempts`;
+                    if (qr.scrap_sink) d += ` | Sink: ${qr.scrap_sink}`;
+                    d += `</dd>`;
+                    details.push(d);
+                }
+            }
+
+            let html = '';
+            if (badges.length > 0) {
+                html += `<div class="feature-badges">${badges.join('')}`;
+                if (details.length > 0) {
+                    html += ` <button class="detail-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#details-${idx}">Show details &darr;</button>`;
+                }
+                html += `</div>`;
+            }
+            if (details.length > 0) {
+                html += `<div class="collapse" id="details-${idx}"><div class="detail-panel"><dl class="mb-0">${details.join('')}</dl></div></div>`;
+            }
+            return html;
         }
 
         function formatDist(dist) {
@@ -292,54 +455,10 @@
             }
         }
 
-        function buildFeatureDetails(m) {
-            let html = '';
-
-            // SPC details
-            if (m.spc) {
-                const s = m.spc;
-                html += `<div class="feature-detail">`;
-                html += `<strong>SPC:</strong> ${s.characteristic || 'cycle_time'}`;
-                if (s.usl != null) html += ` | USL: ${s.usl}`;
-                if (s.lsl != null) html += `, LSL: ${s.lsl}`;
-                if (s.target != null) html += `, Target: ${s.target}`;
-                html += `<br>Subgroup: ${s.subgroup_size || 5} x ${s.num_subgroups || 25}`;
-                html += ` | W.E. Rules: ${s.enable_western_electric !== false ? 'on' : 'off'}`;
-                if (s.measurement_noise) html += ` | Noise: ${s.measurement_noise}`;
-                html += `</div>`;
-            }
-
-            // Failure modes details
-            if (m.failure_modes && m.failure_modes.length > 0) {
-                html += `<div class="feature-detail">`;
-                for (const fm of m.failure_modes) {
-                    html += `<strong>${fm.name}</strong> (${fm.type}): `;
-                    html += `MTTF ${formatDist(fm.mttf)} | MTTR ${formatDist(fm.mttr)}<br>`;
-                }
-                if (m.maintenance_strategy) {
-                    const ms = m.maintenance_strategy;
-                    html += `Strategy: ${ms.type}`;
-                    if (ms.pm_interval) html += ` (PM every ${ms.pm_interval})`;
-                    if (ms.cbm_threshold) html += ` (CBM threshold: ${ms.cbm_threshold})`;
-                }
-                html += `</div>`;
-            }
-
-            // Quality routing details
-            if (m.quality_routing && m.quality_routing.enabled) {
-                const qr = m.quality_routing;
-                if (qr.mode || qr.defect_rate || qr.rework_success_rate) {
-                    html += `<div class="feature-detail">`;
-                    html += `<strong>Routing:</strong> ${qr.mode || 'scrap'}`;
-                    if (qr.defect_rate) html += ` | Defect: ${(qr.defect_rate * 100).toFixed(0)}%`;
-                    if (qr.enable_health_correlation) html += ` | Health corr: x${qr.health_multiplier || 3}`;
-                    if (qr.rework_success_rate) html += `<br>Rework: ${(qr.rework_success_rate * 100).toFixed(0)}% success, max ${qr.max_rework || 3}`;
-                    if (qr.scrap_sink) html += ` | Sink: ${qr.scrap_sink}`;
-                    html += `</div>`;
-                }
-            }
-
-            return html;
+        function toggleDegradation(section) {
+            const checked = section.querySelector('.m-degradation').checked;
+            const fields = section.querySelector('.degradation-fields');
+            fields.style.display = checked ? '' : 'none';
         }
 
         function addMachine() {
@@ -359,7 +478,6 @@
                 return;
             }
             sections[idx].remove();
-            // Re-index remaining machines
             document.querySelectorAll('.machine-section').forEach((s, i) => {
                 s.id = `machine-${i}`;
                 s.querySelector('strong').textContent = `Machine ${i + 1}`;
@@ -410,9 +528,8 @@
                 const ppm = el.querySelector('.m-ppm').value;
                 if (ppm) {
                     m.target_ppm = parseInt(ppm);
-                    delete m.cycle_time;  // PPM takes precedence
+                    delete m.cycle_time;
                 }
-                // Preserve detailed configs from original scenario data
                 const orig = (scenarioData && scenarioData.machines || [])[machines.length] || {};
                 if (el.querySelector('.m-spc').checked) {
                     m.enable_spc = true;
@@ -429,8 +546,16 @@
                     qr.defect_rate = formDefect;
                     m.quality_routing = qr;
                 } else if (formDefect > 0) {
-                    // No quality routing but defect rate set — save top-level
                     m.defect_rate = formDefect;
+                }
+                if (el.querySelector('.m-degradation').checked) {
+                    m.enable_degradation = true;
+                    const hmax = parseInt(el.querySelector('.m-hmax').value) || 1;
+                    const pdegrade = parseFloat(el.querySelector('.m-pdegrade').value) || 0.01;
+                    const cbm = parseInt(el.querySelector('.m-cbm').value) || 0;
+                    if (hmax > 1) {
+                        m.health_states = {h_max: hmax, p_degrade: pdegrade, cbm_threshold: cbm};
+                    }
                 }
                 machines.push(m);
             });
@@ -447,7 +572,8 @@
             });
 
             const cfg = {machines, buffers};
-            // Preserve detailed top-level configs from original scenario
+            const warmUp = parseInt(document.getElementById('warm-up-time').value) || 0;
+            if (warmUp > 0) cfg.warm_up_time = warmUp;
             if (document.getElementById('feat-maintainer').checked) {
                 cfg.maintainer = (scenarioData && scenarioData.maintainer) || {enabled: true};
             }
@@ -499,7 +625,6 @@
                     isNewScenario = false;
                     document.getElementById('name-group').style.display = 'none';
                 }
-                // Reload scenario to refresh form and scenarioData
                 document.getElementById('scenario-select').value = savedName;
                 currentScenario = savedName;
                 await loadScenario(savedName);
@@ -511,7 +636,6 @@
         // --- YAML Preview ---
         async function previewYaml() {
             const cfg = collectFormData();
-            // Generate client-side YAML-like preview
             const name = isNewScenario
                 ? (document.getElementById('scenario-name').value.trim() || 'new_scenario')
                 : currentScenario;
@@ -524,6 +648,15 @@
                 if (m.defect_rate) lines.push(`      defect_rate: ${m.defect_rate}`);
                 if (m.enable_spc) lines.push(`      enable_spc: true`);
                 if (m.enable_advanced_failures) lines.push(`      enable_advanced_failures: true`);
+                if (m.enable_degradation) {
+                    lines.push(`      enable_degradation: true`);
+                    if (m.health_states) {
+                        lines.push(`      health_states:`);
+                        lines.push(`        h_max: ${m.health_states.h_max}`);
+                        lines.push(`        p_degrade: ${m.health_states.p_degrade}`);
+                        lines.push(`        cbm_threshold: ${m.health_states.cbm_threshold}`);
+                    }
+                }
                 if (m.quality_routing) lines.push(`      quality_routing:\n        enabled: true`);
             }
             lines.push('  buffers:');
@@ -533,6 +666,7 @@
                 lines.push(`      upstream: ${b.upstream}`);
                 lines.push(`      downstream: ${b.downstream}`);
             }
+            if (cfg.warm_up_time) lines.push(`  warm_up_time: ${cfg.warm_up_time}`);
             if (cfg.maintainer) lines.push('  maintainer:\n    enabled: true');
             document.getElementById('yaml-preview').textContent = lines.join('\n');
         }
@@ -577,7 +711,6 @@
             const ppmInput = section.querySelector('.m-ppm');
             const cycleInput = section.querySelector('.m-cycle');
             const formula = section.querySelector('.ppm-formula');
-            // Only update formula if PPM is not set (PPM takes precedence)
             if (!ppmInput.value) {
                 const ct = parseFloat(cycleInput.value) || 1;
                 const derivedPpm = (60.0 / ct).toFixed(1);
@@ -589,7 +722,7 @@
         function initTooltips() {
             document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => {
                 if (!bootstrap.Tooltip.getInstance(el)) {
-                    new bootstrap.Tooltip(el);
+                    new bootstrap.Tooltip(el, {delay: {show: 200, hide: 0}});
                 }
             });
         }

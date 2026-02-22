@@ -21,8 +21,6 @@
         .stat-label { color: #6c757d; }
         .stat-value { font-weight: 600; }
         #loading-spinner { display: none; }
-        .coming-soon { opacity: 0.5; pointer-events: none; position: relative; }
-        .coming-soon::after { content: "Coming Soon"; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #6c757d; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.8rem; }
     </style>
 </head>
 <body>
@@ -59,11 +57,12 @@
 
             <!-- Section 1: Overview cards -->
             <div class="row mb-3">
-                <div class="col"><div class="card kpi-card"><div class="kpi-value" id="ov-events">-</div><div class="kpi-label">Total Events</div></div></div>
-                <div class="col"><div class="card kpi-card"><div class="kpi-value" id="ov-duration">-</div><div class="kpi-label">Duration (hrs)</div></div></div>
-                <div class="col"><div class="card kpi-card"><div class="kpi-value" id="ov-epm">-</div><div class="kpi-label">Events/min</div></div></div>
                 <div class="col"><div class="card kpi-card"><div class="kpi-value" id="ov-parts">-</div><div class="kpi-label">Total Parts</div></div></div>
                 <div class="col"><div class="card kpi-card"><div class="kpi-value" id="ov-oee">-</div><div class="kpi-label">Line OEE (avg)</div></div></div>
+                <div class="col"><div class="card kpi-card"><div class="kpi-value" id="ov-ppm">-</div><div class="kpi-label">Actual PPM</div></div></div>
+                <div class="col"><div class="card kpi-card"><div class="kpi-value" id="ov-efficiency">-</div><div class="kpi-label">Efficiency</div></div></div>
+                <div class="col"><div class="card kpi-card"><div class="kpi-value" id="ov-duration">-</div><div class="kpi-label">Duration (hrs)</div></div></div>
+                <div class="col"><div class="card kpi-card"><div class="kpi-value" id="ov-events">-</div><div class="kpi-label">Total Events</div></div></div>
             </div>
 
             <!-- Event type distribution -->
@@ -163,11 +162,36 @@
                 </div>
             </div>
 
-            <!-- Compare Runs (placeholder) -->
-            <div class="card section-card coming-soon">
-                <div class="card-header"><strong>Compare Runs</strong></div>
-                <div class="card-body" style="min-height:80px;">
-                    <p class="text-muted">Multi-run comparison across different seeds, defect rates, and scenarios.</p>
+            <!-- Compare Runs -->
+            <div class="card section-card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <strong>Compare Runs</strong>
+                    <button class="btn btn-outline-primary btn-sm" onclick="loadRunIndex()">Refresh</button>
+                </div>
+                <div class="card-body">
+                    <div id="compare-empty" class="text-muted small">Loading run history...</div>
+                    <div id="compare-content" style="display:none;">
+                        <div class="row">
+                            <div class="col-md-7">
+                                <table class="table table-sm table-hover small" id="compare-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Scenario</th>
+                                            <th>Duration</th>
+                                            <th>Parts</th>
+                                            <th>OEE</th>
+                                            <th>Scrap</th>
+                                            <th>Anomalies</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                            <div class="col-md-5">
+                                <div class="chart-container" style="height:200px;"><canvas id="chart-compare-oee"></canvas></div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -237,9 +261,14 @@
             // Overview cards
             document.getElementById('ov-events').textContent = (a.overview.total_events || 0).toLocaleString();
             document.getElementById('ov-duration').textContent = a.overview.sim_duration_hrs;
-            document.getElementById('ov-epm').textContent = a.overview.events_per_min;
             document.getElementById('ov-parts').textContent = a.throughput.total_parts ? a.throughput.total_parts.toLocaleString() : '-';
             document.getElementById('ov-oee').textContent = a.oee.mean ? (a.oee.mean * 100).toFixed(1) + '%' : '-';
+            document.getElementById('ov-ppm').textContent = a.throughput.ppm ? a.throughput.ppm.toFixed(1) : '-';
+            const effEl = document.getElementById('ov-efficiency');
+            if (a.throughput.efficiency_pct) {
+                effEl.textContent = a.throughput.efficiency_pct.toFixed(1) + '%';
+                effEl.style.color = a.throughput.efficiency_pct >= 85 ? '#198754' : a.throughput.efficiency_pct >= 60 ? '#fd7e14' : '#dc3545';
+            } else { effEl.textContent = '-'; }
 
             renderEventTypes(a.overview);
             renderLineOee(a.oee);
@@ -326,10 +355,15 @@
                 options: {responsive: true, maintainAspectRatio: false, scales: {y: {min: 0, max: 1.05}}, plugins: {legend: {position: 'bottom', labels: {boxWidth: 12}}}}
             });
 
-            let html = '<table class="table table-sm small"><thead><tr><th>Machine</th><th>OEE Mean</th><th>Util</th></tr></thead><tbody>';
+            let html = '<table class="table table-sm small"><thead><tr><th>Machine</th><th>OEE</th><th>Util</th><th>Parts</th><th>Good</th><th>Defects</th></tr></thead><tbody>';
             for (const m of machineNames) {
                 const d = moee.machines[m];
-                html += `<tr><td>${m}</td><td>${d.oee_mean ? (d.oee_mean*100).toFixed(1)+'%' : '-'}</td><td>${d.utilisation_mean ? (d.utilisation_mean*100).toFixed(1)+'%' : '-'}</td></tr>`;
+                html += `<tr><td>${m}</td>`;
+                html += `<td>${d.oee_mean ? (d.oee_mean*100).toFixed(1)+'%' : '-'}</td>`;
+                html += `<td>${d.utilisation_mean ? (d.utilisation_mean*100).toFixed(1)+'%' : '-'}</td>`;
+                html += `<td>${d.last_partcount ?? '-'}</td>`;
+                html += `<td>${d.last_good_parts ?? '-'}</td>`;
+                html += `<td>${d.last_defective_parts ?? '-'}</td></tr>`;
             }
             html += '</tbody></table>';
             document.getElementById('machine-oee-stats').innerHTML = html;
@@ -341,15 +375,26 @@
             const labels = tp.timeseries.map(p => (p.t / 3600).toFixed(2));
             const values = tp.timeseries.map(p => p.v);
 
+            // Design throughput reference line (60 PPM = 3600 parts/hr)
+            const designRate = 60; // PPM
+            const firstParts = values[0] || 0;
+            const firstTime = tp.timeseries[0].t;
+            const designLine = tp.timeseries.map(p => firstParts + (p.t - firstTime) / 60 * designRate);
+
             charts.throughput = new Chart(document.getElementById('chart-throughput'), {
                 type: 'line',
-                data: {labels, datasets: [{label: 'Parts', data: values, borderColor: '#198754', borderWidth: 1.5, pointRadius: 0, fill: true, backgroundColor: 'rgba(25,135,84,0.1)'}]},
-                options: {responsive: true, maintainAspectRatio: false, scales: {x: {title: {display: true, text: 'Sim Time (hrs)'}}, y: {title: {display: true, text: 'Cumulative Parts'}}}, plugins: {legend: {display: false}}}
+                data: {labels, datasets: [
+                    {label: 'Actual', data: values, borderColor: '#198754', borderWidth: 1.5, pointRadius: 0, fill: true, backgroundColor: 'rgba(25,135,84,0.1)'},
+                    {label: 'Design (60 PPM)', data: designLine, borderColor: '#6c757d', borderWidth: 1, borderDash: [5, 5], pointRadius: 0, fill: false}
+                ]},
+                options: {responsive: true, maintainAspectRatio: false, scales: {x: {title: {display: true, text: 'Sim Time (hrs)'}}, y: {title: {display: true, text: 'Cumulative Parts'}}}, plugins: {legend: {position: 'bottom', labels: {boxWidth: 12}}}}
             });
 
             let html = '';
-            if (tp.ppm) html += `<div class="stat-row"><span class="stat-label">PPM</span><span class="stat-value">${tp.ppm.toFixed(2)}</span></div>`;
+            if (tp.ppm) html += `<div class="stat-row"><span class="stat-label">Actual PPM</span><span class="stat-value">${tp.ppm.toFixed(2)}</span></div>`;
+            html += `<div class="stat-row"><span class="stat-label">Design PPM</span><span class="stat-value">60.00</span></div>`;
             if (tp.efficiency_pct) html += `<div class="stat-row"><span class="stat-label">Efficiency</span><span class="stat-value">${tp.efficiency_pct.toFixed(1)}%</span></div>`;
+            if (tp.elapsed_hrs) html += `<div class="stat-row"><span class="stat-label">Run Time</span><span class="stat-value">${tp.elapsed_hrs}h</span></div>`;
             document.getElementById('throughput-stats').innerHTML = html;
         }
 
@@ -482,13 +527,24 @@
                 }
             });
 
-            // Table
-            let html = '<table class="table table-sm small"><thead><tr><th>Time</th><th>To Shift</th><th>Prev Shift</th><th>Parts</th><th>OEE</th></tr></thead><tbody>';
+            // Table with PPM per shift
+            let html = '<table class="table table-sm small"><thead><tr><th>Time</th><th>Shift</th><th>Parts</th><th>OEE</th><th>Rating</th></tr></thead><tbody>';
+            // Calculate best/worst for highlighting
+            const validOees = sh.shifts.filter(s => s.prev_shift_oee != null).map(s => s.prev_shift_oee);
+            const maxOee = validOees.length > 0 ? Math.max(...validOees) : null;
+            const minOee = validOees.length > 0 ? Math.min(...validOees) : null;
             for (const s of sh.shifts) {
-                html += `<tr><td>${Math.floor(s.timestamp)}s</td><td>${s.shift_name || '-'}</td>`;
+                const oeeVal = s.prev_shift_oee;
+                let badge = '';
+                if (oeeVal != null && validOees.length > 1) {
+                    if (oeeVal === maxOee) badge = '<span class="badge bg-success ms-1">Best</span>';
+                    else if (oeeVal === minOee) badge = '<span class="badge bg-danger ms-1">Worst</span>';
+                }
+                html += `<tr><td>${(s.timestamp / 3600).toFixed(1)}h</td>`;
                 html += `<td>${s.prev_shift_name || '-'}</td>`;
                 html += `<td>${s.prev_shift_parts ?? '-'}</td>`;
-                html += `<td>${s.prev_shift_oee != null ? (s.prev_shift_oee * 100).toFixed(1) + '%' : '-'}</td></tr>`;
+                html += `<td>${oeeVal != null ? (oeeVal * 100).toFixed(1) + '%' : '-'}</td>`;
+                html += `<td>${badge}</td></tr>`;
             }
             html += '</tbody></table>';
             document.getElementById('shift-table').innerHTML = html;
@@ -504,8 +560,78 @@
             }
         }
 
+        // --- Compare Runs ---
+        async function loadRunIndex() {
+            try {
+                const resp = await fetch('/api/reports/runs');
+                const data = await resp.json();
+                const runs = data.runs || [];
+
+                if (runs.length === 0) {
+                    document.getElementById('compare-empty').textContent = 'No runs recorded yet. Analyze a CSV file to add it to the run index.';
+                    document.getElementById('compare-content').style.display = 'none';
+                    return;
+                }
+
+                document.getElementById('compare-empty').style.display = 'none';
+                document.getElementById('compare-content').style.display = '';
+
+                // Find best values for highlighting
+                const oees = runs.filter(r => r.line_oee_mean != null).map(r => r.line_oee_mean);
+                const bestOee = oees.length > 0 ? Math.max(...oees) : null;
+
+                // Table
+                const tbody = document.querySelector('#compare-table tbody');
+                tbody.innerHTML = '';
+                for (const run of runs) {
+                    const oee = run.line_oee_mean;
+                    const isBest = oee != null && oee === bestOee && oees.length > 1;
+                    const oeeStr = oee != null ? (oee * 100).toFixed(1) + '%' : '-';
+                    const anomBadge = run.anomaly_count > 0
+                        ? `<span class="badge bg-danger">${run.anomaly_count}</span>`
+                        : '<span class="badge bg-success">0</span>';
+
+                    tbody.innerHTML += `<tr${isBest ? ' class="table-success"' : ''}>
+                        <td title="${run.run_id}">${run.scenario}</td>
+                        <td>${run.sim_duration_hrs ? run.sim_duration_hrs + 'h' : '-'}</td>
+                        <td>${run.total_parts ? run.total_parts.toLocaleString() : '-'}</td>
+                        <td>${oeeStr}${isBest ? ' <span class="badge bg-success">Best</span>' : ''}</td>
+                        <td>${run.total_scrap_events ?? '-'}</td>
+                        <td>${anomBadge}</td>
+                    </tr>`;
+                }
+
+                // OEE comparison chart
+                if (charts.compareOee) charts.compareOee.destroy();
+                const chartRuns = runs.filter(r => r.line_oee_mean != null);
+                if (chartRuns.length > 0) {
+                    const labels = chartRuns.map(r => r.scenario.length > 20 ? r.scenario.slice(0, 18) + '..' : r.scenario);
+                    const values = chartRuns.map(r => (r.line_oee_mean * 100));
+                    const colors = chartRuns.map(r => r.line_oee_mean === bestOee ? '#198754' : '#0d6efd');
+
+                    charts.compareOee = new Chart(document.getElementById('chart-compare-oee'), {
+                        type: 'bar',
+                        data: {
+                            labels,
+                            datasets: [{label: 'OEE %', data: values, backgroundColor: colors}]
+                        },
+                        options: {
+                            indexAxis: 'y',
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            scales: {x: {min: 0, max: 100, title: {display: true, text: 'OEE %'}}},
+                            plugins: {legend: {display: false}}
+                        }
+                    });
+                }
+            } catch (e) {
+                document.getElementById('compare-empty').textContent = 'Failed to load run index: ' + e.message;
+            }
+        }
+
         // --- Init ---
         loadFiles();
+        loadRunIndex();
     </script>
 </body>
 </html>
