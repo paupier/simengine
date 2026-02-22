@@ -795,47 +795,68 @@ def mark_part_defective(part, machine_name: str, defect_type: str = "quality"):
     part.defect_type = defect_type
 
 
-def analyze_part_quality(sink) -> dict:
+def analyze_part_quality(sink, machines=None, scrap_sinks=None) -> dict:
     """
-    Analyze quality of individual parts in sink.
+    Analyze quality of all parts produced (finished + scrapped).
+
+    When quality routing is active, defective parts are diverted to scrap
+    sinks and never reach the main sink. This function uses machine-level
+    counters (_scrap_count, _good_count) as the authoritative source.
 
     Args:
-        sink: Simantha Sink object with collect_parts=True
+        sink: Simantha Sink object (finished goods)
+        machines: dict of machine_name -> machine_obj (for quality counters)
+        scrap_sinks: dict of scrap_name -> Sink obj (for scrapped part counts)
 
     Returns:
         dict: Quality analysis metrics
     """
-    if not hasattr(sink, 'contents') or len(sink.contents) == 0:
-        return {
-            "total_parts": 0,
-            "good_parts": 0,
-            "defective_parts": 0,
-            "first_pass_yield": 0.0,
-            "defect_by_machine": {}
-        }
+    finished_parts = len(sink.contents) if hasattr(sink, 'contents') else 0
 
-    total_parts = len(sink.contents)
-    defective_parts = []
+    # Count scrapped parts from scrap sinks
+    scrapped_parts = 0
+    if scrap_sinks:
+        for scrap_obj in scrap_sinks.values():
+            scrapped_parts += scrap_obj.level
+
+    # Collect per-machine quality stats from routing counters
     defect_by_machine = {}
+    rework_by_machine = {}
+    total_scrap = 0
+    total_rework = 0
+    total_rework_success = 0
+    if machines:
+        for name, m in machines.items():
+            if hasattr(m, '_scrap_count'):
+                scrap = m._scrap_count
+                defective = m._defective_count
+                machine_defects = scrap + defective
+                if machine_defects > 0:
+                    defect_by_machine[name] = machine_defects
+                total_scrap += scrap
+                total_rework += m._rework_count
+                total_rework_success += m._rework_success_count
+                if m._rework_count > 0:
+                    rework_by_machine[name] = {
+                        "attempts": m._rework_count,
+                        "successes": m._rework_success_count,
+                    }
 
-    for part in sink.contents:
-        if hasattr(part, 'is_defective') and part.is_defective:
-            defective_parts.append(part)
-
-            # Track which machine produced the defect
-            if hasattr(part, 'failed_at_machine'):
-                machine = part.failed_at_machine
-                defect_by_machine[machine] = defect_by_machine.get(machine, 0) + 1
-
-    good_parts = total_parts - len(defective_parts)
+    # Total parts = finished goods + scrapped (reworked successes already in finished)
+    total_parts = finished_parts + scrapped_parts
+    defective_count = scrapped_parts  # scrapped = confirmed defective
+    good_parts = finished_parts
     first_pass_yield = good_parts / total_parts if total_parts > 0 else 0.0
 
     return {
         "total_parts": total_parts,
         "good_parts": good_parts,
-        "defective_parts": len(defective_parts),
+        "defective_parts": defective_count,
         "first_pass_yield": first_pass_yield,
-        "defect_by_machine": defect_by_machine
+        "defect_by_machine": defect_by_machine,
+        "rework_by_machine": rework_by_machine,
+        "total_rework_attempts": total_rework,
+        "total_rework_successes": total_rework_success,
     }
 
 
@@ -1815,7 +1836,7 @@ def main(argv=None):
         print("\n\nSimulation stopped by user")
 
         # Print part quality analysis
-        quality_analysis = analyze_part_quality(sink)
+        quality_analysis = analyze_part_quality(sink, machines, scrap_sinks)
         print(f"\n=== Part Quality Analysis ===")
         print(f"Total Parts: {quality_analysis['total_parts']}")
         print(f"Good Parts: {quality_analysis['good_parts']}")
@@ -1828,6 +1849,17 @@ def main(argv=None):
                 print(f"  {machine}: {count} defects")
         else:
             print(f"\nNo defects detected (all parts passed quality checks)")
+
+        if quality_analysis['total_rework_attempts'] > 0:
+            print(f"\nRework Summary:")
+            print(f"  Total Attempts: {quality_analysis['total_rework_attempts']}")
+            print(f"  Successes: {quality_analysis['total_rework_successes']}")
+            rate = (quality_analysis['total_rework_successes']
+                    / quality_analysis['total_rework_attempts'])
+            print(f"  Success Rate: {rate:.1%}")
+            for machine, rw in quality_analysis['rework_by_machine'].items():
+                print(f"  {machine}: {rw['attempts']} attempts, "
+                      f"{rw['successes']} successes")
 
         print("\nStopping server...")
     finally:
