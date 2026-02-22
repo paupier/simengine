@@ -313,31 +313,50 @@ def _disconnect_opcua():
 
 
 def _read_opcua_values():
-    """Read key OPC UA variables for the web dashboard."""
+    """Read key OPC UA variables for the web dashboard.
+
+    Navigates the ISA-95 hierarchy:
+      Enterprise > Site > Area > Line_Equipment > ...
+    """
     client = _get_opcua_client()
     if client is None:
         return None
     try:
         root = client.get_objects_node()
-        line1 = root.get_child(["2:Line1"])
-        system = line1.get_child(["2:System"])
-        sim_time = system.get_child(["2:SimTime"]).get_value()
-        throughput = system.get_child(["2:Throughput"]).get_value()
 
-        controls = system.get_child(["2:Controls"])
-        pause_line = controls.get_child(["2:cmdPauseLine"]).get_value()
-        interarrival = controls.get_child(["2:setInterarrivalTime"]).get_value()
+        # Navigate ISA-95 hierarchy to line equipment node
+        # Use multi-level get_child for efficiency
+        line_equip = root.get_child([
+            "2:WeylandIndustries", "2:LV426_Colony",
+            "2:AtmosphereProcessor01", "2:Nostromo_BioProductPakaging_Equipment"
+        ])
 
-        # Read machine states dynamically
+        # OperationsState
+        ops_state = line_equip.get_child(["2:OperationsState"])
+        sim_time = ops_state.get_child(["2:SimTime"]).get_value()
+
+        controls = ops_state.get_child(["2:Controls"])
+        pause_line = controls.get_child(["2:CmdPauseLine"]).get_value()
+        interarrival = controls.get_child(["2:SetInterarrivalTime"]).get_value()
+
+        # OperationsPerformance
+        ops_perf = line_equip.get_child(["2:OperationsPerformance"])
+        throughput = ops_perf.get_child(["2:Throughput"]).get_value()
+
+        # Read machine states dynamically from Resources
+        resources = line_equip.get_child(["2:Resources"])
         machines = {}
         machine_errors = []
         for i in range(1, 20):  # Up to 19 machines
             try:
-                machine = line1.get_child([f"2:Machine{i}"])
-                state = machine.get_child(["2:State"]).get_value()
-                partcount = machine.get_child(["2:PartCount"]).get_value()
-                target_ppm = machine.get_child(["2:TargetPPM"]).get_value()
-                actual_ppm = machine.get_child(["2:ActualPPM"]).get_value()
+                machine = resources.get_child([f"2:M{i}_Equipment"])
+                ops_st = machine.get_child(["2:OperationsState"])
+                state = ops_st.get_child(["2:State"]).get_value()
+
+                ops_pf = machine.get_child(["2:OperationsPerformance"])
+                partcount = ops_pf.get_child(["2:PartCount"]).get_value()
+                target_ppm = ops_pf.get_child(["2:TargetPPM"]).get_value()
+                actual_ppm = ops_pf.get_child(["2:ActualPPM"]).get_value()
                 m_data = {
                     "state": state, "partcount": partcount,
                     "target_ppm": target_ppm, "actual_ppm": actual_ppm,
@@ -367,34 +386,35 @@ def _read_opcua_values():
                 machines[f"Machine{i}"] = m_data
             except Exception as e:
                 if i <= 3:
-                    machine_errors.append(f"Machine{i}: {type(e).__name__}: {e}")
+                    machine_errors.append(f"M{i}_Equipment: {type(e).__name__}: {e}")
                 break
 
-        # Line-level KPIs
+        # Line-level OEE
         line_oee = {}
         try:
-            oee_node = line1.get_child(["2:LineKPIs", "2:LineOEE"])
+            oee_node = line_equip.get_child(["2:OEE"])
             line_oee["availability"] = oee_node.get_child(["2:Availability"]).get_value()
             line_oee["performance"] = oee_node.get_child(["2:Performance"]).get_value()
             line_oee["quality"] = oee_node.get_child(["2:Quality"]).get_value()
             line_oee["oee"] = oee_node.get_child(["2:OEE"]).get_value()
         except Exception:
             pass
+
+        # Line-level KPIs from OperationsPerformance
         line_kpis = {}
         try:
-            kpi_node = line1.get_child(["2:LineKPIs"])
-            line_kpis["total_scrap"] = kpi_node.get_child(["2:TotalScrap"]).get_value()
-            line_kpis["scrap_rate"] = kpi_node.get_child(["2:ScrapRate"]).get_value()
+            line_kpis["total_scrap"] = ops_perf.get_child(["2:TotalScrap"]).get_value()
+            line_kpis["scrap_rate"] = ops_perf.get_child(["2:ScrapRate"]).get_value()
         except Exception:
             pass
 
-        # Shift info (optional)
+        # Shift info (optional) — under SupportFunctions/ShiftManagement
         shift_info = {}
         try:
-            shift_node = line1.get_child(["2:Shift", "2:CurrentShift"])
-            shift_info["name"] = shift_node.get_child(["2:CurrentShiftName"]).get_value()
-            shift_info["elapsed"] = shift_node.get_child(["2:ShiftElapsedTime"]).get_value()
-            shift_info["duration"] = shift_node.get_child(["2:ShiftDuration"]).get_value()
+            shift_mgmt = line_equip.get_child(["2:SupportFunctions", "2:ShiftManagement"])
+            shift_info["name"] = shift_mgmt.get_child(["2:CurrentShiftName"]).get_value()
+            shift_info["elapsed"] = shift_mgmt.get_child(["2:ShiftElapsedTime"]).get_value()
+            shift_info["duration"] = shift_mgmt.get_child(["2:ShiftDuration"]).get_value()
         except Exception:
             pass
 
@@ -509,17 +529,21 @@ def api_control():
 
     try:
         root = client.get_objects_node()
-        controls = root.get_child(["2:Line1", "2:System", "2:Controls"])
+        line_equip = root.get_child([
+            "2:WeylandIndustries", "2:LV426_Colony",
+            "2:AtmosphereProcessor01", "2:Nostromo_BioProductPakaging_Equipment"
+        ])
+        controls = line_equip.get_child(["2:OperationsState", "2:Controls"])
         result = {}
 
         if "pause_line" in data:
             val = bool(data["pause_line"])
-            controls.get_child(["2:cmdPauseLine"]).set_value(val)
+            controls.get_child(["2:CmdPauseLine"]).set_value(val)
             result["pause_line"] = val
 
         if "interarrival_time" in data:
             val = float(data["interarrival_time"])
-            controls.get_child(["2:setInterarrivalTime"]).set_value(val)
+            controls.get_child(["2:SetInterarrivalTime"]).set_value(val)
             result["interarrival_time"] = val
 
         return jsonify({"status": "ok", "written": result})

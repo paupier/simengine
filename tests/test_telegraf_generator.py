@@ -1,4 +1,4 @@
-"""Tests for the dynamic Telegraf config generator."""
+"""Tests for the dynamic Telegraf config generator (ISA-95 aligned)."""
 import os
 import sys
 
@@ -7,8 +7,11 @@ _test_dir = os.path.dirname(os.path.abspath(__file__))
 _project_root = os.path.dirname(_test_dir)
 sys.path.insert(0, os.path.join(_project_root, "docker", "telegraf"))
 
-from generate_telegraf_conf import generate_telegraf_conf  # noqa: E402
+from generate_telegraf_conf import generate_telegraf_conf, _equip_prefix  # noqa: E402
 import pytest  # noqa: E402
+
+# Default ISA-95 equipment prefix (matches build_opcua_server defaults)
+EP = "WeylandIndustries.LV426_Colony.AtmosphereProcessor01.Nostromo_BioProductPakaging_Equipment"
 
 
 # ---------------------------------------------------------------------------
@@ -195,31 +198,77 @@ class TestBasicGeneration:
         assert "2 buffers" in conf
         assert "0 scrap sinks" in conf
 
+    def test_isa95_comment_present(self, balanced_line_config):
+        conf = generate_telegraf_conf(balanced_line_config)
+        assert "ISA-95" in conf
+
 
 # ---------------------------------------------------------------------------
-# Tests: static system nodes
+# Tests: ISA-95 hierarchy
+# ---------------------------------------------------------------------------
+class TestISA95Hierarchy:
+    def test_equip_prefix_default(self):
+        config = {"machines": [], "buffers": []}
+        assert _equip_prefix(config) == EP
+
+    def test_equip_prefix_custom(self):
+        config = {
+            "enterprise": "AcmeCorp",
+            "site": "PlantA",
+            "area": "ShopFloor1",
+            "line_name": "AssemblyLine",
+            "machines": [], "buffers": [],
+        }
+        assert _equip_prefix(config) == "AcmeCorp.PlantA.ShopFloor1.AssemblyLine_Equipment"
+
+    def test_all_identifiers_use_isa95_prefix(self, full_feature_2machine_config):
+        conf = generate_telegraf_conf(full_feature_2machine_config)
+        ids = _extract_identifiers(conf)
+        for node_id in ids:
+            assert node_id.startswith("WeylandIndustries."), f"Bad prefix: {node_id}"
+
+
+# ---------------------------------------------------------------------------
+# Tests: system-level nodes
 # ---------------------------------------------------------------------------
 class TestSystemNodes:
-    def test_system_nodes_always_present(self, balanced_line_config):
+    def test_operations_state_nodes(self, balanced_line_config):
         conf = generate_telegraf_conf(balanced_line_config)
         ids = _extract_identifiers(conf)
-        expected_system = [
-            "Line1.System.SimTime",
-            "Line1.System.Throughput",
-            "Line1.LineKPIs.TotalWIP",
-            "Line1.LineKPIs.TotalScrap",
-            "Line1.LineKPIs.ScrapRate",
-            "Line1.LineKPIs.LineOEE.OEE",
-            "Line1.LineKPIs.LineOEE.Availability",
-            "Line1.LineKPIs.LineOEE.Performance",
-            "Line1.LineKPIs.LineOEE.Quality",
-            "Line1.EventLog.TotalEventsGenerated",
-            "Line1.Maintenance.MaintenanceActive",
-            "Line1.Maintenance.QueueLength",
-            "Line1.Maintenance.TotalRepairs",
-        ]
-        for node_id in expected_system:
-            assert node_id in ids, f"Missing system node: {node_id}"
+        assert f"{EP}.OperationsState.SimTime" in ids
+        assert f"{EP}.OperationsState.LineState" in ids
+        assert f"{EP}.OperationsState.LineMode" in ids
+
+    def test_operations_performance_nodes(self, balanced_line_config):
+        conf = generate_telegraf_conf(balanced_line_config)
+        ids = _extract_identifiers(conf)
+        assert f"{EP}.OperationsPerformance.Throughput" in ids
+        assert f"{EP}.OperationsPerformance.TotalWIP" in ids
+        assert f"{EP}.OperationsPerformance.TotalScrap" in ids
+        assert f"{EP}.OperationsPerformance.ScrapRate" in ids
+
+    def test_line_oee_nodes(self, balanced_line_config):
+        conf = generate_telegraf_conf(balanced_line_config)
+        ids = _extract_identifiers(conf)
+        assert f"{EP}.OEE.OEE" in ids
+        assert f"{EP}.OEE.Availability" in ids
+        assert f"{EP}.OEE.Performance" in ids
+        assert f"{EP}.OEE.Quality" in ids
+        assert f"{EP}.OEE.GoodPartCount" in ids
+        assert f"{EP}.OEE.DefectivePartCount" in ids
+
+    def test_event_log_node(self, balanced_line_config):
+        conf = generate_telegraf_conf(balanced_line_config)
+        ids = _extract_identifiers(conf)
+        assert f"{EP}.EventLog.TotalEventsGenerated" in ids
+
+    def test_maintenance_nodes(self, balanced_line_config):
+        conf = generate_telegraf_conf(balanced_line_config)
+        ids = _extract_identifiers(conf)
+        sf = f"{EP}.SupportFunctions"
+        assert f"{sf}.Maintenance.MaintenanceActive" in ids
+        assert f"{sf}.Maintenance.QueueLength" in ids
+        assert f"{sf}.Maintenance.TotalRepairs" in ids
 
 
 # ---------------------------------------------------------------------------
@@ -227,36 +276,36 @@ class TestSystemNodes:
 # ---------------------------------------------------------------------------
 class TestMachineNodes:
     def test_basic_nodes_for_each_machine(self, balanced_line_config):
-        """3-machine line should have basic + time + OEE + alarms for each."""
+        """3-machine line should have ISA-95 grouped nodes for each."""
         conf = generate_telegraf_conf(balanced_line_config)
         ids = _extract_identifiers(conf)
+        res = f"{EP}.Resources"
         for i in range(1, 4):
-            mn = f"Machine{i}"
-            assert f"Line1.{mn}.State" in ids
-            assert f"Line1.{mn}.PartCount" in ids
-            assert f"Line1.{mn}.Utilisation" in ids
-            assert f"Line1.{mn}.TargetPPM" in ids
-            assert f"Line1.{mn}.ActualPPM" in ids
-            assert f"Line1.{mn}.BlockedTime" in ids
-            assert f"Line1.{mn}.OEE.OEE" in ids
-            assert f"Line1.{mn}.Alarms.ActiveAlarmCount" in ids
+            mn = f"M{i}_Equipment"
+            p = f"{res}.{mn}"
+            assert f"{p}.OperationsState.State" in ids
+            assert f"{p}.OperationsPerformance.PartCount" in ids
+            assert f"{p}.OperationsPerformance.Utilisation" in ids
+            assert f"{p}.OperationsPerformance.TargetPPM" in ids
+            assert f"{p}.OperationsPerformance.ActualPPM" in ids
+            assert f"{p}.OperationsPerformance.BlockedTime" in ids
+            assert f"{p}.OEE.OEE" in ids
+            assert f"{p}.Alarms.ActiveAlarmCount" in ids
 
     def test_no_health_without_degradation(self, balanced_line_config):
-        """Machines without degradation should not have health nodes."""
         conf = generate_telegraf_conf(balanced_line_config)
         ids = _extract_identifiers(conf)
-        assert "Line1.Machine1.HealthState" not in ids
-        assert "Line1.Machine1.HealthPercent" not in ids
+        res = f"{EP}.Resources"
+        assert f"{res}.M1_Equipment.OperationsState.HealthState" not in ids
 
     def test_health_with_degradation(self, full_feature_2machine_config):
-        """Machine1 has enable_degradation=True, should have health nodes."""
         conf = generate_telegraf_conf(full_feature_2machine_config)
         ids = _extract_identifiers(conf)
-        assert "Line1.Machine1.HealthState" in ids
-        assert "Line1.Machine1.HealthPercent" in ids
+        res = f"{EP}.Resources"
+        assert f"{res}.M1_Equipment.OperationsState.HealthState" in ids
+        assert f"{res}.M1_Equipment.OperationsState.HealthPercent" in ids
 
     def test_health_with_advanced_failures_only(self):
-        """Machine with advanced failures but no degradation still gets health."""
         config = {
             "machines": [{
                 "name": "M1", "cycle_time": 1,
@@ -271,66 +320,69 @@ class TestMachineNodes:
         }
         conf = generate_telegraf_conf(config)
         ids = _extract_identifiers(conf)
-        assert "Line1.Machine1.HealthState" in ids
+        res = f"{EP}.Resources"
+        assert f"{res}.M1_Equipment.OperationsState.HealthState" in ids
 
     def test_no_failure_modes_without_advanced(self, balanced_line_config):
         conf = generate_telegraf_conf(balanced_line_config)
         ids = _extract_identifiers(conf)
-        assert "Line1.Machine1.FailureModes.ActiveFailureMode" not in ids
-        assert "Line1.Machine1.MaintenanceStrategy.StrategyType" not in ids
+        res = f"{EP}.Resources"
+        assert f"{res}.M1_Equipment.FailureModes.ActiveFailureMode" not in ids
+        assert f"{res}.M1_Equipment.MaintenanceStrategy.StrategyType" not in ids
 
     def test_failure_mode_nodes_with_advanced(self, full_feature_2machine_config):
         conf = generate_telegraf_conf(full_feature_2machine_config)
         ids = _extract_identifiers(conf)
-        # ActiveFailureMode
-        assert "Line1.Machine1.FailureModes.ActiveFailureMode" in ids
-        # Per-mode nodes (capitalized)
-        assert "Line1.Machine1.FailureModes.MechanicalFailureCount" in ids
-        assert "Line1.Machine1.FailureModes.MechanicalTotalDowntime" in ids
-        assert "Line1.Machine1.FailureModes.MechanicalMTBF" in ids
-        assert "Line1.Machine1.FailureModes.MechanicalMTTR" in ids
-        assert "Line1.Machine1.FailureModes.ElectricalFailureCount" in ids
-        # Maintenance strategy
-        assert "Line1.Machine1.MaintenanceStrategy.StrategyType" in ids
-        assert "Line1.Machine1.MaintenanceStrategy.PMCount" in ids
+        res = f"{EP}.Resources"
+        p = f"{res}.M1_Equipment"
+        assert f"{p}.FailureModes.ActiveFailureMode" in ids
+        assert f"{p}.FailureModes.MechanicalFailureCount" in ids
+        assert f"{p}.FailureModes.MechanicalTotalDowntime" in ids
+        assert f"{p}.FailureModes.MechanicalMTBF" in ids
+        assert f"{p}.FailureModes.MechanicalMTTR" in ids
+        assert f"{p}.FailureModes.ElectricalFailureCount" in ids
+        assert f"{p}.MaintenanceStrategy.StrategyType" in ids
+        assert f"{p}.MaintenanceStrategy.PMCount" in ids
 
     def test_no_quality_routing_without_enabled(self, balanced_line_config):
         conf = generate_telegraf_conf(balanced_line_config)
         ids = _extract_identifiers(conf)
-        assert "Line1.Machine1.QualityRouting.ScrapCount" not in ids
+        res = f"{EP}.Resources"
+        assert f"{res}.M1_Equipment.QualityRouting.ScrapCount" not in ids
 
     def test_quality_routing_when_enabled(self, full_feature_2machine_config):
         conf = generate_telegraf_conf(full_feature_2machine_config)
         ids = _extract_identifiers(conf)
-        assert "Line1.Machine1.QualityRouting.ScrapCount" in ids
-        assert "Line1.Machine1.QualityRouting.ReworkCount" in ids
-        assert "Line1.Machine1.QualityRouting.GoodCount" in ids
+        res = f"{EP}.Resources"
+        p = f"{res}.M1_Equipment"
+        assert f"{p}.QualityRouting.ScrapCount" in ids
+        assert f"{p}.QualityRouting.ReworkCount" in ids
+        assert f"{p}.QualityRouting.GoodCount" in ids
 
     def test_no_spc_without_enabled(self, balanced_line_config):
         conf = generate_telegraf_conf(balanced_line_config)
         ids = _extract_identifiers(conf)
-        assert "Line1.Machine1.SPC.XBarChart.XBar" not in ids
+        res = f"{EP}.Resources"
+        assert f"{res}.M1_Equipment.SPC.XBarChart.XBar" not in ids
 
     def test_spc_when_enabled(self, full_feature_2machine_config):
         conf = generate_telegraf_conf(full_feature_2machine_config)
         ids = _extract_identifiers(conf)
-        # X-bar chart
-        assert "Line1.Machine1.SPC.XBarChart.XBar" in ids
-        assert "Line1.Machine1.SPC.XBarChart.UCL" in ids
-        assert "Line1.Machine1.SPC.XBarChart.CL" in ids
-        assert "Line1.Machine1.SPC.XBarChart.LCL" in ids
-        # R chart
-        assert "Line1.Machine1.SPC.RChart.Range" in ids
-        assert "Line1.Machine1.SPC.RChart.UCL" in ids
-        # Capability
-        assert "Line1.Machine1.SPC.Capability.Cp" in ids
-        assert "Line1.Machine1.SPC.Capability.Cpk" in ids
-        assert "Line1.Machine1.SPC.Capability.Pp" in ids
-        assert "Line1.Machine1.SPC.Capability.Ppk" in ids
-        assert "Line1.Machine1.SPC.Capability.SigmaLevel" in ids
-        # Status
-        assert "Line1.Machine1.SPC.Status.InControl" in ids
-        assert "Line1.Machine1.SPC.Status.NumSubgroups" in ids
+        res = f"{EP}.Resources"
+        p = f"{res}.M1_Equipment"
+        assert f"{p}.SPC.XBarChart.XBar" in ids
+        assert f"{p}.SPC.XBarChart.UCL" in ids
+        assert f"{p}.SPC.XBarChart.CL" in ids
+        assert f"{p}.SPC.XBarChart.LCL" in ids
+        assert f"{p}.SPC.RChart.Range" in ids
+        assert f"{p}.SPC.RChart.UCL" in ids
+        assert f"{p}.SPC.Capability.Cp" in ids
+        assert f"{p}.SPC.Capability.Cpk" in ids
+        assert f"{p}.SPC.Capability.Pp" in ids
+        assert f"{p}.SPC.Capability.Ppk" in ids
+        assert f"{p}.SPC.Capability.SigmaLevel" in ids
+        assert f"{p}.SPC.Status.InControl" in ids
+        assert f"{p}.SPC.Status.NumSubgroups" in ids
 
     def test_machine_tags(self, balanced_line_config):
         conf = generate_telegraf_conf(balanced_line_config)
@@ -343,13 +395,14 @@ class TestMachineNodes:
 # Tests: buffer nodes
 # ---------------------------------------------------------------------------
 class TestBufferNodes:
-    def test_buffer_nodes(self, balanced_line_config):
+    def test_buffer_storage_unit_nodes(self, balanced_line_config):
         conf = generate_telegraf_conf(balanced_line_config)
         ids = _extract_identifiers(conf)
-        assert "Line1.Buffer1.CurrentLevel" in ids
-        assert "Line1.Buffer1.Capacity" in ids
-        assert "Line1.Buffer2.CurrentLevel" in ids
-        assert "Line1.Buffer2.Capacity" in ids
+        res = f"{EP}.Resources"
+        assert f"{res}.B1_StorageUnit.CurrentLevel" in ids
+        assert f"{res}.B1_StorageUnit.Capacity" in ids
+        assert f"{res}.B2_StorageUnit.CurrentLevel" in ids
+        assert f"{res}.B2_StorageUnit.Capacity" in ids
 
     def test_buffer_tags(self, balanced_line_config):
         conf = generate_telegraf_conf(balanced_line_config)
@@ -365,11 +418,12 @@ class TestScrapSinkNodes:
         conf = generate_telegraf_conf(balanced_line_config)
         assert "SCRAP BINS" not in conf
 
-    def test_scrap_nodes_when_configured(self, full_feature_2machine_config):
+    def test_scrap_storage_unit_nodes(self, full_feature_2machine_config):
         conf = generate_telegraf_conf(full_feature_2machine_config)
         ids = _extract_identifiers(conf)
-        assert "Line1.ScrapBin1.CurrentLevel" in ids
-        assert "Line1.ScrapBin2.CurrentLevel" in ids
+        res = f"{EP}.Resources"
+        assert f"{res}.ScrapBin1_StorageUnit.CurrentLevel" in ids
+        assert f"{res}.ScrapBin2_StorageUnit.CurrentLevel" in ids
 
     def test_scrap_tags(self, full_feature_2machine_config):
         conf = generate_telegraf_conf(full_feature_2machine_config)
@@ -385,33 +439,34 @@ class TestShiftNodes:
         conf = generate_telegraf_conf(balanced_line_config)
         assert "SHIFTS" not in conf
         ids = _extract_identifiers(conf)
-        assert "Line1.Shift.CurrentShiftNumber" not in ids
+        sm = f"{EP}.SupportFunctions.ShiftManagement"
+        assert f"{sm}.CurrentShiftNumber" not in ids
 
     def test_shift_nodes_when_configured(self, full_feature_2machine_config):
         conf = generate_telegraf_conf(full_feature_2machine_config)
         ids = _extract_identifiers(conf)
+        sm = f"{EP}.SupportFunctions.ShiftManagement"
         # Tracking (7)
-        assert "Line1.Shift.CurrentShiftNumber" in ids
-        assert "Line1.Shift.CurrentShiftName" in ids
-        assert "Line1.Shift.ShiftStartTime" in ids
-        assert "Line1.Shift.ShiftEndTime" in ids
-        assert "Line1.Shift.ShiftDuration" in ids
-        assert "Line1.Shift.ShiftElapsedTime" in ids
-        assert "Line1.Shift.ShiftTimeRemaining" in ids
+        assert f"{sm}.CurrentShiftNumber" in ids
+        assert f"{sm}.CurrentShiftName" in ids
+        assert f"{sm}.ShiftStartTime" in ids
+        assert f"{sm}.ShiftEndTime" in ids
+        assert f"{sm}.ShiftDuration" in ids
+        assert f"{sm}.ShiftElapsedTime" in ids
+        assert f"{sm}.ShiftTimeRemaining" in ids
         # Current shift (8)
-        assert "Line1.Shift.CurrentShift.PartsProduced" in ids
-        assert "Line1.Shift.CurrentShift.OEE" in ids
+        assert f"{sm}.CurrentShift.PartsProduced" in ids
+        assert f"{sm}.CurrentShift.OEE" in ids
         # Previous shift (7)
-        assert "Line1.Shift.PreviousShift.ShiftNumber" in ids
-        assert "Line1.Shift.PreviousShift.OEE" in ids
+        assert f"{sm}.PreviousShift.ShiftNumber" in ids
+        assert f"{sm}.PreviousShift.OEE" in ids
         # Totals (5)
-        assert "Line1.Shift.Totals.TotalPartsProduced" in ids
-        assert "Line1.Shift.Totals.TotalShiftsCompleted" in ids
+        assert f"{sm}.Totals.TotalPartsProduced" in ids
+        assert f"{sm}.Totals.TotalShiftsCompleted" in ids
 
     def test_shift_node_count(self, full_feature_2machine_config):
         """Shifts should add exactly 27 nodes."""
         with_shifts = generate_telegraf_conf(full_feature_2machine_config)
-        # Remove shifts and regenerate
         config_no_shifts = dict(full_feature_2machine_config)
         del config_no_shifts["shifts"]
         without_shifts = generate_telegraf_conf(config_no_shifts)
@@ -427,47 +482,41 @@ class TestNodeCounts:
         """3 machines (basic only) + 2 buffers + system nodes."""
         conf = generate_telegraf_conf(balanced_line_config)
         count = _count_nodes(conf)
-        # System: 13
-        # Per machine (no optional): 5 basic + 5 time + 7 OEE + 4 alarms = 21
+        # System: 3 ops_state + 4 ops_perf + 6 OEE + 1 event + 3 maint = 17
+        # Per machine (no optional): 1 state + 9 perf + 7 OEE + 4 alarms = 21
         # 3 machines: 63
         # 2 buffers: 4
-        # No scrap, no shifts
-        expected = 13 + (21 * 3) + (2 * 2)
+        expected = 17 + (21 * 3) + (2 * 2)
         assert count == expected, f"Expected {expected} nodes, got {count}"
 
     def test_full_feature_2machine_node_count(self, full_feature_2machine_config):
-        """2-machine full-feature line should match ~148 nodes from static conf."""
+        """2-machine full-feature line."""
         conf = generate_telegraf_conf(full_feature_2machine_config)
         count = _count_nodes(conf)
-        # System: 13
+        # System: 17
         # Machine1 (all features, degradation=True):
-        #   5 basic + 5 time + 2 health + 7 OEE + 4 alarms
-        #   + 1+8 failure modes + 4 maint strategy
-        #   + 5 quality routing + 17 SPC = 58
-        # Machine2 (all features, no explicit degradation but advanced=True):
-        #   5 basic + 5 time + 2 health + 7 OEE + 4 alarms
-        #   + 1+8 failure modes + 4 maint strategy
-        #   + 5 quality routing + 17 SPC = 58
+        #   1+2 ops_state + 9 perf + 7 OEE + 4 alarms
+        #   + 1+8 FM + 4 MS + 5 QR + 17 SPC = 58
+        # Machine2 (advanced=True → also gets health):
+        #   1+2 ops_state + 9 perf + 7 OEE + 4 alarms
+        #   + 1+8 FM + 4 MS + 5 QR + 17 SPC = 58
         # 1 buffer: 2
         # 2 scrap sinks: 2
         # Shifts: 27
-        expected = 13 + 58 + 58 + 2 + 2 + 27
+        expected = 17 + 58 + 58 + 2 + 2 + 27
         assert count == expected, f"Expected {expected} nodes, got {count}"
 
     def test_eight_machine_node_count(self, eight_machine_config):
         """8-machine full-feature line."""
         conf = generate_telegraf_conf(eight_machine_config)
         count = _count_nodes(conf)
-        # System: 13
-        # Per machine (all features, degradation+advanced):
-        #   5 basic + 5 time + 2 health + 7 OEE + 4 alarms
-        #   + 1+8 failure modes + 4 maint strategy
-        #   + 5 quality routing + 17 SPC = 58
+        # System: 17
+        # Per machine: 58
         # 8 machines: 464
         # 7 buffers: 14
         # 8 scrap sinks: 8
         # Shifts: 27
-        expected = 13 + (58 * 8) + (2 * 7) + 8 + 27
+        expected = 17 + (58 * 8) + (2 * 7) + 8 + 27
         assert count == expected, f"Expected {expected} nodes, got {count}"
 
 
@@ -478,20 +527,23 @@ class TestEightMachineNaming:
     def test_machine8_nodes_exist(self, eight_machine_config):
         conf = generate_telegraf_conf(eight_machine_config)
         ids = _extract_identifiers(conf)
-        assert "Line1.Machine8.State" in ids
-        assert "Line1.Machine8.OEE.OEE" in ids
-        assert "Line1.Machine8.SPC.Capability.Cpk" in ids
+        res = f"{EP}.Resources"
+        assert f"{res}.M8_Equipment.OperationsState.State" in ids
+        assert f"{res}.M8_Equipment.OEE.OEE" in ids
+        assert f"{res}.M8_Equipment.SPC.Capability.Cpk" in ids
 
     def test_buffer7_exists(self, eight_machine_config):
         conf = generate_telegraf_conf(eight_machine_config)
         ids = _extract_identifiers(conf)
-        assert "Line1.Buffer7.CurrentLevel" in ids
-        assert "Line1.Buffer7.Capacity" in ids
+        res = f"{EP}.Resources"
+        assert f"{res}.B7_StorageUnit.CurrentLevel" in ids
+        assert f"{res}.B7_StorageUnit.Capacity" in ids
 
     def test_scrapbin8_exists(self, eight_machine_config):
         conf = generate_telegraf_conf(eight_machine_config)
         ids = _extract_identifiers(conf)
-        assert "Line1.ScrapBin8.CurrentLevel" in ids
+        res = f"{EP}.Resources"
+        assert f"{res}.ScrapBin8_StorageUnit.CurrentLevel" in ids
 
     def test_abbreviated_names(self, eight_machine_config):
         """Field names use M{i}_ prefix for InfluxDB brevity."""
@@ -505,11 +557,11 @@ class TestEightMachineNaming:
 # Tests: identifier pattern validation
 # ---------------------------------------------------------------------------
 class TestIdentifierPatterns:
-    def test_all_identifiers_start_with_line1(self, full_feature_2machine_config):
+    def test_all_identifiers_start_with_enterprise(self, full_feature_2machine_config):
         conf = generate_telegraf_conf(full_feature_2machine_config)
         ids = _extract_identifiers(conf)
         for node_id in ids:
-            assert node_id.startswith("Line1."), f"Bad prefix: {node_id}"
+            assert node_id.startswith("WeylandIndustries."), f"Bad prefix: {node_id}"
 
     def test_no_duplicate_identifiers(self, eight_machine_config):
         conf = generate_telegraf_conf(eight_machine_config)
@@ -550,9 +602,11 @@ class TestFailureModeCapitalization:
         }
         conf = generate_telegraf_conf(config)
         ids = _extract_identifiers(conf)
+        res = f"{EP}.Resources"
+        p = f"{res}.M1_Equipment"
         # Python .capitalize() on "bearing_wear" gives "Bearing_wear"
-        assert "Line1.Machine1.FailureModes.Bearing_wearFailureCount" in ids
-        assert "Line1.Machine1.FailureModes.Bearing_wearMTBF" in ids
+        assert f"{p}.FailureModes.Bearing_wearFailureCount" in ids
+        assert f"{p}.FailureModes.Bearing_wearMTBF" in ids
 
 
 # ---------------------------------------------------------------------------
@@ -588,8 +642,8 @@ class TestYAMLRoundTrip:
         config = all_configs["full_feature_line"]
         conf = generate_telegraf_conf(config)
         count = _count_nodes(conf)
-        # Should be close to the 148 nodes in the static config
-        assert count >= 140, f"Expected ~148 nodes, got {count}"
+        # ISA-95 system nodes are 17 (up from 13), so ~152+ nodes
+        assert count >= 140, f"Expected ~152 nodes, got {count}"
 
     def test_generate_from_yaml_8_machine(self):
         """Load actual full_feature_8_machine_line scenario."""
@@ -604,17 +658,19 @@ class TestYAMLRoundTrip:
         config = all_configs["full_feature_8_machine_line"]
         conf = generate_telegraf_conf(config)
         ids = _extract_identifiers(conf)
+        res = f"{EP}.Resources"
         # Verify all 8 machines present
         for i in range(1, 9):
-            assert f"Line1.Machine{i}.State" in ids
+            assert f"{res}.M{i}_Equipment.OperationsState.State" in ids
         # Verify all 7 buffers
         for i in range(1, 8):
-            assert f"Line1.Buffer{i}.CurrentLevel" in ids
+            assert f"{res}.B{i}_StorageUnit.CurrentLevel" in ids
         # Verify all 8 scrap bins
         for i in range(1, 9):
-            assert f"Line1.ScrapBin{i}.CurrentLevel" in ids
+            assert f"{res}.ScrapBin{i}_StorageUnit.CurrentLevel" in ids
         # Verify shifts present
-        assert "Line1.Shift.CurrentShiftNumber" in ids
+        sm = f"{EP}.SupportFunctions.ShiftManagement"
+        assert f"{sm}.CurrentShiftNumber" in ids
         # Verify node count is large (500+)
         count = _count_nodes(conf)
         assert count >= 500, f"Expected 500+ nodes, got {count}"
@@ -631,15 +687,15 @@ class TestEdgeCases:
         }
         conf = generate_telegraf_conf(config)
         count = _count_nodes(conf)
-        # 13 system + 21 machine = 34
-        assert count == 34
+        # 17 system + 21 machine = 38
+        assert count == 38
 
     def test_empty_machines_list(self):
         config = {"machines": [], "buffers": []}
         conf = generate_telegraf_conf(config)
         count = _count_nodes(conf)
         # Only system nodes
-        assert count == 13
+        assert count == 17
 
     def test_quality_routing_disabled_explicitly(self):
         config = {
@@ -651,4 +707,5 @@ class TestEdgeCases:
         }
         conf = generate_telegraf_conf(config)
         ids = _extract_identifiers(conf)
-        assert "Line1.Machine1.QualityRouting.ScrapCount" not in ids
+        res = f"{EP}.Resources"
+        assert f"{res}.M1_Equipment.QualityRouting.ScrapCount" not in ids

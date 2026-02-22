@@ -3,6 +3,7 @@ import random
 import sys
 import time
 import traceback
+from collections import Counter
 from datetime import datetime
 
 # Suppress noisy OPC UA library warnings
@@ -117,17 +118,30 @@ def create_machine_node(parent_node, opcua_idx: int, machine_node_name: str, ena
                         enable_spc: bool = False, enable_quality_routing: bool = False,
                         node_prefix: str = ""):
     """
-    Create OPC UA variables for a single machine.
+    Create ISA-95 aligned OPC UA variables for a single machine (Equipment node).
+
+    Internal structure follows ISA-95 grouping:
+      M{i}_Equipment/
+        Identification/       EquipmentID, EquipmentClass, Description
+        OperationsState/      State, HealthState, HealthPercent
+        OperationsPerformance/ PartCount, Utilisation, TargetPPM, ActualPPM, *Time
+        OEE/                  Availability, Performance, Quality, OEE, GoodPartCount, ...
+        Alarms/               ActiveAlarmCount, MachineFailureActive, ...
+        FailureModes/         (optional)
+        MaintenanceStrategy/  (optional)
+        SPC/                  (optional)
+        QualityRouting/       (optional)
 
     Args:
-        parent_node: Parent OPC UA node
+        parent_node: Parent OPC UA node (Resources object)
         opcua_idx: OPC UA namespace index
-        machine_node_name: Machine node name (e.g., "Machine1", "Machine2")
+        machine_node_name: Equipment BrowseName (e.g., "M1_Equipment")
         enable_health: Whether to create health variables
         enable_failure_modes: Whether to create FailureModes/MaintenanceStrategy subnodes
         failure_mode_names: List of failure mode names (e.g., ["mechanical", "electrical"])
         enable_spc: Whether to create SPC subnode
-        node_prefix: Dot-separated prefix for explicit NodeIds (e.g., "Line1.Machine1")
+        enable_quality_routing: Whether to create QualityRouting subnode
+        node_prefix: Dot-separated prefix for explicit NodeIds
 
     Returns:
         dict: Dictionary of variable objects
@@ -136,25 +150,39 @@ def create_machine_node(parent_node, opcua_idx: int, machine_node_name: str, ena
     machine_node = parent_node.add_object(_nid(p, opcua_idx), _qn(machine_node_name, opcua_idx))
 
     vars_dict = {}
-    vars_dict["state"] = machine_node.add_variable(_nid(f"{p}.State", opcua_idx), _qn("State", opcua_idx), "IDLE")
-    vars_dict["partcount"] = machine_node.add_variable(_nid(f"{p}.PartCount", opcua_idx), _qn("PartCount", opcua_idx), 0)
-    vars_dict["utilisation"] = machine_node.add_variable(_nid(f"{p}.Utilisation", opcua_idx), _qn("Utilisation", opcua_idx), 0.0)
-    vars_dict["target_ppm"] = machine_node.add_variable(_nid(f"{p}.TargetPPM", opcua_idx), _qn("TargetPPM", opcua_idx), 0.0)
-    vars_dict["actual_ppm"] = machine_node.add_variable(_nid(f"{p}.ActualPPM", opcua_idx), _qn("ActualPPM", opcua_idx), 0.0)
 
-    # Time tracking (5 variables)
-    vars_dict["blocked_time"] = machine_node.add_variable(_nid(f"{p}.BlockedTime", opcua_idx), _qn("BlockedTime", opcua_idx), 0.0)
-    vars_dict["starved_time"] = machine_node.add_variable(_nid(f"{p}.StarvedTime", opcua_idx), _qn("StarvedTime", opcua_idx), 0.0)
-    vars_dict["down_time"] = machine_node.add_variable(_nid(f"{p}.DownTime", opcua_idx), _qn("DownTime", opcua_idx), 0.0)
-    vars_dict["processing_time"] = machine_node.add_variable(_nid(f"{p}.ProcessingTime", opcua_idx), _qn("ProcessingTime", opcua_idx), 0.0)
-    vars_dict["idle_time"] = machine_node.add_variable(_nid(f"{p}.IdleTime", opcua_idx), _qn("IdleTime", opcua_idx), 0.0)
+    # --- Identification ---
+    id_p = f"{p}.Identification"
+    id_node = machine_node.add_object(_nid(id_p, opcua_idx), _qn("Identification", opcua_idx))
+    # Extract short id like "M1" from "M1_Equipment"
+    short_id = machine_node_name.replace("_Equipment", "")
+    id_node.add_variable(_nid(f"{id_p}.EquipmentID", opcua_idx), _qn("EquipmentID", opcua_idx), short_id)
+    id_node.add_variable(_nid(f"{id_p}.EquipmentClass", opcua_idx), _qn("EquipmentClass", opcua_idx), "WorkCell")
+    id_node.add_variable(_nid(f"{id_p}.Description", opcua_idx), _qn("Description", opcua_idx), f"Machine {short_id}")
 
-    # Health (optional - only for machines with degradation)
+    # --- OperationsState (State + Health) ---
+    os_p = f"{p}.OperationsState"
+    ops_state_node = machine_node.add_object(_nid(os_p, opcua_idx), _qn("OperationsState", opcua_idx))
+    vars_dict["state"] = ops_state_node.add_variable(_nid(f"{os_p}.State", opcua_idx), _qn("State", opcua_idx), "IDLE")
+
     if enable_health:
-        vars_dict["health"] = machine_node.add_variable(_nid(f"{p}.HealthState", opcua_idx), _qn("HealthState", opcua_idx), 0)
-        vars_dict["health_pct"] = machine_node.add_variable(_nid(f"{p}.HealthPercent", opcua_idx), _qn("HealthPercent", opcua_idx), 100.0)
+        vars_dict["health"] = ops_state_node.add_variable(_nid(f"{os_p}.HealthState", opcua_idx), _qn("HealthState", opcua_idx), 0)
+        vars_dict["health_pct"] = ops_state_node.add_variable(_nid(f"{os_p}.HealthPercent", opcua_idx), _qn("HealthPercent", opcua_idx), 100.0)
 
-    # OEE sub-node (7 variables)
+    # --- OperationsPerformance (counts + time tracking) ---
+    op_p = f"{p}.OperationsPerformance"
+    ops_perf_node = machine_node.add_object(_nid(op_p, opcua_idx), _qn("OperationsPerformance", opcua_idx))
+    vars_dict["partcount"] = ops_perf_node.add_variable(_nid(f"{op_p}.PartCount", opcua_idx), _qn("PartCount", opcua_idx), 0)
+    vars_dict["utilisation"] = ops_perf_node.add_variable(_nid(f"{op_p}.Utilisation", opcua_idx), _qn("Utilisation", opcua_idx), 0.0)
+    vars_dict["target_ppm"] = ops_perf_node.add_variable(_nid(f"{op_p}.TargetPPM", opcua_idx), _qn("TargetPPM", opcua_idx), 0.0)
+    vars_dict["actual_ppm"] = ops_perf_node.add_variable(_nid(f"{op_p}.ActualPPM", opcua_idx), _qn("ActualPPM", opcua_idx), 0.0)
+    vars_dict["blocked_time"] = ops_perf_node.add_variable(_nid(f"{op_p}.BlockedTime", opcua_idx), _qn("BlockedTime", opcua_idx), 0.0)
+    vars_dict["starved_time"] = ops_perf_node.add_variable(_nid(f"{op_p}.StarvedTime", opcua_idx), _qn("StarvedTime", opcua_idx), 0.0)
+    vars_dict["down_time"] = ops_perf_node.add_variable(_nid(f"{op_p}.DownTime", opcua_idx), _qn("DownTime", opcua_idx), 0.0)
+    vars_dict["processing_time"] = ops_perf_node.add_variable(_nid(f"{op_p}.ProcessingTime", opcua_idx), _qn("ProcessingTime", opcua_idx), 0.0)
+    vars_dict["idle_time"] = ops_perf_node.add_variable(_nid(f"{op_p}.IdleTime", opcua_idx), _qn("IdleTime", opcua_idx), 0.0)
+
+    # --- OEE sub-node (7 variables) ---
     oee_p = f"{p}.OEE"
     oee_node = machine_node.add_object(_nid(oee_p, opcua_idx), _qn("OEE", opcua_idx))
     vars_dict["availability"] = oee_node.add_variable(_nid(f"{oee_p}.Availability", opcua_idx), _qn("Availability", opcua_idx), 0.0)
@@ -165,18 +193,17 @@ def create_machine_node(parent_node, opcua_idx: int, machine_node_name: str, ena
     vars_dict["defective_parts"] = oee_node.add_variable(_nid(f"{oee_p}.DefectivePartCount", opcua_idx), _qn("DefectivePartCount", opcua_idx), 0)
     vars_dict["theoretical"] = oee_node.add_variable(_nid(f"{oee_p}.TheoreticalOutput", opcua_idx), _qn("TheoreticalOutput", opcua_idx), 0.0)
 
-    # Alarms sub-node
+    # --- Alarms sub-node ---
     alarm_vars = create_alarms_node(machine_node, opcua_idx, alarm_type="machine",
                                     node_prefix=f"{p}.Alarms")
     vars_dict.update({f"alarm_{k}": v for k, v in alarm_vars.items()})
 
-    # FailureModes sub-node
+    # --- FailureModes sub-node (optional) ---
     if enable_failure_modes and failure_mode_names:
         fm_p = f"{p}.FailureModes"
         fm_node = machine_node.add_object(_nid(fm_p, opcua_idx), _qn("FailureModes", opcua_idx))
         vars_dict["fm_active"] = fm_node.add_variable(_nid(f"{fm_p}.ActiveFailureMode", opcua_idx), _qn("ActiveFailureMode", opcua_idx), "none")
 
-        # Create variables for each failure mode
         for fm_name in failure_mode_names:
             prefix = fm_name.capitalize()
             vars_dict[f"fm_{fm_name}_count"] = fm_node.add_variable(_nid(f"{fm_p}.{prefix}FailureCount", opcua_idx), _qn(f"{prefix}FailureCount", opcua_idx), 0)
@@ -192,13 +219,13 @@ def create_machine_node(parent_node, opcua_idx: int, machine_node_name: str, ena
         vars_dict["ms_pm_count"] = ms_node.add_variable(_nid(f"{ms_p}.PMCount", opcua_idx), _qn("PMCount", opcua_idx), 0)
         vars_dict["ms_cm_count"] = ms_node.add_variable(_nid(f"{ms_p}.CMCount", opcua_idx), _qn("CMCount", opcua_idx), 0)
 
-    # SPC sub-node
+    # --- SPC sub-node (optional) ---
     if enable_spc:
         spc_vars = create_spc_node(machine_node, opcua_idx, machine_prefix=machine_node_name,
                                    node_prefix=f"{p}.SPC")
         vars_dict.update({f"spc_{k}": v for k, v in spc_vars.items()})
 
-    # QualityRouting sub-node
+    # --- QualityRouting sub-node (optional) ---
     if enable_quality_routing:
         qr_p = f"{p}.QualityRouting"
         qr_node = machine_node.add_object(_nid(qr_p, opcua_idx), _qn("QualityRouting", opcua_idx))
@@ -211,32 +238,67 @@ def create_machine_node(parent_node, opcua_idx: int, machine_node_name: str, ena
     return vars_dict
 
 
-def create_buffer_node(parent_node, opcua_idx: int, buffer_name: str, capacity: int,
-                       node_prefix: str = ""):
+def create_machine_asset_node(parent_node, opcua_idx: int, asset_node_name: str,
+                              node_prefix: str = ""):
     """
-    Create OPC UA variables for a single buffer.
+    Create ISA-95 PhysicalAsset node for a machine (M{i}_Asset).
+
+    Contains identification metadata (vendor, model, serial) — static values
+    set at startup. No runtime updates needed.
 
     Args:
-        parent_node: Parent OPC UA node
+        parent_node: Parent OPC UA node (Resources object)
         opcua_idx: OPC UA namespace index
-        buffer_name: Buffer node name (e.g., "Buffer1", "Buffer2")
-        capacity: Buffer capacity
-        node_prefix: Dot-separated prefix for explicit NodeIds (e.g., "Line1.Buffer1")
+        asset_node_name: Asset BrowseName (e.g., "M1_Asset")
+        node_prefix: Dot-separated prefix for explicit NodeIds
+
+    Returns:
+        dict: Dictionary of asset variable objects (informational only)
+    """
+    p = node_prefix
+    asset_node = parent_node.add_object(_nid(p, opcua_idx), _qn(asset_node_name, opcua_idx))
+
+    id_p = f"{p}.Identification"
+    id_node = asset_node.add_object(_nid(id_p, opcua_idx), _qn("Identification", opcua_idx))
+
+    short_id = asset_node_name.replace("_Asset", "")
+    id_node.add_variable(_nid(f"{id_p}.PhysicalAssetID", opcua_idx), _qn("PhysicalAssetID", opcua_idx), asset_node_name)
+    id_node.add_variable(_nid(f"{id_p}.AssetClass", opcua_idx), _qn("AssetClass", opcua_idx), "Machine")
+    id_node.add_variable(_nid(f"{id_p}.Vendor", opcua_idx), _qn("Vendor", opcua_idx), "Generic")
+    id_node.add_variable(_nid(f"{id_p}.Model", opcua_idx), _qn("Model", opcua_idx), "StandardMachine")
+    id_node.add_variable(_nid(f"{id_p}.SerialNumber", opcua_idx), _qn("SerialNumber", opcua_idx), f"SN-{short_id}-001")
+
+    return {}
+
+
+def create_storage_unit_node(parent_node, opcua_idx: int, unit_name: str, capacity: int,
+                             node_prefix: str = "", include_alarms: bool = True):
+    """
+    Create ISA-95 StorageUnit node for a buffer or scrap bin.
+
+    Args:
+        parent_node: Parent OPC UA node (Resources object)
+        opcua_idx: OPC UA namespace index
+        unit_name: StorageUnit BrowseName (e.g., "B1_StorageUnit", "ScrapBin1_StorageUnit")
+        capacity: Storage capacity (-1 for unlimited/scrap)
+        node_prefix: Dot-separated prefix for explicit NodeIds
+        include_alarms: Whether to create Alarms sub-node (True for buffers, False for scrap)
 
     Returns:
         dict: Dictionary of variable objects
     """
     p = node_prefix
-    buffer_node = parent_node.add_object(_nid(p, opcua_idx), _qn(buffer_name, opcua_idx))
+    unit_node = parent_node.add_object(_nid(p, opcua_idx), _qn(unit_name, opcua_idx))
 
     vars_dict = {}
-    vars_dict["level"] = buffer_node.add_variable(_nid(f"{p}.CurrentLevel", opcua_idx), _qn("CurrentLevel", opcua_idx), 0)
-    vars_dict["capacity"] = buffer_node.add_variable(_nid(f"{p}.Capacity", opcua_idx), _qn("Capacity", opcua_idx), capacity)
+    vars_dict["level"] = unit_node.add_variable(_nid(f"{p}.CurrentLevel", opcua_idx), _qn("CurrentLevel", opcua_idx), 0)
+    if capacity >= 0:
+        vars_dict["capacity"] = unit_node.add_variable(_nid(f"{p}.Capacity", opcua_idx), _qn("Capacity", opcua_idx), capacity)
 
-    # Alarms sub-node
-    alarm_vars = create_alarms_node(buffer_node, opcua_idx, alarm_type="buffer",
-                                    node_prefix=f"{p}.Alarms")
-    vars_dict.update({f"alarm_{k}": v for k, v in alarm_vars.items()})
+    if include_alarms:
+        alarm_vars = create_alarms_node(unit_node, opcua_idx, alarm_type="buffer",
+                                        node_prefix=f"{p}.Alarms")
+        vars_dict.update({f"alarm_{k}": v for k, v in alarm_vars.items()})
 
     return vars_dict
 
@@ -349,20 +411,20 @@ def create_spc_node(parent_node, opcua_idx: int, machine_prefix: str = "",
     return vars_dict
 
 
-def create_shift_node(parent_node, opcua_idx: int, node_prefix: str = ""):
+def create_shift_management_node(parent_node, opcua_idx: int, node_prefix: str = ""):
     """
-    Create Shift tracking sub-node.
+    Create ShiftManagement sub-node under SupportFunctions (ISA-95 aligned).
 
     Args:
-        parent_node: Parent OPC UA node (usually Line1)
+        parent_node: Parent OPC UA node (SupportFunctions object)
         opcua_idx: OPC UA namespace index
-        node_prefix: Dot-separated prefix for explicit NodeIds (e.g., "Line1.Shift")
+        node_prefix: Dot-separated prefix for explicit NodeIds
 
     Returns:
         dict: Dictionary of shift variable objects
     """
     p = node_prefix
-    shift_node = parent_node.add_object(_nid(p, opcua_idx), _qn("Shift", opcua_idx))
+    shift_node = parent_node.add_object(_nid(p, opcua_idx), _qn("ShiftManagement", opcua_idx))
 
     vars_dict = {}
 
@@ -415,29 +477,72 @@ def detect_machine_state(machine, pause_line: bool, health_state: int = 0, maint
     """
     Determine machine state based on Simantha flags and health.
 
+    Supports multi-state degradation: failed_health is read from the machine
+    object (defaults to 1 for 2-state). States between 0 and failed_health
+    are reported as DEGRADED.
+
     Args:
         machine: Simantha Machine object
         pause_line: Global pause flag
-        health_state: 0=healthy, 1=failed
+        health_state: 0=healthy, >=failed_health=failed
         maint_active: True if maintainer is currently repairing this machine
 
     Returns:
-        State string: IDLE, PROCESSING, BLOCKED, STARVED, PAUSED, FAILED, UNDER_REPAIR
+        State string: IDLE, PROCESSING, BLOCKED, STARVED, PAUSED,
+                      DEGRADED, FAILED, UNDER_REPAIR
     """
+    failed_health = getattr(machine, "failed_health", 1)
+
     if pause_line:
         return "PAUSED"
 
-    if health_state == 1:
+    if health_state >= failed_health:
         return "UNDER_REPAIR" if maint_active else "FAILED"
 
     if machine.blocked:
         return "BLOCKED"
     elif machine.starved:
         return "STARVED"
+    elif health_state > 0:
+        return "DEGRADED"
     elif machine.has_part:
         return "PROCESSING"
     else:
         return "IDLE"
+
+
+def analyze_part_routing(sink):
+    """
+    Analyze routing history of parts collected by a sink.
+
+    Args:
+        sink: Simantha Sink object (with optional .contents attribute)
+
+    Returns:
+        dict with keys:
+            total_parts: Number of parts in the sink
+            unique_routes: Number of distinct routes taken
+            route_counts: dict mapping route string to count
+    """
+    result = {"total_parts": 0, "unique_routes": 0, "route_counts": {}}
+
+    if not hasattr(sink, "contents"):
+        return result
+
+    parts = sink.contents
+    result["total_parts"] = len(parts)
+
+    routes = Counter()
+    for part in parts:
+        if hasattr(part, "routing_history"):
+            route_str = " -> ".join(part.routing_history)
+        else:
+            route_str = "unknown"
+        routes[route_str] += 1
+
+    result["route_counts"] = dict(routes)
+    result["unique_routes"] = len(routes)
+    return result
 
 
 def detect_machine_alarms(machine_name: str, current_state: str, metrics: dict, health_state: int,
@@ -621,6 +726,7 @@ def accumulate_time(metrics: dict, current_state: str, sim_step: float) -> None:
         "FAILED": "down_time",
         "UNDER_REPAIR": "down_time",
         "PROCESSING": "processing_time",
+        "DEGRADED": "processing_time",
         "IDLE": "idle_time",
     }
 
@@ -1075,9 +1181,10 @@ def write_machine_opcua_vars(machine_vars, machine_obj, current_state, metrics,
     machine_vars["actual_ppm"].set_value(round(actual_ppm, 2))
     # Health (if enabled)
     if "health" in machine_vars:
-        health_pct = 100.0 * (1 - health_state)
+        failed_health = getattr(machine_obj, "failed_health", 1)
+        health_pct = 100.0 * (1 - health_state / failed_health) if failed_health > 0 else 0.0
         machine_vars["health"].set_value(health_state)
-        machine_vars["health_pct"].set_value(health_pct)
+        machine_vars["health_pct"].set_value(round(health_pct, 1))
 
     # Failure mode statistics
     if isinstance(machine_obj, AdvancedMachine) and "fm_active" in machine_vars:
@@ -1219,15 +1326,31 @@ def calculate_line_level_oee(machines, machine_metrics):
 
 def write_system_opcua_vars(opcua_vars, sim_time, total_parts_produced, total_wip,
                             line_availability, line_performance, line_quality, line_oee,
-                            maint_active, maint_queue_length, total_repairs):
+                            maint_active, maint_queue_length, total_repairs,
+                            pause_line=False, line_good_parts=0, line_defective_parts=0):
     """Write system-level and line-level KPIs to OPC UA."""
     opcua_vars["system"]["simtime"].set_value(sim_time)
     opcua_vars["system"]["throughput"].set_value(total_parts_produced)
+
+    # ISA-95 LineState derived from pause flag and maintenance
+    if pause_line:
+        line_state = "HELD"
+    elif maint_active:
+        line_state = "RUNNING"
+    elif total_parts_produced > 0:
+        line_state = "RUNNING"
+    else:
+        line_state = "STOPPED"
+    opcua_vars["system"]["line_state"].set_value(line_state)
+
     opcua_vars["line_kpis"]["total_wip"].set_value(total_wip)
     opcua_vars["line_kpis"]["line_availability"].set_value(line_availability)
     opcua_vars["line_kpis"]["line_performance"].set_value(line_performance)
     opcua_vars["line_kpis"]["line_quality"].set_value(line_quality)
     opcua_vars["line_kpis"]["line_oee"].set_value(line_oee)
+    if "line_good_parts" in opcua_vars["line_kpis"]:
+        opcua_vars["line_kpis"]["line_good_parts"].set_value(line_good_parts)
+        opcua_vars["line_kpis"]["line_defective_parts"].set_value(line_defective_parts)
 
     opcua_vars["maintenance"]["active"].set_value(maint_active)
     opcua_vars["maintenance"]["queue"].set_value(maint_queue_length)
@@ -1381,10 +1504,20 @@ def build_simantha_system(config: dict):
         # Build degradation kwargs (shared across machine types)
         degradation_kwargs = {}
         if enable_degradation:
-            degradation_kwargs["degradation_matrix"] = machine_cfg.get(
-                "degradation_matrix", DEGRADATION_MATRIX
-            )
-            degradation_kwargs["cbm_threshold"] = machine_cfg.get("cbm_threshold", 1)
+            health_cfg = machine_cfg.get("health_states", {})
+            if health_cfg:
+                from simantha.utils import generate_degradation_matrix
+                h_max = health_cfg.get("h_max", 1)
+                p_degrade = health_cfg.get("p_degrade", 0.01)
+                degradation_kwargs["degradation_matrix"] = generate_degradation_matrix(
+                    p=p_degrade, h_max=h_max
+                )
+                degradation_kwargs["cbm_threshold"] = health_cfg.get("cbm_threshold", 1)
+            else:
+                degradation_kwargs["degradation_matrix"] = machine_cfg.get(
+                    "degradation_matrix", DEGRADATION_MATRIX
+                )
+                degradation_kwargs["cbm_threshold"] = machine_cfg.get("cbm_threshold", 1)
 
         # Build quality routing kwargs
         quality_kwargs = {}
@@ -1449,7 +1582,17 @@ def build_simantha_system(config: dict):
     # Create maintainer if enabled
     maintainer_cfg = config.get("maintainer", {"enabled": False})
     if maintainer_cfg.get("enabled", False):
-        maintainer = Maintainer(capacity=maintainer_cfg.get("capacity", 1))
+        strategy = maintainer_cfg.get("strategy", "fifo")
+        capacity = maintainer_cfg.get("capacity", 1)
+        if strategy != "fifo":
+            from priority_maintainer import PriorityMaintainer
+            machine_priorities = maintainer_cfg.get("machine_priorities", {})
+            maintainer = PriorityMaintainer(
+                capacity=capacity, strategy=strategy,
+                machine_priorities=machine_priorities
+            )
+        else:
+            maintainer = Maintainer(capacity=capacity)
     else:
         maintainer = None
 
@@ -1487,20 +1630,31 @@ def build_simantha_system(config: dict):
 
 def build_opcua_server(config: dict):
     """
-    Build OPC UA server with dynamic node creation from config.
+    Build ISA-95/ISO 23247 aligned OPC UA server from config.
+
+    Creates an address space with the ISA-95 hierarchy:
+      Enterprise / Site / Area / Line_Equipment + Line_Asset
+
+    Under Line_Equipment:
+      Identification, OperationsState, OperationsPerformance, OEE,
+      Resources (machines, buffers, scrap), SupportFunctions (maintenance, shifts)
 
     Args:
-        config: Dict with keys 'machines', 'buffers', 'maintainer'
+        config: Dict with keys 'machines', 'buffers', 'maintainer', and optional
+                'enterprise', 'site', 'area', 'line_name' for ISA-95 naming.
 
     Returns:
         tuple: (server, opcua_vars, idx)
                opcua_vars is a structured dict:
                {
-                   "system": {simtime, throughput, pause_line, interarrival_time},
+                   "system": {simtime, throughput, pause_line, interarrival_time, ...},
                    "line_kpis": {total_wip, line_availability, ...},
                    "machines": {"M1": {...}, "M2": {...}, ...},
                    "buffers": {"B1": {...}, "B2": {...}, ...},
-                   "maintenance": {active, queue, total_repairs}
+                   "maintenance": {active, queue, total_repairs},
+                   "shift": {...},
+                   "scrap_sinks": {...},
+                   "scrap_kpis": {...},
                }
     """
     server = Server()
@@ -1512,89 +1666,136 @@ def build_opcua_server(config: dict):
 
     objects = server.get_objects_node()
 
-    # Top-level line object
-    line1 = objects.add_object(_nid("Line1", idx), _qn("Line1", idx))
+    # --- ISA-95 hierarchy: Enterprise > Site > Area ---
+    ent_name = config.get("enterprise", "WeylandIndustries")
+    site_name = config.get("site", "LV426_Colony")
+    area_name = config.get("area", "AtmosphereProcessor01")
+    line_name = config.get("line_name", "Nostromo_BioProductPakaging")
 
-    # System / KPIs under the line
-    system_node = line1.add_object(_nid("Line1.System", idx), _qn("System", idx))
-    var_simtime = system_node.add_variable(_nid("Line1.System.SimTime", idx), _qn("SimTime", idx), 0.0)
-    var_throughput = system_node.add_variable(_nid("Line1.System.Throughput", idx), _qn("Throughput", idx), 0)
+    enterprise = objects.add_object(_nid(ent_name, idx), _qn(ent_name, idx))
+    site = enterprise.add_object(_nid(f"{ent_name}.{site_name}", idx), _qn(site_name, idx))
+    area = site.add_object(_nid(f"{ent_name}.{site_name}.{area_name}", idx), _qn(area_name, idx))
 
-    # Line-level KPIs
-    line_kpi_node = line1.add_object(_nid("Line1.LineKPIs", idx), _qn("LineKPIs", idx))
-    var_total_wip = line_kpi_node.add_variable(_nid("Line1.LineKPIs.TotalWIP", idx), _qn("TotalWIP", idx), 0)
+    # Line Equipment and Line Asset nodes
+    equip_name = f"{line_name}_Equipment"
+    asset_name = f"{line_name}_Asset"
+    ep = f"{ent_name}.{site_name}.{area_name}.{equip_name}"  # equipment prefix
+    ap = f"{ent_name}.{site_name}.{area_name}.{asset_name}"  # asset prefix
 
-    # Line-level OEE
-    line_oee_node = line_kpi_node.add_object(_nid("Line1.LineKPIs.LineOEE", idx), _qn("LineOEE", idx))
-    var_line_availability = line_oee_node.add_variable(_nid("Line1.LineKPIs.LineOEE.Availability", idx), _qn("Availability", idx), 0.0)
-    var_line_performance = line_oee_node.add_variable(_nid("Line1.LineKPIs.LineOEE.Performance", idx), _qn("Performance", idx), 0.0)
-    var_line_quality = line_oee_node.add_variable(_nid("Line1.LineKPIs.LineOEE.Quality", idx), _qn("Quality", idx), 1.0)
-    var_line_oee = line_oee_node.add_variable(_nid("Line1.LineKPIs.LineOEE.OEE", idx), _qn("OEE", idx), 0.0)
+    line_equip = area.add_object(_nid(ep, idx), _qn(equip_name, idx))
+    line_asset = area.add_object(_nid(ap, idx), _qn(asset_name, idx))
 
-    # Line-level scrap KPIs
-    var_total_scrap = line_kpi_node.add_variable(_nid("Line1.LineKPIs.TotalScrap", idx), _qn("TotalScrap", idx), 0)
-    var_scrap_rate = line_kpi_node.add_variable(_nid("Line1.LineKPIs.ScrapRate", idx), _qn("ScrapRate", idx), 0.0)
+    # --- Line Asset identification (static metadata) ---
+    la_id_p = f"{ap}.Identification"
+    la_id_node = line_asset.add_object(_nid(la_id_p, idx), _qn("Identification", idx))
+    la_id_node.add_variable(_nid(f"{la_id_p}.PhysicalAssetID", idx), _qn("PhysicalAssetID", idx), asset_name)
+    la_id_node.add_variable(_nid(f"{la_id_p}.AssetClass", idx), _qn("AssetClass", idx), "ProductionLine")
+    la_id_node.add_variable(_nid(f"{la_id_p}.Description", idx), _qn("Description", idx), f"Physical asset for {line_name}")
 
-    # EventLog node
-    event_log_node = line1.add_object(_nid("Line1.EventLog", idx), _qn("EventLog", idx))
-    var_total_events = event_log_node.add_variable(_nid("Line1.EventLog.TotalEventsGenerated", idx), _qn("TotalEventsGenerated", idx), 0)
+    # --- Line Equipment > Identification ---
+    le_id_p = f"{ep}.Identification"
+    le_id_node = line_equip.add_object(_nid(le_id_p, idx), _qn("Identification", idx))
+    le_id_node.add_variable(_nid(f"{le_id_p}.EquipmentID", idx), _qn("EquipmentID", idx), "Line1")
+    le_id_node.add_variable(_nid(f"{le_id_p}.EquipmentClass", idx), _qn("EquipmentClass", idx), "ProductionLine")
+    le_id_node.add_variable(_nid(f"{le_id_p}.Description", idx), _qn("Description", idx), f"Digital twin of {line_name}")
 
-    # System controls (writable inputs to control simulation)
-    controls_node = system_node.add_object(_nid("Line1.System.Controls", idx), _qn("Controls", idx))
-    var_pause_line = controls_node.add_variable(_nid("Line1.System.Controls.cmdPauseLine", idx), _qn("cmdPauseLine", idx), False)
+    # --- Line Equipment > OperationsState ---
+    os_p = f"{ep}.OperationsState"
+    ops_state = line_equip.add_object(_nid(os_p, idx), _qn("OperationsState", idx))
+    var_simtime = ops_state.add_variable(_nid(f"{os_p}.SimTime", idx), _qn("SimTime", idx), 0.0)
+    var_line_state = ops_state.add_variable(_nid(f"{os_p}.LineState", idx), _qn("LineState", idx), "STOPPED")
+    var_line_mode = ops_state.add_variable(_nid(f"{os_p}.LineMode", idx), _qn("LineMode", idx), "AUTO")
+
+    # Controls under OperationsState
+    ctrl_p = f"{os_p}.Controls"
+    controls_node = ops_state.add_object(_nid(ctrl_p, idx), _qn("Controls", idx))
+    var_pause_line = controls_node.add_variable(_nid(f"{ctrl_p}.CmdPauseLine", idx), _qn("CmdPauseLine", idx), False)
     default_interarrival = config.get("source", {}).get("interarrival_time", 1.0)
-    var_interarrival = controls_node.add_variable(_nid("Line1.System.Controls.setInterarrivalTime", idx), _qn("setInterarrivalTime", idx), default_interarrival)
+    var_interarrival = controls_node.add_variable(_nid(f"{ctrl_p}.SetInterarrivalTime", idx), _qn("SetInterarrivalTime", idx), default_interarrival)
 
-    # Dynamic machine node creation
+    # --- Line Equipment > OperationsPerformance ---
+    op_p = f"{ep}.OperationsPerformance"
+    ops_perf = line_equip.add_object(_nid(op_p, idx), _qn("OperationsPerformance", idx))
+    var_throughput = ops_perf.add_variable(_nid(f"{op_p}.Throughput", idx), _qn("Throughput", idx), 0)
+    var_total_wip = ops_perf.add_variable(_nid(f"{op_p}.TotalWIP", idx), _qn("TotalWIP", idx), 0)
+    var_total_scrap = ops_perf.add_variable(_nid(f"{op_p}.TotalScrap", idx), _qn("TotalScrap", idx), 0)
+    var_scrap_rate = ops_perf.add_variable(_nid(f"{op_p}.ScrapRate", idx), _qn("ScrapRate", idx), 0.0)
+
+    # --- Line Equipment > OEE ---
+    oee_p = f"{ep}.OEE"
+    line_oee_node = line_equip.add_object(_nid(oee_p, idx), _qn("OEE", idx))
+    var_line_availability = line_oee_node.add_variable(_nid(f"{oee_p}.Availability", idx), _qn("Availability", idx), 0.0)
+    var_line_performance = line_oee_node.add_variable(_nid(f"{oee_p}.Performance", idx), _qn("Performance", idx), 0.0)
+    var_line_quality = line_oee_node.add_variable(_nid(f"{oee_p}.Quality", idx), _qn("Quality", idx), 1.0)
+    var_line_oee = line_oee_node.add_variable(_nid(f"{oee_p}.OEE", idx), _qn("OEE", idx), 0.0)
+    var_line_good_parts = line_oee_node.add_variable(_nid(f"{oee_p}.GoodPartCount", idx), _qn("GoodPartCount", idx), 0)
+    var_line_defective_parts = line_oee_node.add_variable(_nid(f"{oee_p}.DefectivePartCount", idx), _qn("DefectivePartCount", idx), 0)
+
+    # --- Line Equipment > Resources ---
+    res_p = f"{ep}.Resources"
+    resources = line_equip.add_object(_nid(res_p, idx), _qn("Resources", idx))
+
+    # EventLog under line equipment
+    el_p = f"{ep}.EventLog"
+    event_log_node = line_equip.add_object(_nid(el_p, idx), _qn("EventLog", idx))
+    var_total_events = event_log_node.add_variable(_nid(f"{el_p}.TotalEventsGenerated", idx), _qn("TotalEventsGenerated", idx), 0)
+
+    # --- Resources > Machine Equipment + Asset nodes ---
     machines_vars = {}
     for i, machine_cfg in enumerate(config["machines"], start=1):
         machine_name = machine_cfg["name"]
-        machine_node_name = f"Machine{i}"  # "Machine1", "Machine2", "Machine3", ...
+        equip_node_name = f"M{i}_Equipment"
+        asset_node_name = f"M{i}_Asset"
         enable_health = (machine_cfg.get("enable_degradation", False)
                          or machine_cfg.get("enable_advanced_failures", False))
 
-        # Check for advanced failures
         enable_failure_modes = machine_cfg.get("enable_advanced_failures", False)
         failure_mode_names = []
         if enable_failure_modes:
             failure_mode_names = [fm["name"] for fm in machine_cfg.get("failure_modes", [])]
 
-        # Check for SPC analytics
         enable_spc = machine_cfg.get("enable_spc", False)
-
-        # Check for quality routing
         enable_quality_routing = machine_cfg.get("quality_routing", {}).get("enabled", False)
 
-        machine_vars = create_machine_node(line1, idx, machine_node_name, enable_health,
-                                          enable_failure_modes, failure_mode_names,
-                                          enable_spc, enable_quality_routing,
-                                          node_prefix=f"Line1.{machine_node_name}")
+        machine_vars = create_machine_node(resources, idx, equip_node_name, enable_health,
+                                           enable_failure_modes, failure_mode_names,
+                                           enable_spc, enable_quality_routing,
+                                           node_prefix=f"{res_p}.{equip_node_name}")
         machines_vars[machine_name] = machine_vars
 
-    # Scrap sink OPC UA nodes
-    scrap_vars = {}
-    for scrap_cfg in config.get("scrap_sinks", []):
-        scrap_name = scrap_cfg["name"]
-        scrap_p = f"Line1.{scrap_name}"
-        scrap_node = line1.add_object(_nid(scrap_p, idx), _qn(scrap_name, idx))
-        scrap_vars[scrap_name] = {
-            "level": scrap_node.add_variable(_nid(f"{scrap_p}.CurrentLevel", idx), _qn("CurrentLevel", idx), 0),
-        }
+        # Physical asset node
+        create_machine_asset_node(resources, idx, asset_node_name,
+                                  node_prefix=f"{res_p}.{asset_node_name}")
 
-    # Dynamic buffer creation
+    # --- Resources > Buffer StorageUnit nodes ---
     buffers_vars = {}
     for i, buffer_cfg in enumerate(config["buffers"], start=1):
         buffer_name = buffer_cfg["name"]
-        buffer_node_name = f"Buffer{i}"  # "Buffer1", "Buffer2", "Buffer3", ...
+        unit_name = f"B{i}_StorageUnit"
         capacity = buffer_cfg.get("capacity", 10)
 
-        buffer_vars = create_buffer_node(line1, idx, buffer_node_name, capacity,
-                                         node_prefix=f"Line1.{buffer_node_name}")
+        buffer_vars = create_storage_unit_node(resources, idx, unit_name, capacity,
+                                               node_prefix=f"{res_p}.{unit_name}",
+                                               include_alarms=True)
         buffers_vars[buffer_name] = buffer_vars
 
+    # --- Resources > Scrap StorageUnit nodes ---
+    scrap_vars = {}
+    for scrap_cfg in config.get("scrap_sinks", []):
+        scrap_name = scrap_cfg["name"]
+        unit_name = f"{scrap_name}_StorageUnit"
+        scrap_unit_vars = create_storage_unit_node(resources, idx, unit_name, -1,
+                                                   node_prefix=f"{res_p}.{unit_name}",
+                                                   include_alarms=False)
+        scrap_vars[scrap_name] = scrap_unit_vars
+
+    # --- SupportFunctions ---
+    sf_p = f"{ep}.SupportFunctions"
+    support = line_equip.add_object(_nid(sf_p, idx), _qn("SupportFunctions", idx))
+
     # Maintenance
-    maint_p = "Line1.Maintenance"
-    maintenance_node = line1.add_object(_nid(maint_p, idx), _qn("Maintenance", idx))
+    maint_p = f"{sf_p}.Maintenance"
+    maintenance_node = support.add_object(_nid(maint_p, idx), _qn("Maintenance", idx))
     var_maint_active = maintenance_node.add_variable(_nid(f"{maint_p}.MaintenanceActive", idx), _qn("MaintenanceActive", idx), False)
     var_maint_queue = maintenance_node.add_variable(_nid(f"{maint_p}.QueueLength", idx), _qn("QueueLength", idx), 0)
     var_total_repairs = maintenance_node.add_variable(_nid(f"{maint_p}.TotalRepairs", idx), _qn("TotalRepairs", idx), 0)
@@ -1602,20 +1803,24 @@ def build_opcua_server(config: dict):
     # Shift tracking (optional)
     shift_vars = {}
     if "shifts" in config:
-        shift_vars = create_shift_node(line1, idx, node_prefix="Line1.Shift")
+        shift_vars = create_shift_management_node(support, idx,
+                                                  node_prefix=f"{sf_p}.ShiftManagement")
 
     # Writable controls
     writable_vars = [var_pause_line, var_interarrival]
     for v in writable_vars:
         v.set_writable()
 
-    # Return structured dictionary
+    # Return structured dictionary (internal keys unchanged for main loop compatibility)
     opcua_vars = {
         "system": {
             "simtime": var_simtime,
             "throughput": var_throughput,
             "pause_line": var_pause_line,
             "interarrival_time": var_interarrival,
+            "line_state": var_line_state,
+            "line_mode": var_line_mode,
+            "total_events": var_total_events,
         },
         "line_kpis": {
             "total_wip": var_total_wip,
@@ -1623,9 +1828,11 @@ def build_opcua_server(config: dict):
             "line_performance": var_line_performance,
             "line_quality": var_line_quality,
             "line_oee": var_line_oee,
+            "line_good_parts": var_line_good_parts,
+            "line_defective_parts": var_line_defective_parts,
         },
-        "machines": machines_vars,  # {"M1": {...}, "M2": {...}, "M3": {...}}
-        "buffers": buffers_vars,    # {"B1": {...}, "B2": {...}}
+        "machines": machines_vars,
+        "buffers": buffers_vars,
         "maintenance": {
             "active": var_maint_active,
             "queue": var_maint_queue,
@@ -1652,6 +1859,8 @@ def main(argv=None):
                        help="Scenario name from line_models.yaml (default: balanced_line)")
     parser.add_argument("--seed", type=int, default=None,
                        help="Random seed for reproducible simulation")
+    parser.add_argument("--trace", action="store_true",
+                       help="Enable Simantha DES event trace (outputs pickle file)")
     args = parser.parse_args(argv)
 
     # Set random seed if provided (seeds both Python random and numpy for scipy)
@@ -1674,6 +1883,7 @@ def main(argv=None):
     sim_time = 0.0
     sim_step = 1.0
     real_step = 1.0
+    warm_up_time = int(config.get("warm_up_time", 0))
 
     # Part counter: sink.level is authoritative after each simulate() call
     prev_sink_level = 0
@@ -1780,7 +1990,8 @@ def main(argv=None):
             # Step simulation (CRITICAL: increment sim_time BEFORE simulate)
             if not pause_line:
                 sim_time += sim_step
-                system.simulate(simulation_time=sim_time, verbose=False, collect_data=False)
+                system.simulate(warm_up_time=warm_up_time, simulation_time=sim_time,
+                                verbose=False, collect_data=False, trace=args.trace)
 
             # Part counter (sink.level is authoritative after each simulate() call)
             delta_parts, total_parts_produced, prev_sink_level = update_part_counter(
@@ -1814,10 +2025,17 @@ def main(argv=None):
             line_avail, line_perf, line_qual, line_oee = \
                 calculate_line_level_oee(machines, machine_metrics)
 
+            # Aggregate line-level good/defective parts from machine metrics
+            line_good = sum(m.get("good_parts", 0) for m in machine_metrics.values())
+            line_defective = sum(m.get("defective_parts", 0) for m in machine_metrics.values())
+
             # Write system KPIs to OPC UA
             write_system_opcua_vars(opcua_vars, sim_time, total_parts_produced, total_wip,
                                     line_avail, line_perf, line_qual, line_oee,
-                                    maint_active, maint_queue_length, total_repairs)
+                                    maint_active, maint_queue_length, total_repairs,
+                                    pause_line=pause_line,
+                                    line_good_parts=line_good,
+                                    line_defective_parts=line_defective)
 
             # Shift OPC UA updates
             update_shift_opcua_vars(shift_manager, opcua_vars, sim_time, delta_parts)

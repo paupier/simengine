@@ -141,12 +141,13 @@ Setting it dynamically causes "Failed event: time 0" errors. Set in constructor 
 ### Simantha stepping pattern
 ```python
 sim_time = 0.0
+warm_up_time = int(config.get("warm_up_time", 0))
 while True:
     if not paused:
         sim_time += sim_step  # ALWAYS increment before simulate()
-        system.simulate(simulation_time=sim_time)  # First call at time=1.0
+        system.simulate(warm_up_time=warm_up_time, simulation_time=sim_time)
 ```
-Never call `system.simulate(simulation_time=0)` or with time <= 0.
+Never call `system.simulate(simulation_time=0)` or with time <= 0. The `warm_up_time` parameter (from YAML config) causes Simantha to skip data collection during the warm-up phase, producing more accurate steady-state metrics.
 
 ### Monotonic counter pattern for sink.level
 `sink.level` can **decrease** during maintenance. Always track monotonically:
@@ -164,15 +165,18 @@ Simantha's `Sink.initialize()` does not reset `level_data`, so it grows quadrati
 ### Scrap sinks are NOT in machine.downstream
 Scrap sinks are stored as `_scrap_sink` attribute to avoid random routing by Simantha. Parts are diverted inside `output_addon_process()` using `_redirect_to()` which fixes buffer `reserved_vacancy` bookkeeping.
 
-### State detection order (7 states)
+### State detection order (8 states)
 ```python
+failed_health = getattr(machine, "failed_health", 1)
 if pause_line: "PAUSED"
-elif m.health == 1: "FAILED" / "UNDER_REPAIR"
+elif health_state >= failed_health: "FAILED" / "UNDER_REPAIR"
 elif m.blocked: "BLOCKED"
 elif m.starved: "STARVED"
+elif health_state > 0: "DEGRADED"
 elif m.has_part: "PROCESSING"
 else: "IDLE"
 ```
+With multi-state degradation, `failed_health = len(degradation_matrix) - 1`. The DEGRADED state indicates the machine is operational but has begun degrading (health > 0 but not yet failed).
 
 ### OEE uses Simantha's authoritative data, not time accumulators
 OEE is calculated via `calculate_oee_from_sim()` using `machine.downtime` and `machine.parts_made` — Simantha's whole-run summaries. It is **not** derived from the per-step time accumulators (`processing_time`, `down_time`, etc.) which are noisy due to simulate() reinitialization. OEE recalculates every `OEE_BUCKET_INTERVAL` (600 seconds / 10 minutes) and holds constant between updates. The `oee_cached` dict in `machine_metrics` stores the last result.
@@ -183,31 +187,47 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(script_dir)
 ```
 
-## OPC UA Address Space
+## OPC UA Address Space (ISA-95/ISO 23247 Aligned)
 
-OPC UA node names use `Machine{i}` (e.g., `Machine1`, `Machine2`). The address space tree:
+The address space follows ISA-95/IEC 62264 hierarchy with ISO 23247 digital twin identification. Hierarchy names are configurable via YAML config keys (`enterprise`, `site`, `area`, `line_name`).
 
 ```
-Line1/
-  Machine{i}/              State, PartCount, Utilisation, TargetPPM, ActualPPM
-    OEE/                   Availability, Performance, Quality, OEE, GoodPartCount, DefectivePartCount
-    Alarms/                MachineFailedActive, MaintenanceActive, QualityAlertActive
-    SPC/Capability/        Cp, Cpk (if enable_spc)
-    FailureModes/          ActiveFailureMode (if enable_advanced_failures)
-    QualityRouting/        ScrapCount, ReworkCount (if quality_routing enabled)
-  Buffer{i}/               Level, Capacity
-  System/
-    Controls/              cmdPauseLine (writable), setInterarrivalTime (writable)
-    SimTime, Throughput, WIP
-  LineKPIs/
-    LineOEE/               Availability, Performance, Quality, OEE
-    TotalScrap, ScrapRate
-  Shift/CurrentShift/      CurrentShiftName, ShiftElapsedTime, ShiftDuration
+Enterprise (WeylandIndustries)/
+  Site (LV426_Colony)/
+    Area (AtmosphereProcessor01)/
+      {line_name}_Equipment/
+        Identification/           EquipmentID, EquipmentClass, Description
+        OperationsState/          SimTime, LineState, LineMode
+          Controls/               CmdPauseLine (writable), SetInterarrivalTime (writable)
+        OperationsPerformance/    Throughput, TotalWIP, TotalScrap, ScrapRate
+        OEE/                      Availability, Performance, Quality, OEE, GoodPartCount, DefectivePartCount
+        Resources/
+          M{i}_Equipment/
+            Identification/       EquipmentID, EquipmentClass
+            OperationsState/      State, HealthState, HealthPercent
+            OperationsPerformance/ PartCount, Utilisation, TargetPPM, ActualPPM, *Time
+            OEE/                  Availability, Performance, Quality, OEE, ...
+            Alarms/               MachineFailureActive, MaintenanceActive, QualityAlertActive
+            FailureModes/         (if enable_advanced_failures)
+            SPC/                  (if enable_spc)
+            QualityRouting/       (if quality_routing enabled)
+          M{i}_Asset/
+            Identification/       PhysicalAssetID, AssetClass, Vendor, Model, SerialNumber
+          B{i}_StorageUnit/       CurrentLevel, Capacity, Alarms/
+          {ScrapName}_StorageUnit/ CurrentLevel
+        SupportFunctions/
+          Maintenance/            MaintenanceActive, QueueLength, TotalRepairs
+          ShiftManagement/        (if shifts configured)
+        EventLog/                 TotalEventsGenerated
+      {line_name}_Asset/
+        Identification/           PhysicalAssetID, AssetClass, Description
 ```
 
 Only two variables are writable by OPC UA clients:
-- `cmdPauseLine` (bool) — global pause/resume
-- `setInterarrivalTime` (float) — part arrival rate on the source
+- `CmdPauseLine` (bool) — global pause/resume
+- `SetInterarrivalTime` (float) — part arrival rate on the source
+
+The `opcua_vars` dict serves as an abstraction layer — internal keys (e.g., `opcua_vars["machines"]["M1"]["state"]`) are unchanged from the main loop's perspective. Only the OPC UA NodeId strings changed.
 
 ## Randomness and Reproducibility
 

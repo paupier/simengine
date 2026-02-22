@@ -1165,3 +1165,100 @@ full_feature_8_machine_line:
     - name: ScrapBin6
     - name: ScrapBin7
     - name: ScrapBin8
+
+# Warm-up period scenario
+warm_up_line:
+  warm_up_time: 300
+  machines:
+    - name: M1
+      cycle_time: 1.0
+    - name: M2
+      cycle_time: 1.0
+    - name: M3
+      cycle_time: 1.0
+  buffers:
+    - name: B1
+      capacity: 10
+      upstream: M1
+      downstream: M2
+    - name: B2
+      capacity: 10
+      upstream: M2
+      downstream: M3
+  maintainer:
+    enabled: true
+    capacity: 1
+
+# Priority maintenance with bottleneck strategy
+priority_maintenance_line:
+  machines:
+    - name: M1
+      cycle_time: 1.0
+      enable_degradation: true
+    - name: M2
+      cycle_time: 2.0
+      enable_degradation: true
+    - name: M3
+      cycle_time: 1.0
+      enable_degradation: true
+  buffers:
+    - name: B1
+      capacity: 10
+      upstream: M1
+      downstream: M2
+    - name: B2
+      capacity: 10
+      upstream: M2
+      downstream: M3
+  maintainer:
+    enabled: true
+    capacity: 1
+    strategy: bottleneck
+
+# Priority maintenance with user-defined priorities
+priority_user_line:
+  machines:
+    - name: M1
+      cycle_time: 1.0
+      enable_degradation: true
+    - name: M2
+      cycle_time: 1.0
+      enable_degradation: true
+  buffers:
+    - name: B1
+      capacity: 10
+      upstream: M1
+      downstream: M2
+  maintainer:
+    enabled: true
+    capacity: 1
+    strategy: priority
+    machine_priorities:
+      M1: 1
+      M2: 2
+
+# Multi-state health degradation scenario
+multi_state_degradation_line:
+  machines:
+    - name: M1
+      cycle_time: 1.0
+      enable_degradation: true
+      health_states:
+        h_max: 5
+        p_degrade: 0.01
+        cbm_threshold: 3
+    - name: M2
+      cycle_time: 1.0
+      enable_degradation: true
+      health_states:
+        h_max: 3
+        p_degrade: 0.02
+        cbm_threshold: 2
+  buffers:
+    - name: B1
+      capacity: 10
+      upstream: M1
+      downstream: M2
+  maintainer:
+    enabled: true
+    capacity: 1

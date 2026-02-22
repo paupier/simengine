@@ -523,3 +523,84 @@ def validate_scrap_sinks(config: Dict[str, Any]) -> None:
                 raise ValueError(
                     f"Machine '{m['name']}' references undefined scrap_sink '{ref}'"
                 )
+
+
+def validate_warm_up(config: Dict[str, Any]) -> None:
+    """
+    Validate warm_up_time configuration.
+
+    Args:
+        config: Scenario configuration dictionary
+
+    Raises:
+        ValueError: If warm_up_time is negative or non-numeric
+    """
+    if "warm_up_time" not in config:
+        return
+
+    wut = config["warm_up_time"]
+    if not isinstance(wut, (int, float)):
+        raise ValueError("warm_up_time must be numeric")
+    if wut < 0:
+        raise ValueError("warm_up_time must be non-negative")
+
+
+def validate_maintainer_config(config: Dict[str, Any]) -> None:
+    """
+    Validate maintainer scheduling configuration.
+
+    Args:
+        config: Full scenario configuration dictionary
+
+    Raises:
+        ValueError: If strategy is invalid, priorities reference unknown machines,
+                    or priority values are negative
+    """
+    maint = config.get("maintainer", {})
+    if not maint.get("enabled", False):
+        return
+
+    valid_strategies = {"fifo", "spt", "priority", "bottleneck"}
+    strategy = maint.get("strategy", "fifo")
+    if strategy not in valid_strategies:
+        raise ValueError(
+            f"Maintainer strategy '{strategy}' must be one of: {sorted(valid_strategies)}"
+        )
+
+    if strategy == "priority":
+        priorities = maint.get("machine_priorities", {})
+        machine_names = {m["name"] for m in config.get("machines", [])}
+        for name, prio in priorities.items():
+            if name not in machine_names:
+                raise ValueError(
+                    f"machine_priorities references unknown machine '{name}'"
+                )
+            if not isinstance(prio, (int, float)) or prio < 0:
+                raise ValueError(
+                    f"Priority for '{name}' must be non-negative, got {prio}"
+                )
+
+
+def validate_interarrival_distribution(config: Dict[str, Any]) -> None:
+    """
+    Validate interarrival_distribution configuration.
+
+    Args:
+        config: Scenario configuration dictionary
+
+    Raises:
+        ValueError: If distribution type is unknown or config is malformed
+    """
+    if "interarrival_distribution" not in config:
+        return
+
+    dist = config["interarrival_distribution"]
+    if not isinstance(dist, dict):
+        raise ValueError("interarrival_distribution must be a dictionary")
+
+    valid_types = {"constant", "uniform", "exponential"}
+    dist_type = dist.get("distribution", "")
+    if dist_type not in valid_types:
+        raise ValueError(
+            f"unknown distribution type '{dist_type}' — must be one of: {sorted(valid_types)}"
+        )
