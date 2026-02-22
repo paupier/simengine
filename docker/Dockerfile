@@ -19,8 +19,9 @@ RUN pip install --no-cache-dir -r /tmp/webui-requirements.txt \
 COPY src/ /app/src/
 COPY config/ /app/config/
 
-# Copy web UI
+# Copy web UI and Telegraf config generator
 COPY docker/webui/ /app/docker/webui/
+COPY docker/telegraf/generate_telegraf_conf.py /app/docker/telegraf/generate_telegraf_conf.py
 
 # Copy Grafana dashboards (for volume mount reference)
 COPY grafana/dashboards/ /app/grafana/dashboards/

@@ -129,6 +129,13 @@ OPCUA_ENDPOINT = os.environ.get(
     "opc.tcp://localhost:4840/simantha/"
 )
 
+TELEGRAF_CONF_PATH = os.environ.get(
+    "TELEGRAF_CONF_PATH",
+    str(_PROJECT_ROOT / "docker" / "telegraf" / "telegraf.conf")
+)
+
+sys.path.insert(0, str(_PROJECT_ROOT / "docker" / "telegraf"))
+
 # OPC UA client (lazy-connected)
 _opcua_client = None
 
@@ -198,12 +205,35 @@ def _capture_logs():
         pass
 
 
+def _regenerate_telegraf_config(scenario_name):
+    """Regenerate telegraf.conf for the given scenario."""
+    try:
+        from generate_telegraf_conf import generate_telegraf_conf
+        import yaml
+        with open(CONFIG_PATH) as f:
+            all_configs = yaml.safe_load(f)
+        config = all_configs.get(scenario_name)
+        if config and isinstance(config, dict):
+            conf_text = generate_telegraf_conf(config)
+            os.makedirs(os.path.dirname(os.path.abspath(TELEGRAF_CONF_PATH)),
+                        exist_ok=True)
+            with open(TELEGRAF_CONF_PATH, 'w') as f:
+                f.write(conf_text)
+            print(f"[WebUI] Regenerated Telegraf config for '{scenario_name}'"
+                  f" ({conf_text.count('{name=')}"
+                  f" nodes)")
+    except Exception as e:
+        print(f"[WebUI] Warning: Could not regenerate Telegraf config: {e}")
+
+
 def start_simulation(scenario, seed=None):
     """Spawn opcua_server.py as a subprocess."""
     global sim_process, sim_scenario, sim_start_time, _opcua_client
 
     with sim_lock:
         stop_simulation()
+
+        _regenerate_telegraf_config(scenario)
 
         cmd = ["python", OPCUA_SERVER_SCRIPT, "--scenario", scenario]
         if seed is not None:

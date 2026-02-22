@@ -40,6 +40,7 @@ services:
       - NEO4J_PASSWORD=simantha123
     volumes:
       - sim-data:/app/results
+      - telegraf-conf:/etc/telegraf
     depends_on:
       influxdb:
         condition: service_healthy
@@ -101,10 +102,11 @@ services:
   # Telegraf - OPC UA → InfluxDB Pipeline Validation
   # -------------------------------------------------------------------------
   telegraf:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile.telegraf
+    image: telegraf:latest
     container_name: simantha-telegraf
+    command: ["telegraf", "--watch-config", "poll"]
+    volumes:
+      - telegraf-conf:/etc/telegraf
     depends_on:
       - simantha
       - influxdb
@@ -136,6 +138,8 @@ volumes:
     name: simantha-influx-data
   grafana-data:
     name: simantha-grafana-data
+  telegraf-conf:
+    name: simantha-telegraf-conf
   # neo4j-data:
   #   name: simantha-neo4j-data
 

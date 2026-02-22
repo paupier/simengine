@@ -1,2 +1,0 @@
-FROM telegraf:latest
-COPY docker/telegraf/telegraf.conf /etc/telegraf/telegraf.conf

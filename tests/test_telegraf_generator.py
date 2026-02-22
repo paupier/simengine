@@ -1,14 +1,14 @@
 """Tests for the dynamic Telegraf config generator."""
 import os
 import sys
-import pytest
 
 # Add docker/telegraf to path so we can import the generator
 _test_dir = os.path.dirname(os.path.abspath(__file__))
 _project_root = os.path.dirname(_test_dir)
 sys.path.insert(0, os.path.join(_project_root, "docker", "telegraf"))
 
-from generate_telegraf_conf import generate_telegraf_conf
+from generate_telegraf_conf import generate_telegraf_conf  # noqa: E402
+import pytest  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
