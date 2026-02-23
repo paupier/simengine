@@ -62,7 +62,7 @@ class PriorityMaintainer(Maintainer):
         for m in queue:
             # AdvancedMachine stores expected repair time; standard Machine uses cm_distribution
             repair_est = getattr(m, 'cm_distribution', getattr(m, 'pm_distribution', 10))
-            if hasattr(repair_est, 'mean'):
+            if callable(getattr(repair_est, 'mean', None)):
                 repair_est = repair_est.mean()
             if isinstance(repair_est, dict):
                 repair_est = repair_est.get('value', repair_est.get('mean', 10))
@@ -95,7 +95,7 @@ class PriorityMaintainer(Maintainer):
         for m in queue:
             parts = getattr(m, 'parts_made', 0)
             cycle = getattr(m, 'cycle_time', 1)
-            if hasattr(cycle, 'mean'):
+            if callable(getattr(cycle, 'mean', None)):
                 cycle = cycle.mean()
             util = parts * cycle  # proxy: total productive time
             if util > best_util:
