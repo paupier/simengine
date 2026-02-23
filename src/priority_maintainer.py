@@ -8,6 +8,28 @@ import random
 from simantha import Maintainer
 
 
+def _to_number(val, default=1):
+    """Convert a value to a plain number.
+
+    Handles: int, float, numpy scalars, Simantha Distribution objects,
+    scipy frozen distributions, and dicts with 'value'/'mean' keys.
+    """
+    if isinstance(val, (int, float)):
+        return val
+    # Simantha Distribution has a .mean float attribute
+    mean_attr = getattr(val, 'mean', None)
+    if mean_attr is not None:
+        if callable(mean_attr):
+            return mean_attr()  # scipy frozen distribution
+        return float(mean_attr)  # Simantha Distribution or numpy scalar
+    if isinstance(val, dict):
+        return val.get('value', val.get('mean', default))
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return default
+
+
 class PriorityMaintainer(Maintainer):
     """Maintainer that selects machines from the repair queue using
     a configurable scheduling strategy.
@@ -62,10 +84,7 @@ class PriorityMaintainer(Maintainer):
         for m in queue:
             # AdvancedMachine stores expected repair time; standard Machine uses cm_distribution
             repair_est = getattr(m, 'cm_distribution', getattr(m, 'pm_distribution', 10))
-            if callable(getattr(repair_est, 'mean', None)):
-                repair_est = repair_est.mean()
-            if isinstance(repair_est, dict):
-                repair_est = repair_est.get('value', repair_est.get('mean', 10))
+            repair_est = _to_number(repair_est, default=10)
             if repair_est < best_time:
                 best_time = repair_est
                 candidates = [m]
@@ -94,9 +113,7 @@ class PriorityMaintainer(Maintainer):
         candidates = []
         for m in queue:
             parts = getattr(m, 'parts_made', 0)
-            cycle = getattr(m, 'cycle_time', 1)
-            if callable(getattr(cycle, 'mean', None)):
-                cycle = cycle.mean()
+            cycle = _to_number(getattr(m, 'cycle_time', 1))
             util = parts * cycle  # proxy: total productive time
             if util > best_util:
                 best_util = util
