@@ -1705,6 +1705,26 @@ def build_opcua_server(config: dict):
     server.set_server_name("Simantha Digital Twin OPC UA Server")
     server.set_endpoint("opc.tcp://0.0.0.0:4840/simantha/")
 
+    # Override default FreeOpcUa identity so industrial clients show a
+    # meaningful name instead of "Generic OPC UA server / urn:freeopcua:..."
+    server.set_application_uri("urn:simantha:nist:digitaltwin:server")
+    server.product_uri = "https://github.com/usnistgov/simantha"
+    server.manufacturer_name = "NIST / Simantha"
+    server.set_build_info(
+        server.product_uri,
+        server.manufacturer_name,
+        "Simantha Digital Twin OPC UA Server",
+        "2.1.0",
+        "1",
+        datetime.now(),
+    )
+
+    # Set ServerProfileArray so clients know our capability level
+    profile_node = server.get_node(ua.NodeId(ua.ObjectIds.Server_ServerCapabilities_ServerProfileArray))
+    profile_node.set_value([
+        "http://opcfoundation.org/UA-Profile/Server/NanoEmbeddedDevice2017",
+    ])
+
     uri = "http://simantha.nist.gov/"
     idx = server.register_namespace(uri)
 
