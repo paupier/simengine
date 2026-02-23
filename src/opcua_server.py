@@ -70,6 +70,50 @@ def _patched_sink_initialize(self):
 
 Sink.initialize = _patched_sink_initialize
 
+
+# Monkey-patch python-opcua Bug #848: ReferenceTypeAttributes defaults.
+# python-opcua sets IsAbstract=True and Symmetric=True by default for all
+# ReferenceType nodes. The OPC UA spec requires concrete reference types
+# (Organizes, HasSubtype, HasComponent, HasProperty) to have IsAbstract=False
+# and Symmetric=False. Industrial clients like FactoryTalk Optix refuse to use
+# reference types marked as abstract, causing "Type 0/35 not found" errors and
+# preventing type tree traversal.
+# See: https://github.com/FreeOpcUa/python-opcua/issues/848
+_original_reftype_init = ua.uaprotocol_auto.ReferenceTypeAttributes.__init__
+
+
+def _patched_reftype_init(self):
+    _original_reftype_init(self)
+    self.IsAbstract = False
+    self.Symmetric = False
+
+
+ua.uaprotocol_auto.ReferenceTypeAttributes.__init__ = _patched_reftype_init
+
+
+# Monkey-patch python-opcua Bug: ViewService._suitable_reftype blocks
+# HasSubtype references when includeSubtypes=False. This prevents clients from
+# browsing the DataType/VariableType hierarchy, causing "Data type 0/12 not
+# found" errors for every variable. Industrial clients like FactoryTalk Optix
+# browse with includeSubtypes=False expecting to get HasSubtype references.
+# See: https://github.com/FreeOpcUa/opcua-asyncio/issues/233
+from opcua.server.address_space import ViewService as _ViewService
+
+
+def _patched_suitable_reftype(self, ref1, ref2, subtypes):
+    if ref1 == ua.NodeId(ua.ObjectIds.Null):
+        return True
+    if ref1.Identifier == ref2.Identifier:
+        return True
+    if subtypes:
+        oktypes = self._get_sub_ref(ref1)
+        return ref2 in oktypes
+    return False
+
+
+_ViewService._suitable_reftype = _patched_suitable_reftype
+
+
 from config_loader import load_line_config
 from advanced_machine import AdvancedMachine
 from failure_modes import FailureMode
