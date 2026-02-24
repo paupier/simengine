@@ -1,4 +1,5 @@
 import logging
+import os
 import random
 import sys
 import time
@@ -1762,6 +1763,7 @@ def build_opcua_server(config: dict):
     le_id_node.add_variable(_nid(f"{le_id_p}.EquipmentID", idx), _qn("EquipmentID", idx), "Line1")
     le_id_node.add_variable(_nid(f"{le_id_p}.EquipmentClass", idx), _qn("EquipmentClass", idx), "ProductionLine")
     le_id_node.add_variable(_nid(f"{le_id_p}.Description", idx), _qn("Description", idx), f"Digital twin of {line_name}")
+    var_run_id = le_id_node.add_variable(_nid(f"{le_id_p}.RunID", idx), _qn("RunID", idx), "")
 
     # --- Line Equipment > OperationsState ---
     os_p = f"{ep}.OperationsState"
@@ -1885,6 +1887,7 @@ def build_opcua_server(config: dict):
             "line_state": var_line_state,
             "line_mode": var_line_mode,
             "total_events": var_total_events,
+            "run_id": var_run_id,
         },
         "line_kpis": {
             "total_wip": var_total_wip,
@@ -1934,15 +1937,23 @@ def main(argv=None):
         np.random.seed(args.seed)
         print(f"Using random seed: {args.seed}")
 
+    # Generate RunID (env var override for web UI coordination)
+    run_id = os.environ.get(
+        "SIMANTHA_RUN_ID",
+        f"{args.scenario}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    )
+
     # Load configuration
     config = load_line_config(args.scenario)
     print(f"Loading scenario: {args.scenario}")
+    print(f"RunID: {run_id}")
 
     # Build Simantha system from config
     system, source, sink, machines, buffers, maintainer, scrap_sinks = build_simantha_system(config)
 
     # Build OPC UA server from config
     server, opcua_vars, idx = build_opcua_server(config)
+    opcua_vars["system"]["run_id"].set_value(run_id)
 
     sim_time = 0.0
     sim_step = 1.0
@@ -2026,7 +2037,7 @@ def main(argv=None):
             print(f"    Shift {i+1}: {shift_def.name} ({shift_def.duration} time units)")
 
     # Create event historian if configured
-    historian = create_historian_from_config(config, args.scenario)
+    historian = create_historian_from_config(config, args.scenario, run_id=run_id)
     historian_state = {}  # Separate edge-detection state for historian
     production_summary_counter = 0.0
     production_summary_interval = config.get("historian", {}).get("events", {}).get("production_summary_interval", 60)
@@ -2034,7 +2045,8 @@ def main(argv=None):
         print(f"  Event historian enabled: {historian.describe()}")
 
     # Create Neo4j historian if configured
-    neo4j_hist = create_neo4j_historian_from_config(config, args.scenario)
+    neo4j_hist = create_neo4j_historian_from_config(config, args.scenario,
+                                                     run_id=run_id)
     if neo4j_hist:
         neo4j_hist.create_topology(config)
         print(f"  Neo4j historian enabled: {neo4j_hist.describe()}")

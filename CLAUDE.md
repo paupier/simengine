@@ -150,6 +150,19 @@ Per-scenario options include:
 
 Events are logged only on **state transitions** (edge detection), not every simulation step. The `historian_state` dict used for edge detection is **separate** from `metrics["prev_state"]` — this is critical to avoid deduplication bugs. InfluxDB and Neo4j use lazy imports so they're optional dependencies.
 
+CSV columns: `run_id, timestamp, wall_clock, event_type, source, source_type, severity, message, old_state, new_state, partcount, good_parts, defective_parts, buffer_level, oee, utilisation, shift_number, shift_name, extra_json`. The `run_id` field isolates data across simulation runs. Old CSVs without `run_id` are handled via backward-compatible loading in `report_engine.py`.
+
+### RunID
+
+A unique `{scenario}_{YYYYMMDD_HHMMSS}` identifier generated at server startup. Propagated through:
+- **OPC UA**: `RunID` variable under `Identification/`
+- **Telegraf**: `[global_tags]` block injects `run_id` as an InfluxDB tag on all data points
+- **CSV historian**: `run_id` column in every event row
+- **InfluxDB historian**: `run_id` tag on every Point
+- **Neo4j historian**: `run_id` property on event nodes
+- **Validation queries**: `query_influxdb_telegraf()` scopes Flux queries by `run_id` and time range to avoid full-bucket scans
+- **Web UI**: `SIMANTHA_RUN_ID` env var coordinates between Flask subprocess and OPC UA server; `/api/status` includes `run_id`
+
 ## Critical Rules
 
 ### Never modify `machine.cycle_time` after simulation starts
@@ -213,7 +226,7 @@ Enterprise (WeylandIndustries)/
   Site (LV426_Colony)/
     Area (AtmosphereProcessor01)/
       {line_name}_Equipment/
-        Identification/           EquipmentID, EquipmentClass, Description
+        Identification/           EquipmentID, EquipmentClass, Description, RunID
         OperationsState/          SimTime, LineState, LineMode
           Controls/               CmdPauseLine (writable), SetInterarrivalTime (writable)
         OperationsPerformance/    Throughput, TotalWIP, TotalScrap, ScrapRate
@@ -248,10 +261,10 @@ The `opcua_vars` dict serves as an abstraction layer — internal keys (e.g., `o
 
 ## Telegraf Config Generation
 
-`docker/telegraf/generate_telegraf_conf.py` dynamically generates `telegraf.conf` from scenario config. It mirrors the same conditionals used in `build_opcua_server()` to create matching Telegraf OPC UA input nodes. Field names use abbreviated prefixes (`M{i}_`, `B{i}_`, `Scrap{i}_`, `Shift_`) for InfluxDB. Run standalone:
+`docker/telegraf/generate_telegraf_conf.py` dynamically generates `telegraf.conf` from scenario config. It mirrors the same conditionals used in `build_opcua_server()` to create matching Telegraf OPC UA input nodes. Field names use abbreviated prefixes (`M{i}_`, `B{i}_`, `Scrap{i}_`, `Shift_`) for InfluxDB. A `[global_tags]` block injects `run_id` as a tag on all data points. Run standalone:
 
 ```bash
-python docker/telegraf/generate_telegraf_conf.py --config config/line_models.yaml --scenario full_feature_line --output docker/telegraf/telegraf.conf
+python docker/telegraf/generate_telegraf_conf.py --config config/line_models.yaml --scenario full_feature_line --run-id "full_feature_line_20260224_143000" --output docker/telegraf/telegraf.conf
 ```
 
 ## Randomness and Reproducibility

@@ -39,9 +39,13 @@ def find_latest_csv(directory):
 
 
 def load_historian_csv(path):
-    """Load historian CSV with appropriate dtypes."""
+    """Load historian CSV with appropriate dtypes.
+
+    Handles both old CSVs (without run_id column) and new ones (with run_id).
+    """
     _require_pandas()
     df = pd.read_csv(path, dtype={
+        "run_id": str,
         "timestamp": float,
         "event_type": str,
         "source": str,
@@ -60,6 +64,9 @@ def load_historian_csv(path):
         "shift_name": str,
         "extra_json": str,
     })
+    # Backward compatibility: old CSVs lack run_id column
+    if "run_id" not in df.columns:
+        df.insert(0, "run_id", "")
     return df
 
 

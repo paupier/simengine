@@ -617,3 +617,36 @@ class TestLoadHistorianCsv:
             assert df.iloc[0]["timestamp"] == 60.0
         finally:
             os.unlink(tmp_name)
+
+    def test_backward_compat_no_run_id_column(self):
+        """Old CSVs without run_id column should get an empty run_id column."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
+            f.write("timestamp,event_type,source,source_type,severity,message,"
+                    "old_state,new_state,partcount,good_parts,defective_parts,"
+                    "buffer_level,oee,utilisation,shift_number,shift_name,extra_json\n")
+            f.write("60.0,STATE_CHANGE,Machine1,machine,INFO,test,IDLE,PROCESSING,"
+                    "1,1,0,,0.75,0.8,1,Day,\n")
+            tmp_name = f.name
+        try:
+            df = load_historian_csv(tmp_name)
+            assert "run_id" in df.columns
+            assert df.iloc[0]["run_id"] == ""
+        finally:
+            os.unlink(tmp_name)
+
+    def test_loads_csv_with_run_id_column(self):
+        """New CSVs with run_id column should load it correctly."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
+            f.write("run_id,timestamp,event_type,source,source_type,severity,message,"
+                    "old_state,new_state,partcount,good_parts,defective_parts,"
+                    "buffer_level,oee,utilisation,shift_number,shift_name,extra_json\n")
+            f.write("balanced_line_20260224_143000,60.0,STATE_CHANGE,Machine1,"
+                    "machine,INFO,test,IDLE,PROCESSING,1,1,0,,0.75,0.8,1,Day,\n")
+            tmp_name = f.name
+        try:
+            df = load_historian_csv(tmp_name)
+            assert len(df) == 1
+            assert df.iloc[0]["run_id"] == "balanced_line_20260224_143000"
+            assert df.iloc[0]["timestamp"] == 60.0
+        finally:
+            os.unlink(tmp_name)

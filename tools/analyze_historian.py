@@ -323,8 +323,18 @@ def plot_analysis(df, analysis, csv_path):
     plt.close()
 
 
-def query_influxdb_telegraf(influx_url, influx_token, influx_org, influx_bucket):
+def query_influxdb_telegraf(influx_url, influx_token, influx_org, influx_bucket,
+                            run_id=None, time_start=None, time_end=None):
     """Query Telegraf-sourced OPC UA data from InfluxDB.
+
+    Args:
+        influx_url: InfluxDB URL
+        influx_token: InfluxDB authentication token
+        influx_org: InfluxDB organization
+        influx_bucket: InfluxDB bucket name
+        run_id: Optional run_id tag to scope queries to a specific run
+        time_start: Optional ISO 8601 start time (from CSV wall_clock)
+        time_end: Optional ISO 8601 end time (from CSV wall_clock)
 
     Returns a dict with data point count, time range, throughput, OEE values,
     per-machine partcounts, and update rate statistics.
@@ -336,16 +346,28 @@ def query_influxdb_telegraf(influx_url, influx_token, influx_org, influx_bucket)
               "Install with: pip install influxdb-client")
         sys.exit(1)
 
-    client = InfluxDBClient(url=influx_url, token=influx_token, org=influx_org)
+    client = InfluxDBClient(url=influx_url, token=influx_token, org=influx_org,
+                            timeout=60_000)
     query_api = client.query_api()
+
+    # Build time range clause
+    if time_start and time_end:
+        range_clause = f'range(start: {time_start}, stop: {time_end})'
+    else:
+        range_clause = 'range(start: -30d)'
+
+    # Build optional run_id filter
+    run_id_filter = ""
+    if run_id:
+        run_id_filter = f'\n      |> filter(fn: (r) => r.run_id == "{run_id}")'
 
     result = {}
 
     # 1. Data point count
     flux = f'''
     from(bucket: "{influx_bucket}")
-      |> range(start: 0)
-      |> filter(fn: (r) => r._measurement == "opcua")
+      |> {range_clause}
+      |> filter(fn: (r) => r._measurement == "opcua"){run_id_filter}
       |> count()
       |> group()
       |> sum()
@@ -361,8 +383,8 @@ def query_influxdb_telegraf(influx_url, influx_token, influx_org, influx_bucket)
     for label, agg in [("first", "first"), ("last", "last")]:
         flux_q = f'''
         from(bucket: "{influx_bucket}")
-          |> range(start: 0)
-          |> filter(fn: (r) => r._measurement == "opcua")
+          |> {range_clause}
+          |> filter(fn: (r) => r._measurement == "opcua"){run_id_filter}
           |> filter(fn: (r) => r._field == "SimTime")
           |> {agg}()
         '''
@@ -376,8 +398,8 @@ def query_influxdb_telegraf(influx_url, influx_token, influx_org, influx_bucket)
     # 3. Final throughput
     flux_tp = f'''
     from(bucket: "{influx_bucket}")
-      |> range(start: 0)
-      |> filter(fn: (r) => r._measurement == "opcua")
+      |> {range_clause}
+      |> filter(fn: (r) => r._measurement == "opcua"){run_id_filter}
       |> filter(fn: (r) => r._field == "Throughput")
       |> last()
     '''
@@ -391,8 +413,8 @@ def query_influxdb_telegraf(influx_url, influx_token, influx_org, influx_bucket)
     # 4. Line OEE over time
     flux_oee = f'''
     from(bucket: "{influx_bucket}")
-      |> range(start: 0)
-      |> filter(fn: (r) => r._measurement == "opcua")
+      |> {range_clause}
+      |> filter(fn: (r) => r._measurement == "opcua"){run_id_filter}
       |> filter(fn: (r) => r._field == "LineOEE")
       |> sort(columns: ["_time"])
     '''
@@ -410,8 +432,8 @@ def query_influxdb_telegraf(influx_url, influx_token, influx_org, influx_bucket)
     # Field names are prefixed: M1_PartCount, M2_PartCount, etc.
     flux_parts = f'''
     from(bucket: "{influx_bucket}")
-      |> range(start: 0)
-      |> filter(fn: (r) => r._measurement == "opcua")
+      |> {range_clause}
+      |> filter(fn: (r) => r._measurement == "opcua"){run_id_filter}
       |> filter(fn: (r) => r._field =~ /_PartCount$/)
       |> filter(fn: (r) => r.source_type == "machine")
       |> last()
@@ -428,8 +450,8 @@ def query_influxdb_telegraf(influx_url, influx_token, influx_org, influx_bucket)
     # Field names are prefixed: B1_Level, B2_Level, etc.
     flux_buf = f'''
     from(bucket: "{influx_bucket}")
-      |> range(start: 0)
-      |> filter(fn: (r) => r._measurement == "opcua")
+      |> {range_clause}
+      |> filter(fn: (r) => r._measurement == "opcua"){run_id_filter}
       |> filter(fn: (r) => r._field =~ /_Level$/)
       |> filter(fn: (r) => r.source_type == "buffer")
       |> last()
@@ -445,8 +467,8 @@ def query_influxdb_telegraf(influx_url, influx_token, influx_org, influx_bucket)
     # 7. Update rate
     flux_rate = f'''
     from(bucket: "{influx_bucket}")
-      |> range(start: 0)
-      |> filter(fn: (r) => r._measurement == "opcua")
+      |> {range_clause}
+      |> filter(fn: (r) => r._measurement == "opcua"){run_id_filter}
       |> filter(fn: (r) => r._field == "SimTime")
       |> sort(columns: ["_time"])
       |> elapsed(unit: 1s)
@@ -483,6 +505,8 @@ def main():
                         help="InfluxDB org (default: env INFLUXDB_ORG or 'simantha')")
     parser.add_argument("--influxdb-bucket", default=None,
                         help="InfluxDB bucket (default: env INFLUXDB_BUCKET or 'manufacturing')")
+    parser.add_argument("--run-id", default=None,
+                        help="Run ID to scope InfluxDB queries (default: auto-detect from CSV)")
     args = parser.parse_args()
 
     # Resolve path
@@ -526,8 +550,30 @@ def main():
             print("\nERROR: --influxdb-token or INFLUXDB_TOKEN env var is required")
             sys.exit(1)
 
-        print(f"\nQuerying InfluxDB at {influx_url} ...")
-        influx_data = query_influxdb_telegraf(influx_url, influx_token, influx_org, influx_bucket)
+        # Extract run_id and time range from CSV for scoped queries
+        csv_run_id = args.run_id
+        time_start = None
+        time_end = None
+        if csv_run_id is None and "run_id" in df.columns and len(df) > 0:
+            first_rid = df["run_id"].iloc[0]
+            if pd.notna(first_rid) and str(first_rid).strip():
+                csv_run_id = str(first_rid).strip()
+        if "wall_clock" in df.columns and len(df) > 0:
+            time_start = str(df["wall_clock"].iloc[0])
+            time_end = str(df["wall_clock"].iloc[-1])
+
+        scope_info = []
+        if csv_run_id:
+            scope_info.append(f"run_id={csv_run_id}")
+        if time_start:
+            scope_info.append(f"time={time_start}..{time_end}")
+        scope_str = f" (scoped: {', '.join(scope_info)})" if scope_info else ""
+
+        print(f"\nQuerying InfluxDB at {influx_url}{scope_str} ...")
+        influx_data = query_influxdb_telegraf(
+            influx_url, influx_token, influx_org, influx_bucket,
+            run_id=csv_run_id, time_start=time_start, time_end=time_end,
+        )
 
         from report_engine import validate_pipeline
         validation = validate_pipeline(df, influx_data)

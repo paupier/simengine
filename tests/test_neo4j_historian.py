@@ -73,6 +73,7 @@ class TestNeo4jHistorianWithMockedDriver:
         historian = object.__new__(Neo4jHistorian)
         historian._driver = mock_driver
         historian._scenario_name = "test_scenario"
+        historian._run_id = ""
         historian._track_parts = True
         historian._max_parts = 100
         historian._part_counter = 0

@@ -102,6 +102,7 @@ app.json.sort_keys = False
 sim_process = None
 sim_scenario = None
 sim_start_time = None
+sim_run_id = None
 sim_log = deque(maxlen=200)  # Ring buffer for stdout capture
 sim_lock = threading.Lock()
 
@@ -205,7 +206,7 @@ def _capture_logs():
         pass
 
 
-def _regenerate_telegraf_config(scenario_name):
+def _regenerate_telegraf_config(scenario_name, run_id=""):
     """Regenerate telegraf.conf for the given scenario."""
     try:
         from generate_telegraf_conf import generate_telegraf_conf
@@ -214,7 +215,7 @@ def _regenerate_telegraf_config(scenario_name):
             all_configs = yaml.safe_load(f)
         config = all_configs.get(scenario_name)
         if config and isinstance(config, dict):
-            conf_text = generate_telegraf_conf(config)
+            conf_text = generate_telegraf_conf(config, run_id=run_id)
             os.makedirs(os.path.dirname(os.path.abspath(TELEGRAF_CONF_PATH)),
                         exist_ok=True)
             with open(TELEGRAF_CONF_PATH, 'w') as f:
@@ -228,12 +229,16 @@ def _regenerate_telegraf_config(scenario_name):
 
 def start_simulation(scenario, seed=None):
     """Spawn opcua_server.py as a subprocess."""
-    global sim_process, sim_scenario, sim_start_time, _opcua_client
+    global sim_process, sim_scenario, sim_start_time, sim_run_id, _opcua_client
 
     with sim_lock:
         stop_simulation()
 
-        _regenerate_telegraf_config(scenario)
+        # Generate RunID for this run
+        run_id = f"{scenario}_{dt.now().strftime('%Y%m%d_%H%M%S')}"
+        sim_run_id = run_id
+
+        _regenerate_telegraf_config(scenario, run_id=run_id)
 
         cmd = ["python", OPCUA_SERVER_SCRIPT, "--scenario", scenario]
         if seed is not None:
@@ -241,6 +246,7 @@ def start_simulation(scenario, seed=None):
 
         env = os.environ.copy()
         env["SIMANTHA_CONFIG_PATH"] = str(CONFIG_PATH)
+        env["SIMANTHA_RUN_ID"] = run_id
 
         sim_log.clear()
         sim_process = subprocess.Popen(
@@ -264,7 +270,7 @@ def start_simulation(scenario, seed=None):
 
 def stop_simulation():
     """Gracefully stop the simulation subprocess."""
-    global sim_process, sim_scenario, sim_start_time, _opcua_client
+    global sim_process, sim_scenario, sim_start_time, sim_run_id, _opcua_client
 
     _disconnect_opcua()
 
@@ -281,6 +287,7 @@ def stop_simulation():
     sim_process = None
     sim_scenario = None
     sim_start_time = None
+    sim_run_id = None
 
 
 # ---------------------------------------------------------------------------
@@ -465,6 +472,7 @@ def api_status():
     result = {
         "running": running,
         "scenario": sim_scenario,
+        "run_id": sim_run_id,
         "uptime_seconds": uptime,
         "pid": sim_process.pid if sim_process else None,
     }
@@ -854,9 +862,27 @@ def api_validation_run():
         # Import the CLI query function (it has the InfluxDB logic)
         sys.path.insert(0, str(_PROJECT_ROOT / "tools"))
         from analyze_historian import query_influxdb_telegraf
-        influx_data = query_influxdb_telegraf(influx_url, influx_token, influx_org, influx_bucket)
 
         df = re_mod.load_historian_csv(str(filepath))
+
+        # Extract run_id and time range from CSV for scoped queries
+        csv_run_id = None
+        time_start = None
+        time_end = None
+        if "run_id" in df.columns and len(df) > 0:
+            import pandas as pd
+            first_rid = df["run_id"].iloc[0]
+            if pd.notna(first_rid) and str(first_rid).strip():
+                csv_run_id = str(first_rid).strip()
+        if "wall_clock" in df.columns and len(df) > 0:
+            time_start = str(df["wall_clock"].iloc[0])
+            time_end = str(df["wall_clock"].iloc[-1])
+
+        influx_data = query_influxdb_telegraf(
+            influx_url, influx_token, influx_org, influx_bucket,
+            run_id=csv_run_id, time_start=time_start, time_end=time_end,
+        )
+
         validation = re_mod.validate_pipeline(df, influx_data)
         return jsonify(validation)
     except ImportError:

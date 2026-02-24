@@ -95,7 +95,7 @@ class EventHistorian(ABC):
 
 
 CSV_COLUMNS = [
-    "timestamp", "wall_clock", "event_type", "source", "source_type",
+    "run_id", "timestamp", "wall_clock", "event_type", "source", "source_type",
     "severity", "message", "old_state", "new_state", "partcount",
     "good_parts", "defective_parts", "buffer_level", "oee",
     "utilisation", "shift_number", "shift_name", "extra_json"
@@ -111,9 +111,11 @@ class CSVHistorian(EventHistorian):
     def __init__(self, output_dir: str, scenario_name: str,
                  max_file_size_mb: float = 50.0,
                  rotate_on_shift: bool = True,
-                 buffer_size: int = 100):
+                 buffer_size: int = 100,
+                 run_id: str = ""):
         self.output_dir = output_dir
         self.scenario_name = scenario_name
+        self._run_id = run_id
         self.max_file_size_mb = max_file_size_mb
         self.rotate_on_shift = rotate_on_shift
         self.buffer_size = buffer_size
@@ -161,6 +163,7 @@ class CSVHistorian(EventHistorian):
     def _event_to_row(self, event: SimEvent) -> dict:
         """Convert SimEvent to CSV row dict."""
         return {
+            "run_id": self._run_id,
             "timestamp": event.timestamp,
             "wall_clock": event.wall_clock,
             "event_type": event.event_type,
@@ -236,7 +239,8 @@ class InfluxDBHistorian(EventHistorian):
     """
 
     def __init__(self, url: str, token: str, org: str, bucket: str,
-                 scenario_name: str, batch_size: int = 100):
+                 scenario_name: str, batch_size: int = 100,
+                 run_id: str = ""):
         try:
             from influxdb_client import InfluxDBClient, WriteOptions
         except ImportError:
@@ -245,13 +249,15 @@ class InfluxDBHistorian(EventHistorian):
                 "Install with: pip install influxdb-client"
             )
 
-        self._client = InfluxDBClient(url=url, token=token, org=org)
+        self._client = InfluxDBClient(url=url, token=token, org=org,
+                                      timeout=30_000)
         self._write_api = self._client.write_api(
             write_options=WriteOptions(batch_size=batch_size, flush_interval=10_000)
         )
         self._bucket = bucket
         self._org = org
         self._scenario = scenario_name
+        self._run_id = run_id
         self._event_count = 0
 
     def _event_to_point(self, event: SimEvent):
@@ -264,6 +270,7 @@ class InfluxDBHistorian(EventHistorian):
             .tag("source_type", event.source_type)
             .tag("severity", event.severity)
             .tag("scenario", self._scenario)
+            .tag("run_id", self._run_id)
             .tag("shift_name", event.shift_name)
             .field("sim_time", event.timestamp)
             .field("message", event.message)
@@ -363,7 +370,8 @@ def _resolve_env_vars(value: str) -> str:
 # ========== FACTORY ==========
 
 
-def create_historian_from_config(config: dict, scenario_name: str) -> Optional[EventHistorian]:
+def create_historian_from_config(config: dict, scenario_name: str,
+                                 run_id: str = "") -> Optional[EventHistorian]:
     """Create historian from YAML config. Returns None if not configured."""
     historian_cfg = config.get("historian")
     if not historian_cfg or not historian_cfg.get("enabled", False):
@@ -386,6 +394,7 @@ def create_historian_from_config(config: dict, scenario_name: str) -> Optional[E
             scenario_name=scenario_name,
             max_file_size_mb=csv_cfg.get("max_file_size_mb", 50.0),
             rotate_on_shift=csv_cfg.get("rotate_on_shift", True),
+            run_id=run_id,
         ))
 
     # InfluxDB backend
@@ -398,6 +407,7 @@ def create_historian_from_config(config: dict, scenario_name: str) -> Optional[E
             bucket=_resolve_env_vars(influx_cfg["bucket"]),
             scenario_name=scenario_name,
             batch_size=influx_cfg.get("batch_size", 100),
+            run_id=run_id,
         ))
 
     if not historians:

@@ -532,3 +532,78 @@ class TestCollectProductionSummary:
         assert event.partcount == 55
         assert event.extra["total_wip"] == 7
         assert event.extra["line_oee"] == 0.85
+
+
+# ========== RunID Tests ==========
+
+
+class TestRunID:
+    """Tests for run_id propagation across historian backends."""
+
+    def test_csv_columns_include_run_id(self):
+        assert "run_id" in CSV_COLUMNS
+        assert CSV_COLUMNS[0] == "run_id"
+
+    def test_csv_historian_writes_run_id(self, tmp_path):
+        hist = CSVHistorian(str(tmp_path), "test_scenario",
+                            buffer_size=1, run_id="test_20260224_140000")
+        event = _make_event(timestamp=10.0)
+        hist.record_event(event)
+        hist.close()
+
+        with open(hist.get_current_path(), "r") as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+        assert len(rows) == 1
+        assert rows[0]["run_id"] == "test_20260224_140000"
+
+    def test_csv_historian_default_empty_run_id(self, tmp_path):
+        hist = CSVHistorian(str(tmp_path), "test_scenario", buffer_size=1)
+        event = _make_event(timestamp=10.0)
+        hist.record_event(event)
+        hist.close()
+
+        with open(hist.get_current_path(), "r") as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+        assert rows[0]["run_id"] == ""
+
+    def test_influxdb_historian_run_id_tag(self):
+        # Bypass __init__ like existing InfluxDB tests
+        hist = InfluxDBHistorian.__new__(InfluxDBHistorian)
+        hist._run_id = "myrun_20260224_150000"
+        hist._bucket = "bkt"
+        hist._scenario = "test"
+
+        event = _make_event(timestamp=5.0)
+        mock_chain = MagicMock()
+        mock_point_cls = MagicMock(return_value=mock_chain)
+        mock_chain.tag.return_value = mock_chain
+        mock_chain.field.return_value = mock_chain
+
+        mock_influx = MagicMock()
+        mock_influx.Point = mock_point_cls
+        with patch.dict("sys.modules", {"influxdb_client": mock_influx}):
+            hist._event_to_point(event)
+
+        # Verify run_id tag was set
+        tag_calls = [c for c in mock_chain.tag.call_args_list
+                     if c[0][0] == "run_id"]
+        assert len(tag_calls) == 1
+        assert tag_calls[0][0][1] == "myrun_20260224_150000"
+
+    def test_create_historian_passes_run_id(self, tmp_path):
+        config = {
+            "historian": {
+                "enabled": True,
+                "csv": {
+                    "enabled": True,
+                    "output_dir": str(tmp_path),
+                },
+            },
+        }
+        hist = create_historian_from_config(
+            config, "test", run_id="scen_20260224_160000")
+        assert isinstance(hist, CSVHistorian)
+        assert hist._run_id == "scen_20260224_160000"
+        hist.close()

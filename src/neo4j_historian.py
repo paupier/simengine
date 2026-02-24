@@ -55,6 +55,7 @@ class Neo4jHistorian:
         scenario_name: str = "",
         track_parts: bool = True,
         max_parts: int = 10000,
+        run_id: str = "",
     ):
         try:
             from neo4j import GraphDatabase
@@ -66,6 +67,7 @@ class Neo4jHistorian:
 
         self._driver = GraphDatabase.driver(uri, auth=(user, password))
         self._scenario_name = scenario_name
+        self._run_id = run_id
         self._track_parts = track_parts
         self._max_parts = max_parts
         self._part_counter = 0
@@ -200,6 +202,7 @@ class Neo4jHistorian:
                     "shift_number": event.shift_number,
                     "shift_name": event.shift_name,
                     "scenario": self._scenario_name,
+                    "run_id": self._run_id,
                 }
                 if event.extra:
                     props["extra_json"] = json.dumps(event.extra)
@@ -295,7 +298,7 @@ def _source_type_to_label(source_type: str) -> str:
 
 
 def create_neo4j_historian_from_config(
-    config: dict, scenario_name: str
+    config: dict, scenario_name: str, run_id: str = ""
 ) -> Optional[Neo4jHistorian]:
     """Create Neo4j historian from YAML config. Returns None if not configured."""
     historian_cfg = config.get("historian")
@@ -313,4 +316,5 @@ def create_neo4j_historian_from_config(
         scenario_name=scenario_name,
         track_parts=neo4j_cfg.get("track_parts", True),
         max_parts=neo4j_cfg.get("max_parts", 10000),
+        run_id=run_id,
     )
