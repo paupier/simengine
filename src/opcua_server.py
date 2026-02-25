@@ -132,7 +132,6 @@ DEGRADATION_MATRIX = [
     [0.0, 1.0],    # from failed: stay failed until maintainer repairs
 ]
 
-OEE_BUCKET_INTERVAL = 600  # seconds (10 minutes) — OEE recalculated at this interval
 
 
 # ========== HELPER FUNCTIONS ==========
@@ -1170,35 +1169,30 @@ def process_machine_step(machine_name, machine_obj, metrics, config_machines,
     if machine_alarms:
         update_alarm_variables(machine_vars, machine_alarms)
 
-    # OEE calculation (bucketed — recalculate every OEE_BUCKET_INTERVAL seconds)
-    # Uses shift-relative deltas so OEE resets at shift boundaries.
-    if (sim_time - metrics["oee_last_update_time"] >= OEE_BUCKET_INTERVAL
-            or metrics["oee_cached"] is None):
-        snap = shift_oee_snapshot or {}
-        shift_elapsed = sim_time - shift_start_time
-        shift_downtime = machine_obj.downtime - snap.get("downtime", 0.0)
-        shift_parts = machine_obj.parts_made - snap.get("parts_made", 0)
+    # OEE calculation — every step, using shift-relative deltas.
+    # Uses metrics["down_time"] (our accumulator, excludes warm-up) instead of
+    # machine_obj.downtime (Simantha's counter, includes warm-up).
+    snap = shift_oee_snapshot or {}
+    shift_elapsed = sim_time - shift_start_time
+    shift_downtime = metrics["down_time"] - snap.get("down_time_accum", 0.0)
+    shift_parts = machine_obj.parts_made - snap.get("parts_made", 0)
 
-        if isinstance(machine_obj, QualityRoutingMixin):
-            qr_good = machine_obj._good_count - snap.get("good_count", 0)
-            qr_defective = (
-                (machine_obj._scrap_count + machine_obj._defective_count)
-                - snap.get("scrap_count", 0) - snap.get("defective_count", 0)
-            )
-        else:
-            # Non-QR machines accumulate good/defective in metrics via +=
-            qr_good = metrics["good_parts"] - snap.get("metric_good", 0)
-            qr_defective = metrics["defective_parts"] - snap.get("metric_defective", 0)
-
-        oee_result = calculate_oee_from_sim(
-            shift_elapsed, shift_downtime, shift_parts,
-            metrics["cycle_time"],
-            good_parts=max(0, qr_good), defective_parts=max(0, qr_defective)
+    if isinstance(machine_obj, QualityRoutingMixin):
+        qr_good = machine_obj._good_count - snap.get("good_count", 0)
+        qr_defective = (
+            (machine_obj._scrap_count + machine_obj._defective_count)
+            - snap.get("scrap_count", 0) - snap.get("defective_count", 0)
         )
-        metrics["oee_cached"] = oee_result
-        metrics["oee_last_update_time"] = sim_time
     else:
-        oee_result = metrics["oee_cached"]
+        qr_good = metrics["good_parts"] - snap.get("metric_good", 0)
+        qr_defective = metrics["defective_parts"] - snap.get("metric_defective", 0)
+
+    oee_result = calculate_oee_from_sim(
+        shift_elapsed, shift_downtime, shift_parts,
+        metrics["cycle_time"],
+        good_parts=max(0, qr_good), defective_parts=max(0, qr_defective)
+    )
+    metrics["oee_cached"] = oee_result
 
     metrics["oee"] = oee_result["oee"]
 
@@ -2031,8 +2025,7 @@ def main(argv=None):
             "alarm_maintenance_active": False,
             "alarm_quality_alert_active": False,
 
-            # OEE bucket tracking
-            "oee_last_update_time": 0.0,
+            # OEE tracking
             "oee_cached": None,
         }
 
@@ -2057,7 +2050,7 @@ def main(argv=None):
     shift_start_time = 0.0
     for machine_name in machines:
         shift_oee_snapshots[machine_name] = {
-            "downtime": 0.0,
+            "down_time_accum": 0.0,
             "parts_made": 0,
             "good_count": 0,
             "scrap_count": 0,
@@ -2122,7 +2115,7 @@ def main(argv=None):
                 shift_start_time = sim_time
                 for mname, mobj in machines.items():
                     shift_oee_snapshots[mname] = {
-                        "downtime": mobj.downtime,
+                        "down_time_accum": machine_metrics[mname]["down_time"],
                         "parts_made": mobj.parts_made,
                         "good_count": getattr(mobj, '_good_count', 0),
                         "scrap_count": getattr(mobj, '_scrap_count', 0),
@@ -2134,7 +2127,6 @@ def main(argv=None):
                 # Force OEE recalculation on next step
                 for mname in machines:
                     machine_metrics[mname]["oee_cached"] = None
-                    machine_metrics[mname]["oee_last_update_time"] = sim_time
 
             # System-level metrics (WIP, maintenance)
             total_wip, maint_active, maint_queue_length, total_repairs = \

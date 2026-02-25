@@ -456,3 +456,103 @@ class TestBuildSystemWithScrap:
         config = load_line_config("balanced_line")
         _, _, _, _, _, _, scrap_sinks = build_simantha_system(config)
         assert scrap_sinks == {}
+
+
+# ========== Warm-Up Guard Tests ==========
+
+
+class TestQualityRouteWarmUpGuard:
+    """Test that quality counters only increment after warm-up."""
+
+    def _make_machine_with_env(self, now, warm_up_time, defect_rate=0.0,
+                               scrap_sink=None, rework_enabled=False):
+        """Create a quality machine with mocked env for warm-up testing."""
+        m = make_quality_machine(
+            defect_rate=defect_rate, scrap_sink=scrap_sink,
+            rework_enabled=rework_enabled, rework_success_rate=1.0,
+            max_rework=3
+        )
+        env = MagicMock()
+        env.now = now
+        env.warm_up_time = warm_up_time
+        m.env = env
+        return m
+
+    def test_good_count_zero_during_warmup(self):
+        """_good_count not incremented during warm-up (env.now <= warm_up_time)."""
+        m = self._make_machine_with_env(now=50, warm_up_time=100, defect_rate=0.0)
+        part = make_part()
+        _quality_route(m, part)
+        assert m._good_count == 0
+
+    def test_good_count_increments_after_warmup(self):
+        """_good_count increments after warm-up (env.now > warm_up_time)."""
+        m = self._make_machine_with_env(now=101, warm_up_time=100, defect_rate=0.0)
+        part = make_part()
+        _quality_route(m, part)
+        assert m._good_count == 1
+
+    def test_scrap_count_zero_during_warmup(self):
+        """_scrap_count not incremented during warm-up."""
+        scrap = MagicMock(spec=Sink)
+        scrap.reserve_vacancy = MagicMock()
+        m = self._make_machine_with_env(
+            now=50, warm_up_time=100, defect_rate=1.0, scrap_sink=scrap
+        )
+        part = make_part()
+        _quality_route(m, part)
+        assert m._scrap_count == 0
+
+    def test_scrap_redirect_still_happens_during_warmup(self):
+        """Routing to scrap sink still happens during warm-up (realistic sim)."""
+        scrap = MagicMock(spec=Sink)
+        scrap.reserve_vacancy = MagicMock()
+        m = self._make_machine_with_env(
+            now=50, warm_up_time=100, defect_rate=1.0, scrap_sink=scrap
+        )
+        part = make_part()
+        _quality_route(m, part)
+        # Part is redirected even during warm-up
+        assert m.target_receiver is scrap
+        assert part.scrapped is True
+
+    def test_defective_count_zero_during_warmup(self):
+        """_defective_count not incremented during warm-up (no scrap sink)."""
+        m = self._make_machine_with_env(
+            now=50, warm_up_time=100, defect_rate=1.0, scrap_sink=None
+        )
+        part = make_part()
+        _quality_route(m, part)
+        assert m._defective_count == 0
+
+    def test_rework_counts_zero_during_warmup(self):
+        """Rework counters not incremented during warm-up."""
+        scrap = MagicMock(spec=Sink)
+        scrap.reserve_vacancy = MagicMock()
+        m = self._make_machine_with_env(
+            now=50, warm_up_time=100, defect_rate=1.0,
+            scrap_sink=scrap, rework_enabled=True
+        )
+        part = make_part()
+        _quality_route(m, part)
+        assert m._rework_count == 0
+        assert m._rework_success_count == 0
+        # Part was reworked successfully (rate=1.0) but counter not incremented
+        assert m._good_count == 0
+
+    def test_counters_match_parts_made_with_warmup(self):
+        """After warm-up, good + scrap + defective == parts produced post-warmup."""
+        scrap = MagicMock(spec=Sink)
+        scrap.reserve_vacancy = MagicMock()
+        m = self._make_machine_with_env(
+            now=200, warm_up_time=100, defect_rate=0.3, scrap_sink=scrap
+        )
+        random.seed(42)
+        for _ in range(100):
+            part = make_part()
+            m.target_receiver = MagicMock()
+            m.target_receiver.reserved_vacancy = 1
+            _quality_route(m, part)
+
+        total = m._good_count + m._scrap_count + m._defective_count
+        assert total == 100

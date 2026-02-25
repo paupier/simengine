@@ -62,7 +62,6 @@ def make_machine_metrics(state="IDLE", partcount=0, **kwargs):
         "alarm_quality_alert_active": False,
         "oee": kwargs.get("oee", 0.0),
         "oee_cached": kwargs.get("oee_cached", None),
-        "oee_last_update_time": kwargs.get("oee_last_update_time", 0.0),
     }
 
 
@@ -81,4 +80,9 @@ def make_quality_machine(defect_rate=0.05, scrap_sink=None, rework_enabled=False
     m.name = "M1"
     m.target_receiver = MagicMock()  # Original target (a buffer)
     m.target_receiver.reserved_vacancy = 1
+    # Default env: post-warm-up so counters increment (matches pre-warm-up behavior)
+    env = MagicMock()
+    env.now = 1000
+    env.warm_up_time = 0
+    m.env = env
     return m

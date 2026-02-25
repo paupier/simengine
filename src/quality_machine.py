@@ -30,6 +30,10 @@ def _quality_route(machine, part):
     Determines if a part is defective, attempts virtual rework if enabled,
     and redirects defective parts to scrap sink if available.
 
+    Counters (_good_count, _scrap_count, _defective_count, _rework_*) are
+    only incremented after warm-up to match Simantha's parts_made behavior.
+    Routing (scrap redirect, part marking) always runs for realistic simulation.
+
     Args:
         machine: QualityRoutingMixin instance
         part: Simantha Part object being output
@@ -41,44 +45,53 @@ def _quality_route(machine, part):
     else:
         effective_rate = machine._defect_rate
 
+    # Only count for metrics after warm-up (matches parts_made behavior)
+    counting = machine.env.now > machine.env.warm_up_time
+
     if effective_rate <= 0:
-        machine._good_count += 1
+        if counting:
+            machine._good_count += 1
         return  # No defects possible
 
     is_defective = random.random() < effective_rate
     if not is_defective:
-        machine._good_count += 1
+        if counting:
+            machine._good_count += 1
         return  # Good part, normal routing
 
-    # Mark part defective
+    # Mark part defective (always — even during warm-up)
     part.is_defective = True
     part.failed_at_machine = machine.name
     part.defect_type = "quality"
 
-    # Virtual rework attempt
+    # Virtual rework attempt (always runs for realistic simulation)
     rework_count = getattr(part, 'rework_count', 0)
     if machine._rework_enabled and rework_count < machine._max_rework:
         if random.random() < machine._rework_success_rate:
             # Rework succeeded - part becomes good
             part.is_defective = False
             part.rework_count = rework_count + 1
-            machine._rework_count += 1
-            machine._rework_success_count += 1
-            machine._good_count += 1
+            if counting:
+                machine._rework_count += 1
+                machine._rework_success_count += 1
+                machine._good_count += 1
             return  # Good part after rework, normal routing
         else:
             part.rework_count = rework_count + 1
-            machine._rework_count += 1
+            if counting:
+                machine._rework_count += 1
 
-    # Route to scrap sink if available
+    # Route to scrap sink if available (always runs)
     if machine._scrap_sink is not None:
         _redirect_to(machine, machine._scrap_sink)
-        machine._scrap_count += 1
+        if counting:
+            machine._scrap_count += 1
         part.scrapped = True
         part.scrapped_at_machine = machine.name
     else:
         # No scrap sink - defective part flows normally
-        machine._defective_count += 1
+        if counting:
+            machine._defective_count += 1
 
 
 def _redirect_to(machine, new_target):

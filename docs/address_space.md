@@ -2,7 +2,7 @@
 
 **Namespace URI:** `http://simantha.nist.gov/`
 **Namespace Index:** `ns=2`
-**Last Updated:** 2026-02-22
+**Last Updated:** 2026-02-25
 
 > **Authoritative reference:** See the [User Manual, Section 9](user_manual.md#9-opc-ua-address-space-reference) for full tables with descriptions.
 
@@ -108,18 +108,18 @@ MachineN/
   │  ├─ State                                     (String, READ)
   │  ├─ HealthState                               (Int32, READ)   0=healthy, N=failed
   │  ├─ HealthPercent                             (Double, READ)  100=healthy, 0=failed
-  │  ├─ BlockedTime                               (Double, READ)
-  │  ├─ StarvedTime                               (Double, READ)
-  │  ├─ DownTime                                  (Double, READ)
-  │  ├─ ProcessingTime                            (Double, READ)
-  │  └─ IdleTime                                  (Double, READ)
+  │  ├─ BlockedTime                               (Double, READ)  accumulated when BLOCKED
+  │  ├─ StarvedTime                               (Double, READ)  accumulated when STARVED
+  │  ├─ DownTime                                  (Double, READ)  accumulated when FAILED/UNDER_REPAIR
+  │  ├─ ProcessingTime                            (Double, READ)  accumulated when PROCESSING/DEGRADED
+  │  └─ IdleTime                                  (Double, READ)  accumulated when IDLE/PAUSED
   │
   ├─ OperationsPerformance/
   │  ├─ PartCount                                 (Int32, READ)
   │  ├─ Utilisation                               (Double, READ)  0.0-1.0
   │  └─ ActualPPM                                 (Double, READ)
   │
-  ├─ OEE/                                        (bucketed, updates every 10 min)
+  ├─ OEE/                                        (recalculated every step, shift-relative)
   │  ├─ Availability, Performance, Quality, OEE   (Double, READ)
   │  ├─ GoodPartCount, DefectivePartCount         (Int32, READ)
   │  └─ TheoreticalOutput                         (Double, READ)
@@ -213,6 +213,16 @@ With multi-state degradation, `failed_health = h_max` (the highest health state 
 | MEDIUM | 500 | Quality alert (defect rate > 5%) |
 | LOW | 300 | Buffer high/low warnings |
 | INFO | 100 | Maintenance start/end |
+
+---
+
+## Derivation Notes
+
+**Time accumulators** (`BlockedTime`, `StarvedTime`, `DownTime`, `ProcessingTime`, `IdleTime`) are maintained by the main loop, not Simantha internals. Each step, 1 second is added to the bucket matching the machine's previous state. They naturally exclude warm-up time.
+
+**OEE** recalculates every step using shift-relative deltas. Availability uses the main loop's `DownTime` accumulator (excludes warm-up), not Simantha's `machine.downtime`. Quality uses quality routing counters that only increment after warm-up, matching `parts_made`.
+
+**HealthState** comes directly from Simantha's Markov chain (`machine.health`). With multi-state degradation, MTTF per degradation step = configured MTTF / `failed_health`.
 
 ---
 

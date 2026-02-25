@@ -27,7 +27,6 @@ from opcua_server import (
     build_simantha_system,
     calculate_oee_from_sim,
     process_machine_step,
-    OEE_BUCKET_INTERVAL,
 )
 
 
@@ -650,7 +649,7 @@ class TestShiftOEESnapshots:
     def test_shift_snapshot_initial_is_zero(self):
         """Initial shift snapshot should be all zeros (start from sim start)."""
         snap = {
-            "downtime": 0.0, "parts_made": 0,
+            "down_time_accum": 0.0, "parts_made": 0,
             "good_count": 0, "scrap_count": 0, "defective_count": 0,
             "metric_good": 0, "metric_defective": 0,
         }
@@ -701,13 +700,79 @@ class TestShiftOEESnapshots:
         mock_machine._scrap_count = 6
         mock_machine._defective_count = 5
 
-        # Delta should be: downtime=5, parts=10, good=9, defective=1
-        shift_downtime = mock_machine.downtime - snap["downtime"]
+        # Delta should be: parts=10, good=9, defective=1
         shift_parts = mock_machine.parts_made - snap["parts_made"]
         shift_good = mock_machine._good_count - snap["good_count"]
         shift_defective = (mock_machine._scrap_count + mock_machine._defective_count) - (snap["scrap_count"] + snap["defective_count"])
 
-        assert shift_downtime == 5.0
         assert shift_parts == 10
         assert shift_good == 9
         assert shift_defective == 1
+
+
+# ========== MTTF Scaling for Multi-State Degradation ==========
+
+
+class TestMTTFScaling:
+    """Test that AdvancedMachine scales MTTF for multi-state degradation."""
+
+    def test_mttf_scaled_by_failed_health(self):
+        """With failed_health > 1, get_time_to_degrade() returns MTTF / failed_health."""
+        from advanced_machine import AdvancedMachine
+        from failure_modes import FailureMode
+
+        fm = FailureMode(
+            name="mechanical", type="wearout",
+            mttf_config={"distribution": "constant", "value": 600},
+            mttr_config={"distribution": "constant", "value": 10}
+        )
+        # 5-state degradation: failed_health = 4
+        matrix = [[0.99, 0.01, 0, 0, 0],
+                   [0, 0.99, 0.01, 0, 0],
+                   [0, 0, 0.99, 0.01, 0],
+                   [0, 0, 0, 0.99, 0.01],
+                   [0, 0, 0, 0, 1]]
+        m = AdvancedMachine(
+            name="M1", cycle_time=1, failure_modes=[fm],
+            degradation_matrix=matrix
+        )
+        # Simulate initialization
+        from simantha import Source, Buffer, Sink, System
+        source = Source()
+        sink = Sink()
+        source.define_routing(downstream=[m])
+        m.define_routing(upstream=[source], downstream=[sink])
+        sink.define_routing(upstream=[m])
+        system = System(objects=[source, m, sink])
+        system.simulate(simulation_time=1, verbose=False)
+
+        # failed_health = 4 (len(matrix) - 1)
+        assert m.failed_health == 4
+        ttd = m.get_time_to_degrade()
+        # Should be 600 / 4 = 150
+        assert ttd == pytest.approx(150.0)
+
+    def test_mttf_not_scaled_for_2_state(self):
+        """With failed_health = 1 (standard 2-state), MTTF is not scaled."""
+        from advanced_machine import AdvancedMachine
+        from failure_modes import FailureMode
+
+        fm = FailureMode(
+            name="mechanical", type="wearout",
+            mttf_config={"distribution": "constant", "value": 600},
+            mttr_config={"distribution": "constant", "value": 10}
+        )
+        m = AdvancedMachine(name="M1", cycle_time=1, failure_modes=[fm])
+        from simantha import Source, Sink, System
+        source = Source()
+        sink = Sink()
+        source.define_routing(downstream=[m])
+        m.define_routing(upstream=[source], downstream=[sink])
+        sink.define_routing(upstream=[m])
+        system = System(objects=[source, m, sink])
+        system.simulate(simulation_time=1, verbose=False)
+
+        assert m.failed_health == 1
+        ttd = m.get_time_to_degrade()
+        # Should be unscaled: 600
+        assert ttd == pytest.approx(600.0)

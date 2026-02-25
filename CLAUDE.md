@@ -212,8 +212,18 @@ else: "IDLE"
 ```
 With multi-state degradation, `failed_health = len(degradation_matrix) - 1`. The DEGRADED state indicates the machine is operational but has begun degrading (health > 0 but not yet failed).
 
-### OEE uses Simantha's authoritative data, not time accumulators
-OEE is calculated via `calculate_oee_from_sim()` using `machine.downtime` and `machine.parts_made` — Simantha's whole-run summaries. It is **not** derived from the per-step time accumulators (`processing_time`, `down_time`, etc.) which are noisy due to simulate() reinitialization. OEE recalculates every `OEE_BUCKET_INTERVAL` (600 seconds / 10 minutes) and holds constant between updates. The `oee_cached` dict in `machine_metrics` stores the last result.
+### OEE — every step, shift-relative, warm-up-safe
+OEE recalculates every simulation step via `calculate_oee_from_sim()` using shift-relative deltas:
+- **Availability** uses `metrics["down_time"]` (our per-step accumulator, excludes warm-up) — NOT `machine.downtime` (Simantha's counter, includes warm-up).
+- **Performance** uses `machine.parts_made` (Simantha's authoritative counter, post-warm-up only).
+- **Quality** uses quality routing counters (`_good_count`, `_scrap_count`, `_defective_count`) which only increment after `env.now > warm_up_time`.
+The `oee_cached` dict in `machine_metrics` stores the latest result. `OEE_BUCKET_INTERVAL` was removed — there is no gating.
+
+### Quality counter warm-up guard
+`_quality_route()` in `quality_machine.py` checks `counting = machine.env.now > machine.env.warm_up_time` before incrementing counters. Routing (scrap redirect, part marking) still runs during warm-up. This ensures `_good_count + _scrap_count + _defective_count == parts_made` (both post-warm-up).
+
+### MTTF scaling for multi-state degradation
+In `advanced_machine.py`, `get_time_to_degrade()` divides the sampled MTTF by `self.failed_health` when `failed_health > 1`. This makes total expected failure time equal the configured MTTF. Standard 2-state machines (`failed_health=1`) are unaffected.
 
 ### File paths — anchor to script location
 ```python

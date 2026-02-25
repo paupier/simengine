@@ -132,6 +132,11 @@ class AdvancedMachine(Machine):
         # Note: env.now is current sim time, failure occurs at env.now + time_to_failure
         self.failure_start_time = self.env.now
 
+        # Scale for multi-state degradation: each degrade step gets a fraction
+        # of the configured MTTF so total expected time to failure ≈ MTTF.
+        if self.failed_health > 1:
+            time_to_failure = time_to_failure / self.failed_health
+
         return time_to_failure
 
     def get_time_to_repair(self) -> float:

@@ -1,7 +1,7 @@
 # Simantha OPC UA - Complete User Manual
 
-**Version:** 2.1
-**Last Updated:** 2026-02-22
+**Version:** 2.2
+**Last Updated:** 2026-02-25
 **Difficulty:** Beginner to Advanced
 
 ---
@@ -373,14 +373,61 @@ Source  →  M1  →  Buffer1  →  M2  →  Sink
 - `Availability × Performance × Quality`
 - Industry-standard metric
 - Target: >85% for world-class manufacturing
-- Calculated from Simantha's authoritative `machine.downtime` and `machine.parts_made` data
-- Updates every 10 minutes (bucketed) for stable, non-erratic readings
+- Recalculated every simulation step using shift-relative deltas
+- Availability uses the main loop's downtime accumulator (excludes warm-up)
+- Quality uses per-part routing counters (post-warm-up only, matching `parts_made`)
 
 **Buffer Level:**
 - Current WIP (Work-In-Progress) count
 - Range: 0 to capacity (e.g., 0-10)
 - High level = bottleneck downstream
 - Low level = bottleneck upstream
+
+### How Metrics Are Derived
+
+Understanding where each value comes from helps you interpret the OPC UA variables correctly.
+
+#### Time Accumulators
+
+Each simulation step (1 second), the server inspects the machine's **previous state** and adds 1 second to the matching time bucket:
+
+| Previous State | Accumulator | OPC UA Variable |
+|----------------|-------------|-----------------|
+| PROCESSING, DEGRADED | `processing_time` | `ProcessingTime` |
+| BLOCKED | `blocked_time` | `BlockedTime` |
+| STARVED | `starved_time` | `StarvedTime` |
+| FAILED, UNDER_REPAIR | `down_time` | `DownTime` |
+| IDLE, PAUSED | `idle_time` | `IdleTime` |
+
+These accumulators are maintained by the main loop, **not** by Simantha internals. This means they naturally exclude warm-up time (the loop only runs after warm-up completes).
+
+**Utilisation** = `ProcessingTime / (ProcessingTime + BlockedTime + StarvedTime + DownTime + IdleTime)`
+
+#### OEE Components
+
+OEE recalculates every simulation step using **shift-relative deltas** (counters reset at shift boundaries):
+
+| Component | Formula | Notes |
+|-----------|---------|-------|
+| **Availability** | `(shift_elapsed - shift_downtime) / shift_elapsed` | `shift_downtime` comes from the main loop's `down_time` accumulator (excludes warm-up), not Simantha's `machine.downtime` |
+| **Performance** | `shift_parts / (available_time / cycle_time)` | `shift_parts` = `machine.parts_made` delta since shift start. Simantha's `parts_made` only counts post-warm-up parts. |
+| **Quality** | `good / (good + defective)` | For quality-routing machines: `_good_count`, `_scrap_count`, `_defective_count`. These counters only increment after warm-up. |
+
+#### Health and Degradation
+
+| Variable | Source | Description |
+|----------|--------|-------------|
+| `HealthState` | `machine.health` | Simantha's Markov chain state (0 = healthy, N = degrading/failed) |
+| `HealthPercent` | `100 * (1 - health / failed_health)` | 100% = healthy, 0% = failed |
+| `failed_health` | Standard: 1 (2-state). Multi-state: `h_max` from config. | Determines at which health state the machine is considered failed |
+
+With multi-state degradation, the machine transitions 0 &rarr; 1 &rarr; 2 &rarr; ... &rarr; h_max. States between 0 and `failed_health` report as DEGRADED. The time between each degradation step is sampled from the configured failure distribution and divided by `failed_health`, so total expected time to failure matches the configured MTTF.
+
+#### Quality Counters and Warm-Up
+
+Quality routing counters (`_good_count`, `_scrap_count`, `_defective_count`) only increment when `env.now > warm_up_time`. This matches Simantha's `parts_made` behavior, which also excludes warm-up. Without this alignment, Quality would erroneously report 100% because the denominator (`parts_made`) would be smaller than the numerator (`_good_count`).
+
+Scrap/rework **routing** (physical diversion of parts to scrap sinks) still happens during warm-up so the simulation state is realistic when data collection begins.
 
 ---
 
@@ -2084,5 +2131,5 @@ For updates and contributions:
 
 ---
 
-*Document Version: 2.1*
-*Last Updated: 2026-02-22*
+*Document Version: 2.2*
+*Last Updated: 2026-02-25*

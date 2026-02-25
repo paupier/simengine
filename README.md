@@ -11,7 +11,7 @@ A real-time **digital twin** of a manufacturing production line using [Simantha]
 ## 📋 Project Status
 
 **Status:** Feature-complete manufacturing digital twin
-**Last Updated:** 2026-02-22
+**Last Updated:** 2026-02-25
 
 ### Key Capabilities
 
@@ -48,12 +48,12 @@ This project creates a **realistic manufacturing digital twin** that:
 - ✅ **Maintenance Strategies** - Corrective, preventive, and predictive maintenance
 - ✅ **Buffer Dynamics** - WIP accumulates/drains based on machine states
 - ✅ **Quality Defects** - Health-correlated defect rates with individual part tracking
-- ✅ **OEE Calculation** - Availability x Performance x Quality per machine and line-level (bucketed every 10 min using Simantha's authoritative `machine.downtime` and `machine.parts_made`)
+- ✅ **OEE Calculation** - Availability x Performance x Quality per machine and line-level, updated every simulation step using shift-relative counters
 - ✅ **SPC Analytics** - X-bar/R control charts, Cp/Cpk capability, Western Electric rules
 - ✅ **Shift Management** - Configurable shift rotation with per-shift metrics and OEE
 - ✅ **Alarms & Events** - Machine failure, quality, maintenance, and buffer alerts
 - ✅ **Enhanced State Detection** - 8 states: IDLE, PROCESSING, BLOCKED, STARVED, PAUSED, FAILED, UNDER_REPAIR, DEGRADED
-- ✅ **Time Tracking** - Cumulative time in each state per machine
+- ✅ **Time Tracking** - Per-step time accumulation by machine state (see [How KPIs Are Derived](#how-kpis-are-derived))
 - ✅ **Event Historian** - CSV, InfluxDB 2.x, Neo4j backends with edge-detection logging
 - ✅ **Grafana Dashboards** - Manufacturing overview, state timeline, alarm log, shift comparison
 - ✅ **Scrap & Rework Routing** - Defective parts routed to scrap sinks, virtual rework at machine
@@ -301,15 +301,15 @@ All other variables are read-only.
 pytest tests/ -v --ignore=tests/test_advanced_scenarios.py --ignore=tests/test_opcua_integration.py
 
 # Specific test suites
+pytest tests/test_new_features.py -v          # Warm-up, degradation, MTTF scaling (57 tests)
 pytest tests/test_config_validation.py -v     # Config validation (48 tests)
+pytest tests/test_telegraf_generator.py -v    # Telegraf config gen (49 tests)
 pytest tests/test_event_historian.py -v       # Event historian (38 tests)
+pytest tests/test_quality_routing.py -v       # Scrap, rework, warm-up guard (37 tests)
 pytest tests/test_report_engine.py -v         # Report engine (36 tests)
-pytest tests/test_quality_routing.py -v       # Scrap & rework routing (30 tests)
 pytest tests/test_failure_modes.py -v         # Failure modes (29 tests)
 pytest tests/test_spc_analytics.py -v         # SPC (23 tests)
 pytest tests/test_neo4j_historian.py -v       # Neo4j historian (23 tests)
-pytest tests/test_new_features.py -v          # New features (55 tests)
-pytest tests/test_telegraf_generator.py -v    # Telegraf config gen
 pytest tests/test_opcua_integration.py -v     # OPC UA integration (long-running)
 ```
 
@@ -383,6 +383,55 @@ if current_sink_level > prev_sink_level:
     total_parts_produced += delta_parts  # Only increases!
 ```
 
+### How KPIs Are Derived
+
+Understanding where each metric comes from is critical for interpreting OPC UA values.
+
+**Time Accumulators (per machine)**
+
+Each simulation step, the main loop calls `accumulate_time(metrics, prev_state, sim_step)` which adds `sim_step` (1 second) to the bucket matching the machine's **previous** state:
+
+| OPC UA Variable | Accumulator Key | Incremented When Previous State Is |
+|-----------------|-----------------|-------------------------------------|
+| `ProcessingTime` | `processing_time` | PROCESSING or DEGRADED |
+| `BlockedTime` | `blocked_time` | BLOCKED |
+| `StarvedTime` | `starved_time` | STARVED |
+| `DownTime` | `down_time` | FAILED or UNDER_REPAIR |
+| `IdleTime` | `idle_time` | IDLE or PAUSED |
+
+These accumulators are local to the main loop (not from Simantha internals). They naturally **exclude warm-up time** because the loop only runs after warm-up completes. `Utilisation = ProcessingTime / (ProcessingTime + BlockedTime + StarvedTime + DownTime + IdleTime)`.
+
+**OEE (per machine, every step)**
+
+OEE uses **shift-relative deltas** so it resets at shift boundaries:
+
+| Component | Formula | Data Source |
+|-----------|---------|-------------|
+| **Availability** | `(shift_elapsed - shift_downtime) / shift_elapsed` | `shift_downtime` = `metrics["down_time"]` delta since shift start (our accumulator, excludes warm-up) |
+| **Performance** | `shift_parts / theoretical_max` | `shift_parts` = `machine.parts_made` delta (Simantha's authoritative counter, post-warm-up) |
+| **Quality** | `good_parts / (good_parts + defective_parts)` | For quality-routing machines: `_good_count`, `_scrap_count`, `_defective_count` (post-warm-up only). For others: statistical defect counters in metrics. |
+| **OEE** | `A x P x Q` | Capped at [0, 1] per component |
+
+**Health and Degradation**
+
+| OPC UA Variable | Source | Range |
+|-----------------|--------|-------|
+| `HealthState` | `machine.health` (Simantha Markov chain) | 0 = healthy, `failed_health` = failed |
+| `HealthPercent` | `100 * (1 - health / failed_health)` | 100% = healthy, 0% = failed |
+| `failed_health` | Standard: 1. Multi-state: `h_max` from config (e.g., 5 for 6-state degradation) | Integer |
+
+With multi-state degradation (`health_states` config), the machine transitions through intermediate health states (0 &rarr; 1 &rarr; 2 &rarr; ... &rarr; h_max) before failing. States between 0 and `failed_health` are reported as DEGRADED.
+
+**MTTF Scaling:** When advanced failure modes combine with multi-state degradation, the sampled MTTF is divided by `failed_health` so each degradation step takes `MTTF / failed_health` time. Total expected time to failure equals the configured MTTF.
+
+**Quality Counters (with warm-up)**
+
+Quality routing counters (`_good_count`, `_scrap_count`, `_defective_count`) only increment after `env.now > warm_up_time`, matching Simantha's `parts_made` behavior. This ensures `Quality = good / (good + defective)` produces correct values (not inflated by warm-up parts). Scrap/rework **routing** still happens during warm-up for realistic simulation.
+
+**Throughput**
+
+`sink.level` after each `simulate()` call is the authoritative total parts produced (post-warm-up). The main loop tracks this monotonically to handle edge cases where `sink.level` can temporarily decrease during maintenance events.
+
 ---
 
 ## 📁 Repository Structure
@@ -405,19 +454,21 @@ simantha-opcua/
 ├─ config/
 │   └─ line_models.yaml           # Scenario definitions (20 scenarios)
 │
-├─ tests/                          # ~400 tests
+├─ tests/                          # 431 tests (excluding integration)
 │   ├─ factories.py               # Shared test factories (make_event, make_part, etc.)
-│   ├─ test_new_features.py       # Warm-up, priority maintainer, degradation (55 tests)
+│   ├─ test_new_features.py       # Warm-up, priority maintainer, degradation, MTTF scaling (57 tests)
 │   ├─ test_config_validation.py  # Configuration validation (48 tests)
+│   ├─ test_telegraf_generator.py # Dynamic Telegraf config generation (49 tests)
+│   ├─ test_webui.py              # Flask web UI tests (44 tests)
 │   ├─ test_event_historian.py    # Event historian tests (38 tests)
+│   ├─ test_topology.py           # N-machine topology tests (38 tests)
+│   ├─ test_quality_routing.py    # Scrap & rework routing + warm-up guard (37 tests)
 │   ├─ test_report_engine.py      # Report engine tests (36 tests)
-│   ├─ test_quality_routing.py    # Scrap & rework routing tests (30 tests)
 │   ├─ test_failure_modes.py      # Failure mode unit tests (29 tests)
 │   ├─ test_spc_analytics.py      # SPC analytics (23 tests)
 │   ├─ test_neo4j_historian.py    # Neo4j historian (23 tests)
-│   ├─ test_telegraf_generator.py # Dynamic Telegraf config generation
-│   ├─ test_distribution_validation.py  # Statistical distribution tests (slow)
-│   └─ ...                        # Integration, scenario, topology tests
+│   ├─ test_distribution_validation.py  # Statistical distribution tests (12 tests)
+│   └─ ...                        # Integration, scenario, advanced isolation tests
 │
 ├─ docker/
 │   ├─ webui/
@@ -479,7 +530,14 @@ simantha-opcua/
 
 ## 🗺️ Roadmap
 
-### Recent Additions (2026-02-21)
+### Recent Changes (2026-02-25)
+
+- **OEE every step** — A, P, Q now recalculate every simulation step (previously gated to every 600s)
+- **OEE uses local downtime** — Availability uses the main loop's `down_time` accumulator (excludes warm-up) instead of Simantha's `machine.downtime` (includes warm-up)
+- **Quality warm-up fix** — Quality routing counters (`_good_count`, `_scrap_count`, `_defective_count`) only increment after warm-up, matching `parts_made` behavior. Quality now correctly shows < 100% when defects are configured.
+- **MTTF scaling** — With multi-state degradation, per-step MTTF = configured MTTF / `failed_health`, so total expected failure time matches the configured MTTF
+
+### Previous Additions
 
 - **Warm-up periods** — `warm_up_time` config parameter skips transient data collection
 - **Priority Maintainer** — `PriorityMaintainer` with FIFO, SPT, priority, and bottleneck-first scheduling
@@ -487,18 +545,19 @@ simantha-opcua/
 - **DEGRADED state** — New machine state for health > 0 but not yet failed
 - **ISA-95 address space** — OPC UA hierarchy aligned to IEC 62264 / ISO 23247
 - **Dynamic Telegraf config** — Auto-generated from scenario YAML for any number of machines
-- **Web UI reports** — Post-run analysis at `/reports` with OEE charts and anomaly detection
-- **Pipeline validation** — Data pipeline health check at `/validation`
+- **Web UI** — Flask dashboard with live KPIs, config editor, reports, pipeline validation
 - **8-machine scenario** — `full_feature_8_machine_line` for max-scale testing
+- **Per-shift OEE** — A/P/Q enrichment in historian events, shift-relative OEE snapshots
+- **RunID** — Unique per-run identifier propagated through OPC UA, Telegraf, historian, and web UI
 - **Event tracing** — `--trace` CLI flag for DES event trace output
 
 ### Future
 
-- **Planned Failures** — `Machine(planned_failure=(time, duration))` for scheduled downtime
-- **Parallel Replications** — `iterate_simulation(replications=30)` batch analysis mode
-- **Part Type Customization** — Custom Part subclass with product_family, order_id
-- **Parallel Lines & Assembly** — Multi-line coordination
-- **Energy/Sustainability Modeling**
+- **Planned Failures** — `Machine(planned_failure=(time, duration))` for scheduled downtime windows
+- **Parallel Replications** — `iterate_simulation(replications=30)` batch analysis with confidence intervals
+- **Part Type Customization** — Custom Part subclass with product_family, order_id for product-mix modeling
+- **Parallel Lines & Assembly** — Multi-line coordination, merge/split topologies
+- **Energy/Sustainability Modeling** — Power consumption per machine state, carbon footprint KPIs
 
 See the [User Manual](docs/user_manual.md) for detailed documentation.
 
