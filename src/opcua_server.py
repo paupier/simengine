@@ -962,7 +962,7 @@ def analyze_part_quality(sink, machines=None, scrap_sinks=None) -> dict:
     Returns:
         dict: Quality analysis metrics
     """
-    finished_parts = len(sink.contents) if hasattr(sink, 'contents') else 0
+    finished_parts = sink.level
 
     # Count scrapped parts from scrap sinks
     scrapped_parts = 0
