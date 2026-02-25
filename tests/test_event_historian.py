@@ -533,6 +533,99 @@ class TestCollectProductionSummary:
         assert event.extra["total_wip"] == 7
         assert event.extra["line_oee"] == 0.85
 
+    def test_production_summary_includes_apq(self):
+        """Production summary should include line A, P, Q in extra_json."""
+        event = collect_production_summary(
+            sim_time=120.0,
+            total_parts_produced=100,
+            total_wip=5,
+            line_oee=0.72,
+            shift_manager=None,
+            line_availability=0.9,
+            line_performance=0.85,
+            line_quality=0.94,
+        )
+        assert event.extra["line_availability"] == 0.9
+        assert event.extra["line_performance"] == 0.85
+        assert event.extra["line_quality"] == 0.94
+        assert event.extra["line_oee"] == 0.72
+
+    def test_production_summary_apq_defaults_to_zero(self):
+        """A, P, Q default to 0.0 when not provided (backward compat)."""
+        event = collect_production_summary(
+            sim_time=60.0,
+            total_parts_produced=10,
+            total_wip=1,
+            line_oee=0.5,
+            shift_manager=None,
+        )
+        assert event.extra["line_availability"] == 0.0
+        assert event.extra["line_performance"] == 0.0
+        assert event.extra["line_quality"] == 0.0
+
+
+class TestStateChangeEventAPQ:
+    """Test that STATE_CHANGE events include A, P, Q in extra_json."""
+
+    def test_state_change_includes_apq(self):
+        """STATE_CHANGE event should carry oee_cached A/P/Q in extra."""
+        machines = {"M1": MagicMock()}
+        metrics = {"M1": _make_machine_metrics(state="PROCESSING")}
+        metrics["M1"]["oee_cached"] = {
+            "availability": 0.92,
+            "performance": 0.88,
+            "quality": 0.95,
+            "oee": 0.77,
+        }
+        historian_state = {"M1_state": "IDLE"}
+        config = {"historian": {"events": {"state_changes": True}}}
+
+        events = collect_step_events(
+            sim_time=10.0,
+            machines=machines,
+            machine_metrics=metrics,
+            buffers={},
+            machine_alarms_map={},
+            buffer_alarms_map={},
+            shift_manager=None,
+            shift_rotated=False,
+            spc_monitors={},
+            historian_state=historian_state,
+            config=config,
+        )
+
+        assert len(events) == 1
+        assert events[0].extra["availability"] == 0.92
+        assert events[0].extra["performance"] == 0.88
+        assert events[0].extra["quality"] == 0.95
+
+    def test_state_change_apq_zero_when_no_cache(self):
+        """If oee_cached is None, A/P/Q should be 0."""
+        machines = {"M1": MagicMock()}
+        metrics = {"M1": _make_machine_metrics(state="FAILED")}
+        metrics["M1"]["oee_cached"] = None
+        historian_state = {"M1_state": "IDLE"}
+        config = {"historian": {"events": {"state_changes": True}}}
+
+        events = collect_step_events(
+            sim_time=10.0,
+            machines=machines,
+            machine_metrics=metrics,
+            buffers={},
+            machine_alarms_map={},
+            buffer_alarms_map={},
+            shift_manager=None,
+            shift_rotated=False,
+            spc_monitors={},
+            historian_state=historian_state,
+            config=config,
+        )
+
+        assert len(events) == 1
+        assert events[0].extra["availability"] == 0
+        assert events[0].extra["performance"] == 0
+        assert events[0].extra["quality"] == 0
+
 
 # ========== RunID Tests ==========
 

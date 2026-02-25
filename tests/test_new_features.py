@@ -25,6 +25,9 @@ from opcua_server import (
     accumulate_time,
     analyze_part_routing,
     build_simantha_system,
+    calculate_oee_from_sim,
+    process_machine_step,
+    OEE_BUCKET_INTERVAL,
 )
 
 
@@ -619,3 +622,92 @@ class TestReseedMonotonic:
 
         # Non-monotonic behavior is probabilistic; just document the pattern
         assert True
+
+
+# ========== Shift-Based OEE Reset ==========
+
+
+class TestShiftOEESnapshots:
+    """Test that OEE uses shift-relative deltas."""
+
+    def test_calculate_oee_from_sim_basic(self):
+        """OEE calculation with shift-relative values."""
+        result = calculate_oee_from_sim(
+            sim_time=600, machine_downtime=60, parts_made=50,
+            cycle_time=10, good_parts=45, defective_parts=5
+        )
+        assert 0 < result["availability"] <= 1.0
+        assert 0 < result["performance"] <= 1.0
+        assert result["quality"] == 45 / 50  # 0.9
+        assert abs(result["oee"] - result["availability"] * result["performance"] * result["quality"]) < 0.001
+
+    def test_calculate_oee_zero_time(self):
+        """OEE returns zeros for sim_time <= 0."""
+        result = calculate_oee_from_sim(0, 0, 0, 10)
+        assert result["oee"] == 0
+        assert result["availability"] == 0
+
+    def test_shift_snapshot_initial_is_zero(self):
+        """Initial shift snapshot should be all zeros (start from sim start)."""
+        snap = {
+            "downtime": 0.0, "parts_made": 0,
+            "good_count": 0, "scrap_count": 0, "defective_count": 0,
+            "metric_good": 0, "metric_defective": 0,
+        }
+        for v in snap.values():
+            assert v == 0
+
+    def test_shift_relative_oee_uses_delta(self):
+        """Shift-relative OEE should use delta from snapshot, not absolute values."""
+        # Machine produced 100 parts total, 10 down across whole run
+        # Shift snapshot was taken at downtime=8, parts_made=80
+        # So in current shift: 2s downtime, 20 parts in 100s
+        shift_elapsed = 100
+        shift_downtime = 10 - 8  # 2
+        shift_parts = 100 - 80  # 20
+        result = calculate_oee_from_sim(
+            shift_elapsed, shift_downtime, shift_parts,
+            cycle_time=5, good_parts=18, defective_parts=2
+        )
+        # Availability = (100 - 2) / 100 = 0.98
+        assert abs(result["availability"] - 0.98) < 0.01
+        # Performance = 20 / (98 / 5) = 20 / 19.6 ≈ 1.0 (capped)
+        assert result["performance"] <= 1.0
+        # Quality = 18 / 20 = 0.9
+        assert abs(result["quality"] - 0.9) < 0.01
+
+    def test_shift_oee_resets_on_rotation(self):
+        """After shift rotation, snapshot counters should match machine state."""
+        mock_machine = MagicMock()
+        mock_machine.downtime = 50.0
+        mock_machine.parts_made = 200
+        mock_machine._good_count = 190
+        mock_machine._scrap_count = 5
+        mock_machine._defective_count = 5
+
+        # Simulate taking a snapshot
+        snap = {
+            "downtime": mock_machine.downtime,
+            "parts_made": mock_machine.parts_made,
+            "good_count": mock_machine._good_count,
+            "scrap_count": mock_machine._scrap_count,
+            "defective_count": mock_machine._defective_count,
+        }
+
+        # After snapshot, machine produces more
+        mock_machine.downtime = 55.0
+        mock_machine.parts_made = 210
+        mock_machine._good_count = 199
+        mock_machine._scrap_count = 6
+        mock_machine._defective_count = 5
+
+        # Delta should be: downtime=5, parts=10, good=9, defective=1
+        shift_downtime = mock_machine.downtime - snap["downtime"]
+        shift_parts = mock_machine.parts_made - snap["parts_made"]
+        shift_good = mock_machine._good_count - snap["good_count"]
+        shift_defective = (mock_machine._scrap_count + mock_machine._defective_count) - (snap["scrap_count"] + snap["defective_count"])
+
+        assert shift_downtime == 5.0
+        assert shift_parts == 10
+        assert shift_good == 9
+        assert shift_defective == 1

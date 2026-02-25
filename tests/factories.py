@@ -60,6 +60,9 @@ def make_machine_metrics(state="IDLE", partcount=0, **kwargs):
         "alarm_machine_failed_active": False,
         "alarm_maintenance_active": False,
         "alarm_quality_alert_active": False,
+        "oee": kwargs.get("oee", 0.0),
+        "oee_cached": kwargs.get("oee_cached", None),
+        "oee_last_update_time": kwargs.get("oee_last_update_time", 0.0),
     }
 
 

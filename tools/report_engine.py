@@ -615,11 +615,218 @@ def analyze_anomalies(df):
 
 
 # ---------------------------------------------------------------------------
+# Section 11: OEE Sanity Checks
+# ---------------------------------------------------------------------------
+
+def analyze_oee_sanity(df):
+    """OEE sanity checks: formula validation, part invariants, monotonicity,
+    component ranges, machine-to-line consistency, quality-scrap coherence.
+
+    Each check returns PASS/WARN/FAIL with detail message.
+    """
+    _require_pandas()
+    checks = []
+
+    # --- Check 1: Formula validation (A*P*Q ≈ OEE) in PRODUCTION_SUMMARY ---
+    prod_summaries = df[df["event_type"] == "PRODUCTION_SUMMARY"].copy()
+    if len(prod_summaries) > 0:
+        extras = parse_extra_json(prod_summaries["extra_json"])
+        formula_violations = 0
+        formula_checked = 0
+        for idx, extra in extras.items():
+            a = extra.get("line_availability")
+            p = extra.get("line_performance")
+            q = extra.get("line_quality")
+            oee = extra.get("line_oee")
+            if all(v is not None for v in [a, p, q, oee]):
+                formula_checked += 1
+                expected = a * p * q
+                if abs(oee - expected) > 0.01:
+                    formula_violations += 1
+
+        if formula_checked == 0:
+            checks.append({
+                "name": "OEE formula (A*P*Q=OEE)",
+                "status": "WARN",
+                "count": 0,
+                "message": "No A/P/Q data in production summaries",
+            })
+        else:
+            checks.append({
+                "name": "OEE formula (A*P*Q=OEE)",
+                "status": "FAIL" if formula_violations > 0 else "PASS",
+                "count": formula_violations,
+                "message": (f"{formula_violations}/{formula_checked} summaries violate A*P*Q=OEE"
+                            if formula_violations > 0
+                            else f"All {formula_checked} summaries satisfy A*P*Q=OEE"),
+            })
+    else:
+        checks.append({
+            "name": "OEE formula (A*P*Q=OEE)",
+            "status": "WARN",
+            "count": 0,
+            "message": "No production summaries found",
+        })
+
+    # --- Check 2: Part count invariant (good + defective == partcount) ---
+    machine_events = df[
+        (df["source_type"] == "machine") & (df["event_type"] == "STATE_CHANGE")
+    ]
+    invariant_violations = 0
+    invariant_checked = 0
+    if len(machine_events) > 0:
+        for _, row in machine_events.iterrows():
+            pc = row.get("partcount")
+            gp = row.get("good_parts")
+            dp = row.get("defective_parts")
+            if pd.notna(pc) and pd.notna(gp) and pd.notna(dp):
+                invariant_checked += 1
+                if abs(int(pc) - (int(gp) + int(dp))) > 1:
+                    invariant_violations += 1
+
+    checks.append({
+        "name": "Part count invariant (good+defective=total)",
+        "status": "FAIL" if invariant_violations > 0 else "PASS",
+        "count": invariant_violations,
+        "message": (f"{invariant_violations}/{invariant_checked} events violate invariant"
+                    if invariant_violations > 0
+                    else f"All {invariant_checked} events satisfy invariant"),
+    })
+
+    # --- Check 3: Partcount monotonicity within shifts ---
+    machines_list = sorted(machine_events["source"].unique()) if len(machine_events) > 0 else []
+    mono_violations = 0
+    for m in machines_list:
+        m_events = machine_events[machine_events["source"] == m].sort_values("timestamp")
+        pcs = m_events["partcount"].dropna().values
+        if len(pcs) > 1:
+            # Check if shift_number changes (reset allowed at shift boundary)
+            shifts = m_events["shift_number"].values
+            for i in range(1, len(pcs)):
+                if pcs[i] < pcs[i - 1]:
+                    # Only flag if same shift
+                    if pd.notna(shifts[i]) and pd.notna(shifts[i - 1]) and shifts[i] == shifts[i - 1]:
+                        mono_violations += 1
+
+    checks.append({
+        "name": "Partcount monotonicity (within shift)",
+        "status": "FAIL" if mono_violations > 0 else "PASS",
+        "count": mono_violations,
+        "message": (f"{mono_violations} decreases in partcount within a shift"
+                    if mono_violations > 0
+                    else "Partcounts are monotonically non-decreasing within shifts"),
+    })
+
+    # --- Check 4: A, P, Q component ranges [0, 1] ---
+    range_violations = 0
+    range_checked = 0
+    if len(machine_events) > 0:
+        extras = parse_extra_json(machine_events["extra_json"])
+        for idx, extra in extras.items():
+            for comp in ["availability", "performance", "quality"]:
+                val = extra.get(comp)
+                if val is not None:
+                    range_checked += 1
+                    if val < -0.001 or val > 1.001:
+                        range_violations += 1
+
+    checks.append({
+        "name": "OEE component ranges [0,1]",
+        "status": "FAIL" if range_violations > 0 else "PASS",
+        "count": range_violations,
+        "message": (f"{range_violations}/{range_checked} component values out of [0,1]"
+                    if range_violations > 0
+                    else f"All {range_checked} component values in [0,1]"),
+    })
+
+    # --- Check 5: Machine-to-line consistency (line_OEE ≈ min(machine_OEE)) ---
+    line_machine_status = "PASS"
+    line_machine_msg = "Not enough data"
+    if len(prod_summaries) > 0 and len(machine_events) > 0:
+        prod_extras = parse_extra_json(prod_summaries["extra_json"])
+        line_oee_vals = [e.get("line_oee") for _, e in prod_extras.items() if e.get("line_oee") is not None]
+
+        # Get per-machine final OEE from state changes
+        machine_oees = []
+        for m in machines_list:
+            m_evts = machine_events[machine_events["source"] == m]
+            m_oee = m_evts["oee"].dropna()
+            if len(m_oee) > 0:
+                machine_oees.append(float(m_oee.iloc[-1]))
+
+        if line_oee_vals and machine_oees:
+            last_line_oee = line_oee_vals[-1]
+            min_machine_oee = min(machine_oees)
+            diff = abs(last_line_oee - min_machine_oee)
+            if diff < 0.1:
+                line_machine_status = "PASS"
+                line_machine_msg = (f"Line OEE ({last_line_oee:.3f}) ≈ "
+                                    f"min machine OEE ({min_machine_oee:.3f})")
+            else:
+                line_machine_status = "WARN"
+                line_machine_msg = (f"Line OEE ({last_line_oee:.3f}) differs from "
+                                    f"min machine OEE ({min_machine_oee:.3f}) by {diff:.3f}")
+
+    checks.append({
+        "name": "Machine-to-line OEE consistency",
+        "status": line_machine_status,
+        "count": 0,
+        "message": line_machine_msg,
+    })
+
+    # --- Check 6: Quality-scrap coherence ---
+    scraps = df[df["event_type"] == "SCRAP"]
+    scrap_machines = set(scraps["source"].unique()) if len(scraps) > 0 else set()
+    qsc_violations = 0
+    qsc_checked = 0
+    for m in machines_list:
+        if m in scrap_machines:
+            qsc_checked += 1
+            m_evts = machine_events[machine_events["source"] == m]
+            m_extras = parse_extra_json(m_evts["extra_json"])
+            # Check last quality value
+            last_quality = None
+            for _, extra in m_extras.items():
+                q = extra.get("quality")
+                if q is not None:
+                    last_quality = q
+            if last_quality is not None and last_quality >= 0.999:
+                qsc_violations += 1
+
+    checks.append({
+        "name": "Quality-scrap coherence",
+        "status": "WARN" if qsc_violations > 0 else "PASS",
+        "count": qsc_violations,
+        "message": (f"{qsc_violations}/{qsc_checked} machines have scrap but quality=1.0"
+                    if qsc_violations > 0
+                    else f"All {qsc_checked} machines with scrap show quality<1.0"
+                    if qsc_checked > 0
+                    else "No machines with scrap events to check"),
+    })
+
+    fail_count = sum(1 for c in checks if c["status"] == "FAIL")
+    warn_count = sum(1 for c in checks if c["status"] == "WARN")
+    if fail_count > 0:
+        overall = "FAIL"
+    elif warn_count > 0:
+        overall = "WARN"
+    else:
+        overall = "PASS"
+
+    return {
+        "checks": checks,
+        "fail_count": fail_count,
+        "warn_count": warn_count,
+        "status": overall,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Full Analysis
 # ---------------------------------------------------------------------------
 
 def run_full_analysis(df):
-    """Run all 10 analysis sections. Returns combined dict."""
+    """Run all analysis sections. Returns combined dict."""
     return {
         "overview": analyze_overview(df),
         "continuity": analyze_continuity(df),
@@ -631,6 +838,7 @@ def run_full_analysis(df):
         "buffer_dynamics": analyze_buffer_dynamics(df),
         "throughput": analyze_throughput(df),
         "anomalies": analyze_anomalies(df),
+        "oee_sanity": analyze_oee_sanity(df),
     }
 
 

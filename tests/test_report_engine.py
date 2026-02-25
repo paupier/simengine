@@ -27,6 +27,7 @@ from report_engine import (
     analyze_buffer_dynamics,
     analyze_throughput,
     analyze_anomalies,
+    analyze_oee_sanity,
     run_full_analysis,
     validate_pipeline,
     append_run_index,
@@ -496,6 +497,7 @@ class TestRunFullAnalysis:
             "overview", "continuity", "oee", "machine_oee",
             "failures", "quality_routing", "shifts",
             "buffer_dynamics", "throughput", "anomalies",
+            "oee_sanity",
         ]
         for key in expected_keys:
             assert key in result, f"Missing section: {key}"
@@ -650,3 +652,209 @@ class TestLoadHistorianCsv:
             assert df.iloc[0]["timestamp"] == 60.0
         finally:
             os.unlink(tmp_name)
+
+
+# ---------------------------------------------------------------------------
+# OEE Sanity Checks tests
+# ---------------------------------------------------------------------------
+
+
+def _make_oee_sanity_df():
+    """Create a DataFrame with A/P/Q data for sanity checking."""
+    rows = []
+    t = 0.0
+
+    # Production summaries with A*P*Q data
+    for i in range(10):
+        t += 60.0
+        a, p, q = 0.9, 0.85, 0.95
+        oee = round(a * p * q, 4)
+        extra = json.dumps({
+            "line_oee": oee,
+            "line_availability": a,
+            "line_performance": p,
+            "line_quality": q,
+            "total_wip": 3,
+        })
+        rows.append({
+            "timestamp": t,
+            "event_type": "PRODUCTION_SUMMARY",
+            "source": "Line1",
+            "source_type": "line",
+            "severity": "INFO",
+            "message": f"Production summary at t={t}",
+            "old_state": "",
+            "new_state": "",
+            "partcount": 10 + i * 5,
+            "good_parts": 9 + i * 5,
+            "defective_parts": 1,
+            "buffer_level": pd.NA,
+            "oee": oee,
+            "utilisation": 0.8,
+            "shift_number": 1,
+            "shift_name": "Day",
+            "extra_json": extra,
+        })
+
+    # Machine state changes with A/P/Q in extra and good+defective=partcount
+    for m_name in ["Machine1", "Machine2"]:
+        for i in range(10):
+            t += 30.0
+            pc = 20 + i * 3
+            gp = pc - 2
+            dp = 2
+            extra = json.dumps({
+                "availability": 0.92,
+                "performance": 0.88,
+                "quality": 0.95,
+            })
+            rows.append({
+                "timestamp": t,
+                "event_type": "STATE_CHANGE",
+                "source": m_name,
+                "source_type": "machine",
+                "severity": "INFO",
+                "message": f"State change",
+                "old_state": "PROCESSING",
+                "new_state": "IDLE",
+                "partcount": pc,
+                "good_parts": gp,
+                "defective_parts": dp,
+                "buffer_level": pd.NA,
+                "oee": 0.77,
+                "utilisation": 0.8,
+                "shift_number": 1,
+                "shift_name": "Day",
+                "extra_json": extra,
+            })
+
+    return pd.DataFrame(rows)
+
+
+class TestAnalyzeOeeSanity:
+    def test_all_checks_pass(self):
+        df = _make_oee_sanity_df()
+        result = analyze_oee_sanity(df)
+        assert result["status"] == "PASS"
+        assert result["fail_count"] == 0
+        assert len(result["checks"]) == 6
+
+    def test_formula_violation_detected(self):
+        """If A*P*Q != OEE, the formula check should fail."""
+        rows = [{
+            "timestamp": 60.0,
+            "event_type": "PRODUCTION_SUMMARY",
+            "source": "Line1",
+            "source_type": "line",
+            "severity": "INFO",
+            "message": "test",
+            "old_state": "", "new_state": "",
+            "partcount": 50,
+            "good_parts": 45, "defective_parts": 5,
+            "buffer_level": pd.NA, "oee": 0.8, "utilisation": 0.8,
+            "shift_number": 1, "shift_name": "Day",
+            "extra_json": json.dumps({
+                "line_oee": 0.99,  # Wrong! A*P*Q = 0.9*0.85*0.95 = 0.726
+                "line_availability": 0.9,
+                "line_performance": 0.85,
+                "line_quality": 0.95,
+            }),
+        }]
+        df = pd.DataFrame(rows)
+        result = analyze_oee_sanity(df)
+        formula_check = next(c for c in result["checks"] if "formula" in c["name"])
+        assert formula_check["status"] == "FAIL"
+
+    def test_part_count_invariant_violation(self):
+        """good + defective != partcount should be caught."""
+        rows = [{
+            "timestamp": 60.0,
+            "event_type": "STATE_CHANGE",
+            "source": "Machine1",
+            "source_type": "machine",
+            "severity": "INFO",
+            "message": "test",
+            "old_state": "IDLE", "new_state": "PROCESSING",
+            "partcount": 100,
+            "good_parts": 50,
+            "defective_parts": 10,  # 50+10=60 != 100
+            "buffer_level": pd.NA, "oee": 0.7, "utilisation": 0.8,
+            "shift_number": 1, "shift_name": "Day",
+            "extra_json": "",
+        }]
+        df = pd.DataFrame(rows)
+        result = analyze_oee_sanity(df)
+        invariant_check = next(c for c in result["checks"] if "invariant" in c["name"])
+        assert invariant_check["status"] == "FAIL"
+        assert invariant_check["count"] == 1
+
+    def test_component_range_violation(self):
+        """A, P, Q values outside [0, 1] should be flagged."""
+        rows = [{
+            "timestamp": 60.0,
+            "event_type": "STATE_CHANGE",
+            "source": "Machine1",
+            "source_type": "machine",
+            "severity": "INFO",
+            "message": "test",
+            "old_state": "IDLE", "new_state": "PROCESSING",
+            "partcount": 10, "good_parts": 9, "defective_parts": 1,
+            "buffer_level": pd.NA, "oee": 0.7, "utilisation": 0.8,
+            "shift_number": 1, "shift_name": "Day",
+            "extra_json": json.dumps({"availability": 1.5, "performance": 0.8, "quality": -0.1}),
+        }]
+        df = pd.DataFrame(rows)
+        result = analyze_oee_sanity(df)
+        range_check = next(c for c in result["checks"] if "ranges" in c["name"])
+        assert range_check["status"] == "FAIL"
+        assert range_check["count"] == 2  # availability=1.5, quality=-0.1
+
+    def test_quality_scrap_coherence(self):
+        """Machine with scrap events but quality=1.0 should be warned."""
+        rows = []
+        # Machine state change with quality=1.0
+        rows.append({
+            "timestamp": 60.0,
+            "event_type": "STATE_CHANGE",
+            "source": "Machine1",
+            "source_type": "machine",
+            "severity": "INFO",
+            "message": "test",
+            "old_state": "IDLE", "new_state": "PROCESSING",
+            "partcount": 10, "good_parts": 10, "defective_parts": 0,
+            "buffer_level": pd.NA, "oee": 0.9, "utilisation": 0.8,
+            "shift_number": 1, "shift_name": "Day",
+            "extra_json": json.dumps({"availability": 0.95, "performance": 0.95, "quality": 1.0}),
+        })
+        # Scrap event from same machine
+        rows.append({
+            "timestamp": 70.0,
+            "event_type": "SCRAP",
+            "source": "Machine1",
+            "source_type": "machine",
+            "severity": "LOW",
+            "message": "scrapped",
+            "old_state": "", "new_state": "",
+            "partcount": 10, "good_parts": 9, "defective_parts": 1,
+            "buffer_level": pd.NA, "oee": 0.9, "utilisation": 0.8,
+            "shift_number": 1, "shift_name": "Day",
+            "extra_json": json.dumps({"scrap_count": 1}),
+        })
+        df = pd.DataFrame(rows)
+        result = analyze_oee_sanity(df)
+        coherence_check = next(c for c in result["checks"] if "coherence" in c["name"])
+        assert coherence_check["status"] == "WARN"
+        assert coherence_check["count"] == 1
+
+    def test_empty_df(self):
+        """Empty DataFrame should return WARN status, not crash."""
+        df = pd.DataFrame(columns=[
+            "timestamp", "event_type", "source", "source_type",
+            "severity", "message", "old_state", "new_state",
+            "partcount", "good_parts", "defective_parts",
+            "buffer_level", "oee", "utilisation",
+            "shift_number", "shift_name", "extra_json",
+        ])
+        result = analyze_oee_sanity(df)
+        assert "status" in result
+        assert len(result["checks"]) == 6

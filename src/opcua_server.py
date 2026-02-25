@@ -1084,11 +1084,16 @@ def collect_system_metrics(buffers, maintainer, machines=None):
 
 def process_machine_step(machine_name, machine_obj, metrics, config_machines,
                          total_parts_produced, pause_line, sim_step, maintainer,
-                         shift_manager, spc_monitors, opcua_vars, sink, sim_time):
+                         shift_manager, spc_monitors, opcua_vars, sink, sim_time,
+                         shift_oee_snapshot=None, shift_start_time=0.0):
     """Process one simulation step for a single machine.
 
     Updates metrics, detects state, calculates OEE, updates alarms, SPC,
     and writes all OPC UA variables for this machine.
+
+    Args:
+        shift_oee_snapshot: Dict with shift-start counters for shift-relative OEE.
+        shift_start_time: sim_time when current shift started.
 
     Returns:
         list or None: Alarms triggered this step (for historian), or None.
@@ -1166,19 +1171,29 @@ def process_machine_step(machine_name, machine_obj, metrics, config_machines,
         update_alarm_variables(machine_vars, machine_alarms)
 
     # OEE calculation (bucketed — recalculate every OEE_BUCKET_INTERVAL seconds)
+    # Uses shift-relative deltas so OEE resets at shift boundaries.
     if (sim_time - metrics["oee_last_update_time"] >= OEE_BUCKET_INTERVAL
             or metrics["oee_cached"] is None):
+        snap = shift_oee_snapshot or {}
+        shift_elapsed = sim_time - shift_start_time
+        shift_downtime = machine_obj.downtime - snap.get("downtime", 0.0)
+        shift_parts = machine_obj.parts_made - snap.get("parts_made", 0)
+
         if isinstance(machine_obj, QualityRoutingMixin):
-            qr_good = machine_obj._good_count
-            qr_defective = machine_obj._scrap_count + machine_obj._defective_count
+            qr_good = machine_obj._good_count - snap.get("good_count", 0)
+            qr_defective = (
+                (machine_obj._scrap_count + machine_obj._defective_count)
+                - snap.get("scrap_count", 0) - snap.get("defective_count", 0)
+            )
         else:
-            qr_good = metrics["good_parts"]
-            qr_defective = metrics["defective_parts"]
+            # Non-QR machines accumulate good/defective in metrics via +=
+            qr_good = metrics["good_parts"] - snap.get("metric_good", 0)
+            qr_defective = metrics["defective_parts"] - snap.get("metric_defective", 0)
 
         oee_result = calculate_oee_from_sim(
-            sim_time, machine_obj.downtime, machine_obj.parts_made,
+            shift_elapsed, shift_downtime, shift_parts,
             metrics["cycle_time"],
-            good_parts=qr_good, defective_parts=qr_defective
+            good_parts=max(0, qr_good), defective_parts=max(0, qr_defective)
         )
         metrics["oee_cached"] = oee_result
         metrics["oee_last_update_time"] = sim_time
@@ -1456,7 +1471,8 @@ def record_historian_events(historian, neo4j_hist, sim_time, machines, machine_m
                             buffers, machine_alarms_map, buffer_alarms_map, shift_manager,
                             shift_rotated, spc_monitors, historian_state, config,
                             total_parts_produced, total_wip, line_oee, delta_parts,
-                            production_summary_counter, production_summary_interval, sim_step):
+                            production_summary_counter, production_summary_interval, sim_step,
+                            line_availability=0.0, line_performance=0.0, line_quality=0.0):
     """Collect and record historian events. Returns updated production_summary_counter."""
     if not historian:
         return production_summary_counter
@@ -1484,6 +1500,9 @@ def record_historian_events(historian, neo4j_hist, sim_time, machines, machine_m
                 total_wip=total_wip,
                 line_oee=line_oee,
                 shift_manager=shift_manager,
+                line_availability=line_availability,
+                line_performance=line_performance,
+                line_quality=line_quality,
             ))
             production_summary_counter = 0.0
 
@@ -2033,6 +2052,20 @@ def main(argv=None):
             machine_metrics[machine_name]["spc_measurement_noise"] = spc_config_dict.get("measurement_noise", 0.02)
             print(f"  SPC enabled for {machine_name}: {spc_config.characteristic} (USL={spc_config.usl}, LSL={spc_config.lsl})")
 
+    # Per-machine snapshots at shift start (for shift-relative OEE)
+    shift_oee_snapshots = {}
+    shift_start_time = 0.0
+    for machine_name in machines:
+        shift_oee_snapshots[machine_name] = {
+            "downtime": 0.0,
+            "parts_made": 0,
+            "good_count": 0,
+            "scrap_count": 0,
+            "defective_count": 0,
+            "metric_good": 0,
+            "metric_defective": 0,
+        }
+
     # Create shift manager if configured
     shift_manager = create_shift_manager_from_config(config, list(machines.keys()))
     if shift_manager:
@@ -2084,6 +2117,25 @@ def main(argv=None):
             # Shift rotation check
             shift_rotated = check_shift_rotation(shift_manager, sim_time, pause_line)
 
+            # Snapshot Simantha counters at shift boundary for shift-relative OEE
+            if shift_rotated:
+                shift_start_time = sim_time
+                for mname, mobj in machines.items():
+                    shift_oee_snapshots[mname] = {
+                        "downtime": mobj.downtime,
+                        "parts_made": mobj.parts_made,
+                        "good_count": getattr(mobj, '_good_count', 0),
+                        "scrap_count": getattr(mobj, '_scrap_count', 0),
+                        "defective_count": getattr(mobj, '_defective_count', 0),
+                    }
+                    # Also snapshot non-QR accumulated metrics
+                    shift_oee_snapshots[mname]["metric_good"] = machine_metrics[mname]["good_parts"]
+                    shift_oee_snapshots[mname]["metric_defective"] = machine_metrics[mname]["defective_parts"]
+                # Force OEE recalculation on next step
+                for mname in machines:
+                    machine_metrics[mname]["oee_cached"] = None
+                    machine_metrics[mname]["oee_last_update_time"] = sim_time
+
             # System-level metrics (WIP, maintenance)
             total_wip, maint_active, maint_queue_length, total_repairs = \
                 collect_system_metrics(buffers, maintainer, machines)
@@ -2095,7 +2147,9 @@ def main(argv=None):
                     machine_name, machine_obj, machine_metrics[machine_name],
                     config["machines"], total_parts_produced, pause_line, sim_step,
                     maintainer, shift_manager, spc_monitors, opcua_vars, sink,
-                    sim_time)
+                    sim_time,
+                    shift_oee_snapshot=shift_oee_snapshots.get(machine_name),
+                    shift_start_time=shift_start_time)
                 if alarms:
                     machine_alarms_map[machine_name] = alarms
 
@@ -2130,7 +2184,9 @@ def main(argv=None):
                 buffers, machine_alarms_map, buffer_alarms_map, shift_manager,
                 shift_rotated, spc_monitors, historian_state, config,
                 total_parts_produced, total_wip, line_oee, delta_parts,
-                production_summary_counter, production_summary_interval, sim_step)
+                production_summary_counter, production_summary_interval, sim_step,
+                line_availability=line_avail, line_performance=line_perf,
+                line_quality=line_qual)
 
             time.sleep(real_step)
 

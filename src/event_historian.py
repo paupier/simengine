@@ -483,6 +483,7 @@ def collect_step_events(
         if event_cfg.get("state_changes", True):
             prev = historian_state.get(f"{machine_name}_state", "IDLE")
             if prev != current_state:
+                oee_cached = metrics.get("oee_cached") or {}
                 events.append(SimEvent(
                     timestamp=sim_time,
                     wall_clock=wall_clock,
@@ -500,6 +501,11 @@ def collect_step_events(
                     utilisation=utilisation,
                     shift_number=shift_number,
                     shift_name=shift_name,
+                    extra={
+                        "availability": round(oee_cached.get("availability", 0), 4),
+                        "performance": round(oee_cached.get("performance", 0), 4),
+                        "quality": round(oee_cached.get("quality", 0), 4),
+                    },
                 ))
                 historian_state[f"{machine_name}_state"] = current_state
 
@@ -677,6 +683,9 @@ def collect_production_summary(
     total_wip: int,
     line_oee: float,
     shift_manager,
+    line_availability: float = 0.0,
+    line_performance: float = 0.0,
+    line_quality: float = 0.0,
 ) -> SimEvent:
     """Create a periodic production summary event."""
     shift_number, shift_name = _get_shift_info(shift_manager)
@@ -691,5 +700,11 @@ def collect_production_summary(
         partcount=total_parts_produced,
         shift_number=shift_number,
         shift_name=shift_name,
-        extra={"total_wip": total_wip, "line_oee": round(line_oee, 4)},
+        extra={
+            "total_wip": total_wip,
+            "line_oee": round(line_oee, 4),
+            "line_availability": round(line_availability, 4),
+            "line_performance": round(line_performance, 4),
+            "line_quality": round(line_quality, 4),
+        },
     )
