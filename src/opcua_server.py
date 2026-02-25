@@ -1930,12 +1930,16 @@ def main(argv=None):
                        help="Enable Simantha DES event trace (outputs pickle file)")
     args = parser.parse_args(argv)
 
-    # Set random seed if provided (seeds both Python random and numpy for scipy)
+    # Set random seed (seeds both Python random and numpy for scipy)
+    # Auto-generate if not provided; re-used before each simulate() for monotonic results
+    import numpy as np
     if args.seed is not None:
-        random.seed(args.seed)
-        import numpy as np
-        np.random.seed(args.seed)
-        print(f"Using random seed: {args.seed}")
+        sim_seed = args.seed
+    else:
+        sim_seed = int(datetime.now().timestamp() * 1000) % (2**31)
+    random.seed(sim_seed)
+    np.random.seed(sim_seed)
+    print(f"Using random seed: {sim_seed}")
 
     # Generate RunID (env var override for web UI coordination)
     run_id = os.environ.get(
@@ -2064,8 +2068,12 @@ def main(argv=None):
             source.interarrival_time = interarrival if interarrival > 0 else None
 
             # Step simulation (CRITICAL: increment sim_time BEFORE simulate)
+            # Re-seed RNGs so simulate(N) and simulate(N+1) share identical
+            # random state for [0,N], making sink.level monotonically increase.
             if not pause_line:
                 sim_time += sim_step
+                random.seed(sim_seed)
+                np.random.seed(sim_seed)
                 system.simulate(warm_up_time=warm_up_time, simulation_time=sim_time,
                                 verbose=False, collect_data=False, trace=args.trace)
 

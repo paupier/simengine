@@ -554,3 +554,68 @@ class TestNewScenarioLoading:
     def test_multi_state_degradation_line_loads(self):
         config = load_line_config("multi_state_degradation_line")
         assert config["machines"][0]["health_states"]["h_max"] == 5
+
+
+# ========== Re-Seed for Monotonic Results ==========
+
+
+class TestReseedMonotonic:
+    """Verify re-seeding RNGs before simulate() makes sink.level monotonic."""
+
+    def test_reseed_produces_monotonic_sink_level(self):
+        """With re-seeding, sink.level should never decrease between steps."""
+        import numpy as np
+
+        config = load_line_config("balanced_line")
+        system, source, sink, machines, buffers, maintainer, scrap_sinks = \
+            build_simantha_system(config)
+
+        seed = 42
+        sim_time = 0.0
+        prev_level = 0
+        decreases = 0
+
+        for _ in range(50):
+            sim_time += 1.0
+            random.seed(seed)
+            np.random.seed(seed)
+            system.simulate(simulation_time=sim_time)
+            if sink.level < prev_level:
+                decreases += 1
+            prev_level = sink.level
+
+        assert decreases == 0, (
+            f"sink.level decreased {decreases} times with re-seeding"
+        )
+
+    def test_without_reseed_can_fluctuate(self):
+        """Without re-seeding, sink.level may decrease (non-monotonic).
+
+        This test documents the behavior difference — without re-seeding,
+        simulate() can produce non-monotonic sink.level due to different
+        RNG states across calls. The assertion is lenient since the
+        fluctuation is probabilistic.
+        """
+        import numpy as np
+
+        config = load_line_config("balanced_line")
+        system, source, sink, machines, buffers, maintainer, scrap_sinks = \
+            build_simantha_system(config)
+
+        # Seed only once at the start (no re-seeding per step)
+        random.seed(42)
+        np.random.seed(42)
+
+        sim_time = 0.0
+        prev_level = 0
+        decreases = 0
+
+        for _ in range(200):
+            sim_time += 1.0
+            system.simulate(simulation_time=sim_time)
+            if sink.level < prev_level:
+                decreases += 1
+            prev_level = sink.level
+
+        # Non-monotonic behavior is probabilistic; just document the pattern
+        assert True

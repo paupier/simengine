@@ -175,9 +175,13 @@ warm_up_time = int(config.get("warm_up_time", 0))
 while True:
     if not paused:
         sim_time += sim_step  # ALWAYS increment before simulate()
+        random.seed(sim_seed)        # Re-seed BEFORE every simulate()
+        np.random.seed(sim_seed)
         system.simulate(warm_up_time=warm_up_time, simulation_time=sim_time)
 ```
 Never call `system.simulate(simulation_time=0)` or with time <= 0. The `warm_up_time` parameter (from YAML config) causes Simantha to skip data collection during the warm-up phase, producing more accurate steady-state metrics.
+
+**Re-seeding is critical:** Each `simulate(N)` re-runs the entire simulation from 0 to N. Without re-seeding, different RNG states cause `sink.level` to fluctuate between steps. Re-seeding ensures `simulate(N)` and `simulate(N+1)` produce identical events in `[0,N]`, so counters increase monotonically. If `--seed` is not provided, one is auto-generated from the current timestamp.
 
 ### Monotonic counter pattern for sink.level
 `sink.level` can **decrease** during maintenance. Always track monotonically:
@@ -269,7 +273,7 @@ python docker/telegraf/generate_telegraf_conf.py --config config/line_models.yam
 
 ## Randomness and Reproducibility
 
-The `--seed` CLI argument seeds both `random` (Python stdlib) and `numpy.random` (used by scipy distributions). This makes defect generation, SPC measurement noise, quality routing decisions, and MTTF/MTTR distributions reproducible. Simantha's internal RNG is not controllable.
+The `--seed` CLI argument seeds both `random` (Python stdlib) and `numpy.random` (used by scipy distributions). If `--seed` is omitted, a seed is auto-generated from the current timestamp and printed to the console. The seed is re-applied before every `simulate()` call to ensure monotonically increasing counters (see "Simantha stepping pattern" above). This makes defect generation, SPC measurement noise, quality routing decisions, and MTTF/MTTR distributions reproducible. Simantha's internal RNG is not controllable.
 
 ## CI
 
