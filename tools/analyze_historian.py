@@ -352,7 +352,7 @@ def query_influxdb_telegraf(influx_url, influx_token, influx_org, influx_bucket,
 
     # Build time range clause
     if time_start and time_end:
-        range_clause = f'range(start: {time_start}, stop: {time_end})'
+        range_clause = f'range(start: "{time_start}", stop: "{time_end}")'
     else:
         range_clause = 'range(start: -30d)'
 
