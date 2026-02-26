@@ -128,7 +128,7 @@ def analyze_overview(df):
     _require_pandas()
     sim_start = float(df["timestamp"].min())
     sim_end = float(df["timestamp"].max())
-    sim_duration_s = sim_end - sim_start
+    sim_duration_s = sim_end  # sim_time starts from 0
     sim_duration_hrs = sim_duration_s / 3600
     total_events = len(df)
     events_per_min = total_events / max(sim_duration_hrs * 60, 1)
@@ -822,6 +822,70 @@ def analyze_oee_sanity(df):
 
 
 # ---------------------------------------------------------------------------
+# Section 12: Time in State
+# ---------------------------------------------------------------------------
+
+# Predefined order for consistent chart coloring
+_STATE_ORDER = [
+    "PROCESSING", "BLOCKED", "STARVED", "FAILED",
+    "UNDER_REPAIR", "DEGRADED", "IDLE", "PAUSED",
+]
+
+
+def analyze_time_in_state(df):
+    """Compute per-machine time spent in each state from STATE_CHANGE events.
+
+    Returns dict with 'machines' (machine -> state -> minutes),
+    'states' (ordered list of observed states), and 'total_sim_time' (seconds).
+    """
+    _require_pandas()
+    state_changes = df[
+        (df["event_type"] == "STATE_CHANGE") & (df["source_type"] == "machine")
+    ].copy()
+
+    sim_end = float(df["timestamp"].max())
+    result = {"machines": {}, "states": [], "total_sim_time": sim_end}
+
+    if len(state_changes) == 0:
+        return result
+
+    machines_list = sorted(state_changes["source"].unique())
+    all_states = set()
+
+    for m in machines_list:
+        m_events = state_changes[state_changes["source"] == m].sort_values("timestamp")
+        state_seconds = {}
+
+        prev_time = 0.0  # sim starts at 0
+        prev_state = str(m_events.iloc[0]["old_state"])
+
+        for _, row in m_events.iterrows():
+            t = float(row["timestamp"])
+            duration = t - prev_time
+            if duration > 0 and prev_state:
+                state_seconds[prev_state] = state_seconds.get(prev_state, 0.0) + duration
+            prev_time = t
+            prev_state = str(row["new_state"])
+
+        # Extend last state to sim_end
+        if prev_state and sim_end > prev_time:
+            remaining = sim_end - prev_time
+            state_seconds[prev_state] = state_seconds.get(prev_state, 0.0) + remaining
+
+        # Convert to minutes
+        state_minutes = {s: round(v / 60, 2) for s, v in state_seconds.items()}
+        result["machines"][m] = state_minutes
+        all_states.update(state_seconds.keys())
+
+    # Order states by predefined priority, then alphabetically for unknowns
+    ordered = [s for s in _STATE_ORDER if s in all_states]
+    extras = sorted(all_states - set(_STATE_ORDER))
+    result["states"] = ordered + extras
+
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Full Analysis
 # ---------------------------------------------------------------------------
 
@@ -839,6 +903,7 @@ def run_full_analysis(df):
         "throughput": analyze_throughput(df),
         "anomalies": analyze_anomalies(df),
         "oee_sanity": analyze_oee_sanity(df),
+        "time_in_state": analyze_time_in_state(df),
     }
 
 

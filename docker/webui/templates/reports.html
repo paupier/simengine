@@ -71,6 +71,16 @@
                 <div class="card-body"><div class="chart-container"><canvas id="chart-event-types"></canvas></div></div>
             </div>
 
+            <!-- Time in State -->
+            <div class="card section-card">
+                <div class="card-header"><strong>Time in State (per Machine)</strong></div>
+                <div class="card-body">
+                    <div class="chart-container" style="height: 350px;">
+                        <canvas id="chart-time-in-state"></canvas>
+                    </div>
+                </div>
+            </div>
+
             <div class="row">
                 <!-- Section 3: Line OEE -->
                 <div class="col-md-6">
@@ -271,6 +281,7 @@
             } else { effEl.textContent = '-'; }
 
             renderEventTypes(a.overview);
+            if (a.time_in_state) renderTimeInState(a.time_in_state);
             renderLineOee(a.oee);
             renderMachineOee(a.machine_oee);
             renderThroughput(a.throughput);
@@ -294,6 +305,46 @@
                     datasets: [{label: 'Count', data: values, backgroundColor: colors.slice(0, labels.length)}]
                 },
                 options: {indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: {legend: {display: false}}}
+            });
+        }
+
+        // --- Chart: Time in State ---
+        function renderTimeInState(tis) {
+            const machines = Object.keys(tis.machines || {});
+            const states = tis.states || [];
+            if (machines.length === 0 || states.length === 0) return;
+
+            const stateColors = {
+                'PROCESSING': '#198754',
+                'BLOCKED': '#fd7e14',
+                'STARVED': '#ffc107',
+                'FAILED': '#dc3545',
+                'UNDER_REPAIR': '#6f42c1',
+                'DEGRADED': '#20c997',
+                'IDLE': '#6c757d',
+                'PAUSED': '#adb5bd'
+            };
+            const fallbackColors = ['#0d6efd','#e83e8c','#795548','#607d8b'];
+
+            const datasets = states.map((state, si) => ({
+                label: state,
+                data: machines.map(m => (tis.machines[m] || {})[state] || 0),
+                backgroundColor: stateColors[state] || fallbackColors[si % fallbackColors.length]
+            }));
+
+            charts.timeInState = new Chart(document.getElementById('chart-time-in-state'), {
+                type: 'bar',
+                data: { labels: machines, datasets },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { stacked: true, title: { display: true, text: 'Time (minutes)' } },
+                        y: { stacked: true }
+                    },
+                    plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } } }
+                }
             });
         }
 

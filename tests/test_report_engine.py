@@ -28,6 +28,7 @@ from report_engine import (
     analyze_throughput,
     analyze_anomalies,
     analyze_oee_sanity,
+    analyze_time_in_state,
     run_full_analysis,
     validate_pipeline,
     append_run_index,
@@ -497,10 +498,106 @@ class TestRunFullAnalysis:
             "overview", "continuity", "oee", "machine_oee",
             "failures", "quality_routing", "shifts",
             "buffer_dynamics", "throughput", "anomalies",
-            "oee_sanity",
+            "oee_sanity", "time_in_state",
         ]
         for key in expected_keys:
             assert key in result, f"Missing section: {key}"
+
+
+# ---------------------------------------------------------------------------
+# Time in State tests
+# ---------------------------------------------------------------------------
+
+class TestAnalyzeTimeInState:
+    def test_basic_time_in_state(self):
+        """Two machines with known state transitions should produce correct durations."""
+        rows = []
+        # M1: PROCESSING 0-100, BLOCKED 100-300, PROCESSING 300-500
+        rows.append({
+            "timestamp": 100.0, "event_type": "STATE_CHANGE",
+            "source": "M1", "source_type": "machine",
+            "severity": "INFO", "message": "", "old_state": "PROCESSING",
+            "new_state": "BLOCKED", "partcount": 5, "good_parts": 5,
+            "defective_parts": 0, "buffer_level": pd.NA, "oee": 0.8,
+            "utilisation": 0.8, "shift_number": 1, "shift_name": "Day",
+            "extra_json": "",
+        })
+        rows.append({
+            "timestamp": 300.0, "event_type": "STATE_CHANGE",
+            "source": "M1", "source_type": "machine",
+            "severity": "INFO", "message": "", "old_state": "BLOCKED",
+            "new_state": "PROCESSING", "partcount": 5, "good_parts": 5,
+            "defective_parts": 0, "buffer_level": pd.NA, "oee": 0.8,
+            "utilisation": 0.8, "shift_number": 1, "shift_name": "Day",
+            "extra_json": "",
+        })
+        # M2: IDLE 0-200, PROCESSING 200-500
+        rows.append({
+            "timestamp": 200.0, "event_type": "STATE_CHANGE",
+            "source": "M2", "source_type": "machine",
+            "severity": "INFO", "message": "", "old_state": "IDLE",
+            "new_state": "PROCESSING", "partcount": 0, "good_parts": 0,
+            "defective_parts": 0, "buffer_level": pd.NA, "oee": 0.5,
+            "utilisation": 0.5, "shift_number": 1, "shift_name": "Day",
+            "extra_json": "",
+        })
+        # Add a later event to set sim_end = 500
+        rows.append({
+            "timestamp": 500.0, "event_type": "STATE_CHANGE",
+            "source": "M2", "source_type": "machine",
+            "severity": "INFO", "message": "", "old_state": "PROCESSING",
+            "new_state": "IDLE", "partcount": 10, "good_parts": 10,
+            "defective_parts": 0, "buffer_level": pd.NA, "oee": 0.8,
+            "utilisation": 0.8, "shift_number": 1, "shift_name": "Day",
+            "extra_json": "",
+        })
+        df = pd.DataFrame(rows)
+        result = analyze_time_in_state(df)
+
+        assert result["total_sim_time"] == 500.0
+
+        # M1: PROCESSING = (0-100) + (300-500) = 300s = 5.0 min
+        #     BLOCKED    = (100-300) = 200s = 3.33 min
+        m1 = result["machines"]["M1"]
+        assert abs(m1["PROCESSING"] - 5.0) < 0.1
+        assert abs(m1["BLOCKED"] - 3.33) < 0.1
+        # Total should equal sim_end (500s = 8.33 min)
+        m1_total = sum(m1.values())
+        assert abs(m1_total - 500 / 60) < 0.1
+
+        # M2: IDLE = (0-200) = 200s = 3.33 min
+        #     PROCESSING = (200-500) = 300s = 5.0 min
+        m2 = result["machines"]["M2"]
+        assert abs(m2["IDLE"] - 3.33) < 0.1
+        assert abs(m2["PROCESSING"] - 5.0) < 0.1
+        m2_total = sum(m2.values())
+        assert abs(m2_total - 500 / 60) < 0.1
+
+        # States should be ordered per _STATE_ORDER
+        assert "PROCESSING" in result["states"]
+        assert "BLOCKED" in result["states"]
+        assert "IDLE" in result["states"]
+
+    def test_empty_df(self):
+        """Empty DataFrame should return empty result."""
+        df = pd.DataFrame(columns=[
+            "timestamp", "event_type", "source", "source_type",
+            "severity", "message", "old_state", "new_state",
+            "partcount", "good_parts", "defective_parts",
+            "buffer_level", "oee", "utilisation",
+            "shift_number", "shift_name", "extra_json",
+        ])
+        result = analyze_time_in_state(df)
+        assert result["machines"] == {}
+        assert result["states"] == []
+
+    def test_full_df_integration(self):
+        """analyze_time_in_state on _make_full_df should produce valid output."""
+        df = _make_full_df()
+        result = analyze_time_in_state(df)
+        assert len(result["machines"]) >= 2
+        assert len(result["states"]) > 0
+        assert result["total_sim_time"] > 0
 
 
 # ---------------------------------------------------------------------------
