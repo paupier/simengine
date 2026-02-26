@@ -342,17 +342,20 @@ def query_influxdb_telegraf(influx_url, influx_token, influx_org, influx_bucket,
     try:
         from influxdb_client import InfluxDBClient
     except ImportError:
-        print("ERROR: influxdb-client is required for --influxdb. "
-              "Install with: pip install influxdb-client")
-        sys.exit(1)
+        raise ImportError("influxdb-client is required. "
+                          "Install with: pip install influxdb-client")
 
     client = InfluxDBClient(url=influx_url, token=influx_token, org=influx_org,
                             timeout=60_000)
     query_api = client.query_api()
 
     # Build time range clause
+    # Flux requires RFC 3339 timestamps (with Z suffix) in range()
     if time_start and time_end:
-        range_clause = f'range(start: "{time_start}", stop: "{time_end}")'
+        # Ensure timestamps end with Z for Flux compatibility
+        ts = time_start.rstrip("Z") + "Z"
+        te = time_end.rstrip("Z") + "Z"
+        range_clause = f'range(start: {ts}, stop: {te})'
     else:
         range_clause = 'range(start: -30d)'
 
@@ -570,10 +573,14 @@ def main():
         scope_str = f" (scoped: {', '.join(scope_info)})" if scope_info else ""
 
         print(f"\nQuerying InfluxDB at {influx_url}{scope_str} ...")
-        influx_data = query_influxdb_telegraf(
-            influx_url, influx_token, influx_org, influx_bucket,
-            run_id=csv_run_id, time_start=time_start, time_end=time_end,
-        )
+        try:
+            influx_data = query_influxdb_telegraf(
+                influx_url, influx_token, influx_org, influx_bucket,
+                run_id=csv_run_id, time_start=time_start, time_end=time_end,
+            )
+        except ImportError as e:
+            print(f"ERROR: {e}")
+            sys.exit(1)
 
         from report_engine import validate_pipeline
         validation = validate_pipeline(df, influx_data)
