@@ -433,20 +433,25 @@ def query_influxdb_telegraf(influx_url, influx_token, influx_org, influx_bucket,
 
     # 5. Per-machine partcounts
     # Field names are prefixed: M1_PartCount, M2_PartCount, etc.
+    # Note: Telegraf per-node tags (source, source_type) may not be stored
+    # in InfluxDB, so we derive the machine key from the field name.
+    import re as _re
     flux_parts = f'''
     from(bucket: "{influx_bucket}")
       |> {range_clause}
       |> filter(fn: (r) => r._measurement == "opcua"){run_id_filter}
-      |> filter(fn: (r) => r._field =~ /_PartCount$/)
-      |> filter(fn: (r) => r.source_type == "machine")
+      |> filter(fn: (r) => r._field =~ /^M\\d+_PartCount$/)
       |> last()
     '''
     tables = query_api.query(flux_parts, org=influx_org)
     machine_partcounts = {}
     for table in tables:
         for record in table.records:
-            source = record.values.get("source", "unknown")
-            machine_partcounts[source] = record.get_value()
+            field = record.get_field()  # e.g. "M1_PartCount"
+            m = _re.match(r"M(\d+)_PartCount", field)
+            if m:
+                key = f"Machine{m.group(1)}"
+                machine_partcounts[key] = record.get_value()
     result["machine_partcounts"] = machine_partcounts
 
     # 6. Buffer levels
@@ -455,16 +460,18 @@ def query_influxdb_telegraf(influx_url, influx_token, influx_org, influx_bucket,
     from(bucket: "{influx_bucket}")
       |> {range_clause}
       |> filter(fn: (r) => r._measurement == "opcua"){run_id_filter}
-      |> filter(fn: (r) => r._field =~ /_Level$/)
-      |> filter(fn: (r) => r.source_type == "buffer")
+      |> filter(fn: (r) => r._field =~ /^B\\d+_Level$/)
       |> last()
     '''
     tables = query_api.query(flux_buf, org=influx_org)
     buffer_levels = {}
     for table in tables:
         for record in table.records:
-            source = record.values.get("source", "unknown")
-            buffer_levels[source] = record.get_value()
+            field = record.get_field()  # e.g. "B1_Level"
+            m = _re.match(r"B(\d+)_Level", field)
+            if m:
+                key = f"Buffer{m.group(1)}"
+                buffer_levels[key] = record.get_value()
     result["buffer_levels"] = buffer_levels
 
     # 7. Update rate
