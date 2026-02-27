@@ -1,0 +1,694 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": "-- Grafana --",
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "gnetId": null,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "title": "All Machines — SPC Overview",
+      "type": "row"
+    },
+    {
+      "datasource": "InfluxDB",
+      "description": "Cpk across all machines — below 1.0 is incapable, below 1.33 is marginal",
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 1.0 },
+              { "color": "green", "value": 1.33 }
+            ]
+          },
+          "min": 0,
+          "max": 3,
+          "decimals": 3,
+          "unit": "none"
+        }
+      },
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 1 },
+      "id": 1,
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showUnfilled": true
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_SPC_Cpk$/)\n  |> last()"
+        }
+      ],
+      "title": "Cpk per Machine",
+      "type": "bargauge"
+    },
+    {
+      "datasource": "InfluxDB",
+      "description": "Cp across all machines — process potential without centering",
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 1.0 },
+              { "color": "green", "value": 1.33 }
+            ]
+          },
+          "min": 0,
+          "max": 3,
+          "decimals": 3,
+          "unit": "none"
+        }
+      },
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 1 },
+      "id": 2,
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showUnfilled": true
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_SPC_Cp$/)\n  |> last()"
+        }
+      ],
+      "title": "Cp per Machine",
+      "type": "bargauge"
+    },
+    {
+      "datasource": "InfluxDB",
+      "description": "Complete SPC status for all machines at a glance",
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "filterable": true }
+        }
+      },
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 7 },
+      "id": 3,
+      "options": {
+        "showHeader": true,
+        "sortBy": [{ "desc": false, "displayName": "_field" }]
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_SPC_(Cpk|Cp|Pp|Ppk|SigmaLevel|InControl|TotalSamples|NumSubgroups|Violations)$/)\n  |> last()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")"
+        }
+      ],
+      "title": "All Machines SPC Summary",
+      "type": "table"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "id": 101,
+      "title": "Machine Detail — ${machine}",
+      "type": "row"
+    },
+    {
+      "datasource": "InfluxDB",
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 1.0 },
+              { "color": "green", "value": 1.33 }
+            ]
+          },
+          "decimals": 3,
+          "unit": "none"
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 15 },
+      "id": 4,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"${machine}_SPC_Cpk\")\n  |> last()\n  |> map(fn: (r) => ({r with _field: \"Cpk\"}))"
+        }
+      ],
+      "title": "",
+      "type": "stat"
+    },
+    {
+      "datasource": "InfluxDB",
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 1.0 },
+              { "color": "green", "value": 1.33 }
+            ]
+          },
+          "decimals": 3,
+          "unit": "none"
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 15 },
+      "id": 5,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"${machine}_SPC_Cp\")\n  |> last()\n  |> map(fn: (r) => ({r with _field: \"Cp\"}))"
+        }
+      ],
+      "title": "",
+      "type": "stat"
+    },
+    {
+      "datasource": "InfluxDB",
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 1.0 },
+              { "color": "green", "value": 1.33 }
+            ]
+          },
+          "decimals": 3,
+          "unit": "none"
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 15 },
+      "id": 6,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"${machine}_SPC_Ppk\")\n  |> last()\n  |> map(fn: (r) => ({r with _field: \"Ppk\"}))"
+        }
+      ],
+      "title": "",
+      "type": "stat"
+    },
+    {
+      "datasource": "InfluxDB",
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 3 },
+              { "color": "green", "value": 4 }
+            ]
+          },
+          "decimals": 2,
+          "unit": "none"
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 15 },
+      "id": 7,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"${machine}_SPC_SigmaLevel\")\n  |> last()\n  |> map(fn: (r) => ({r with _field: \"Sigma\"}))"
+        }
+      ],
+      "title": "",
+      "type": "stat"
+    },
+    {
+      "datasource": "InfluxDB",
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          },
+          "mappings": [
+            { "options": { "0": { "text": "OUT OF CONTROL", "color": "red" } }, "type": "value" },
+            { "options": { "1": { "text": "IN CONTROL", "color": "green" } }, "type": "value" }
+          ],
+          "unit": "none"
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 15 },
+      "id": 8,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"${machine}_SPC_InControl\")\n  |> last()"
+        }
+      ],
+      "title": "Status",
+      "type": "stat"
+    },
+    {
+      "datasource": "InfluxDB",
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 15 },
+      "id": 9,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"${machine}_SPC_TotalSamples\")\n  |> last()\n  |> map(fn: (r) => ({r with _field: \"Samples\"}))"
+        }
+      ],
+      "title": "",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 19 },
+      "id": 102,
+      "title": "X-bar Control Chart — ${machine}",
+      "type": "row"
+    },
+    {
+      "datasource": "InfluxDB",
+      "description": "X-bar chart with UCL, CL, LCL control limits",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "fillOpacity": 0,
+            "pointSize": 5,
+            "showPoints": "auto",
+            "lineWidth": 2
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "${machine}_SPC_XBar" },
+            "properties": [
+              { "id": "color", "value": { "fixedColor": "#73BF69", "mode": "fixed" } },
+              { "id": "displayName", "value": "X-bar" },
+              { "id": "custom.showPoints", "value": "always" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "${machine}_SPC_XBar_UCL" },
+            "properties": [
+              { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 5] } },
+              { "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } },
+              { "id": "custom.lineWidth", "value": 1 },
+              { "id": "custom.showPoints", "value": "never" },
+              { "id": "displayName", "value": "UCL" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "${machine}_SPC_XBar_CL" },
+            "properties": [
+              { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [5, 5] } },
+              { "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } },
+              { "id": "custom.lineWidth", "value": 1 },
+              { "id": "custom.showPoints", "value": "never" },
+              { "id": "displayName", "value": "CL" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "${machine}_SPC_XBar_LCL" },
+            "properties": [
+              { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 5] } },
+              { "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } },
+              { "id": "custom.lineWidth", "value": 1 },
+              { "id": "custom.showPoints", "value": "never" },
+              { "id": "displayName", "value": "LCL" }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 20 },
+      "id": 10,
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"${machine}_SPC_XBar\" or r._field == \"${machine}_SPC_XBar_UCL\" or r._field == \"${machine}_SPC_XBar_CL\" or r._field == \"${machine}_SPC_XBar_LCL\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)"
+        }
+      ],
+      "title": "X-bar Chart",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 30 },
+      "id": 103,
+      "title": "R Control Chart — ${machine}",
+      "type": "row"
+    },
+    {
+      "datasource": "InfluxDB",
+      "description": "Range chart with UCL, CL, LCL control limits",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "fillOpacity": 0,
+            "pointSize": 5,
+            "showPoints": "auto",
+            "lineWidth": 2
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "${machine}_SPC_Range" },
+            "properties": [
+              { "id": "color", "value": { "fixedColor": "#73BF69", "mode": "fixed" } },
+              { "id": "displayName", "value": "Range" },
+              { "id": "custom.showPoints", "value": "always" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "${machine}_SPC_R_UCL" },
+            "properties": [
+              { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 5] } },
+              { "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } },
+              { "id": "custom.lineWidth", "value": 1 },
+              { "id": "custom.showPoints", "value": "never" },
+              { "id": "displayName", "value": "UCL" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "${machine}_SPC_R_CL" },
+            "properties": [
+              { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [5, 5] } },
+              { "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } },
+              { "id": "custom.lineWidth", "value": 1 },
+              { "id": "custom.showPoints", "value": "never" },
+              { "id": "displayName", "value": "CL" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "${machine}_SPC_R_LCL" },
+            "properties": [
+              { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 5] } },
+              { "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } },
+              { "id": "custom.lineWidth", "value": 1 },
+              { "id": "custom.showPoints", "value": "never" },
+              { "id": "displayName", "value": "LCL" }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 31 },
+      "id": 11,
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"${machine}_SPC_Range\" or r._field == \"${machine}_SPC_R_UCL\" or r._field == \"${machine}_SPC_R_CL\" or r._field == \"${machine}_SPC_R_LCL\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)"
+        }
+      ],
+      "title": "R Chart",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 41 },
+      "id": 104,
+      "title": "Capability Analysis — ${machine}",
+      "type": "row"
+    },
+    {
+      "datasource": "InfluxDB",
+      "description": "Cp vs Cpk trend — gap shows process centering offset",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "fillOpacity": 5,
+            "lineWidth": 2,
+            "showPoints": "never"
+          },
+          "unit": "none",
+          "decimals": 3
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "${machine}_SPC_Cp" },
+            "properties": [
+              { "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } },
+              { "id": "displayName", "value": "Cp (potential)" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "${machine}_SPC_Cpk" },
+            "properties": [
+              { "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } },
+              { "id": "displayName", "value": "Cpk (actual)" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "${machine}_SPC_Pp" },
+            "properties": [
+              { "id": "color", "value": { "fixedColor": "#8F3BB8", "mode": "fixed" } },
+              { "id": "displayName", "value": "Pp (long-term potential)" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "${machine}_SPC_Ppk" },
+            "properties": [
+              { "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } },
+              { "id": "displayName", "value": "Ppk (long-term actual)" }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 42 },
+      "id": 12,
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"${machine}_SPC_Cp\" or r._field == \"${machine}_SPC_Cpk\" or r._field == \"${machine}_SPC_Pp\" or r._field == \"${machine}_SPC_Ppk\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)"
+        }
+      ],
+      "title": "Capability Indices Trend (Cp vs Cpk, Pp vs Ppk)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "InfluxDB",
+      "description": "Sigma level trend — 6 sigma = 3.4 DPMO",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "showPoints": "never"
+          },
+          "unit": "none",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 3 },
+              { "color": "green", "value": 4 }
+            ]
+          }
+        }
+      },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 42 },
+      "id": 13,
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"${machine}_SPC_SigmaLevel\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> map(fn: (r) => ({r with _field: \"Sigma Level\"}))"
+        }
+      ],
+      "title": "Sigma Level Trend",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 51 },
+      "id": 105,
+      "title": "Cross-Machine Capability Trends",
+      "type": "row"
+    },
+    {
+      "datasource": "InfluxDB",
+      "description": "Cpk trend across all machines — identifies quality drift",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "fillOpacity": 5,
+            "lineWidth": 2,
+            "showPoints": "never"
+          },
+          "unit": "none",
+          "decimals": 3
+        }
+      },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 52 },
+      "id": 14,
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_SPC_Cpk$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)"
+        }
+      ],
+      "title": "Cpk Trend — All Machines",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "InfluxDB",
+      "description": "Sigma level trend across all machines",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "fillOpacity": 5,
+            "lineWidth": 2,
+            "showPoints": "never"
+          },
+          "unit": "none",
+          "decimals": 2
+        }
+      },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 52 },
+      "id": 15,
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_SPC_SigmaLevel$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)"
+        }
+      ],
+      "title": "Sigma Level Trend — All Machines",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 61 },
+      "id": 106,
+      "title": "SPC Violation Events",
+      "type": "row"
+    },
+    {
+      "datasource": "InfluxDB",
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "filterable": true }
+        }
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 62 },
+      "id": 16,
+      "options": {
+        "showHeader": true,
+        "sortBy": [{ "desc": true, "displayName": "Time" }]
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sim_events\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r.event_type == \"SPC_VIOLATION\")\n  |> filter(fn: (r) => r._field == \"message\")\n  |> keep(columns: [\"_time\", \"_value\", \"source\", \"severity\"])\n  |> rename(columns: {\"_value\": \"violation\", \"_time\": \"time\"})\n  |> sort(columns: [\"time\"], desc: true)\n  |> limit(n: 100)"
+        }
+      ],
+      "title": "SPC Violation History",
+      "type": "table"
+    }
+  ],
+  "schemaVersion": 36,
+  "style": "dark",
+  "tags": ["manufacturing", "simantha", "spc", "quality"],
+  "templating": {
+    "list": [
+      {
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "datasource": "InfluxDB",
+        "definition": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"manufacturing\", tag: \"run_id\")",
+        "includeAll": true,
+        "name": "run_id",
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"manufacturing\", tag: \"run_id\")",
+        "refresh": 2,
+        "type": "query"
+      },
+      {
+        "current": { "selected": false, "text": "M1", "value": "M1" },
+        "name": "machine",
+        "options": [
+          { "selected": true, "text": "M1", "value": "M1" },
+          { "selected": false, "text": "M2", "value": "M2" },
+          { "selected": false, "text": "M3", "value": "M3" },
+          { "selected": false, "text": "M4", "value": "M4" },
+          { "selected": false, "text": "M5", "value": "M5" },
+          { "selected": false, "text": "M6", "value": "M6" },
+          { "selected": false, "text": "M7", "value": "M7" },
+          { "selected": false, "text": "M8", "value": "M8" }
+        ],
+        "query": "M1,M2,M3,M4,M5,M6,M7,M8",
+        "type": "custom"
+      }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "SPC Machine Detail",
+  "uid": "simantha-spc-machine-detail",
+  "version": 1
+}

@@ -1,0 +1,597 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": "-- Grafana --",
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "gnetId": null,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "title": "Line OEE Breakdown",
+      "type": "row"
+    },
+    {
+      "datasource": "InfluxDB",
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 40 },
+              { "color": "yellow", "value": 60 },
+              { "color": "green", "value": 80 }
+            ]
+          },
+          "min": 0,
+          "max": 100,
+          "unit": "percent"
+        }
+      },
+      "gridPos": { "h": 7, "w": 6, "x": 0, "y": 1 },
+      "id": 1,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"LineOEE\")\n  |> last()\n  |> map(fn: (r) => ({r with _value: r._value * 100.0, _field: \"OEE\"}))"
+        }
+      ],
+      "title": "Line OEE",
+      "type": "gauge"
+    },
+    {
+      "datasource": "InfluxDB",
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 70 },
+              { "color": "green", "value": 90 }
+            ]
+          },
+          "min": 0,
+          "max": 100,
+          "unit": "percent"
+        }
+      },
+      "gridPos": { "h": 7, "w": 6, "x": 6, "y": 1 },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"LineAvailability\")\n  |> last()\n  |> map(fn: (r) => ({r with _value: r._value * 100.0, _field: \"Availability\"}))"
+        }
+      ],
+      "title": "Availability",
+      "type": "gauge"
+    },
+    {
+      "datasource": "InfluxDB",
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 70 },
+              { "color": "green", "value": 90 }
+            ]
+          },
+          "min": 0,
+          "max": 100,
+          "unit": "percent"
+        }
+      },
+      "gridPos": { "h": 7, "w": 6, "x": 12, "y": 1 },
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"LinePerformance\")\n  |> last()\n  |> map(fn: (r) => ({r with _value: r._value * 100.0, _field: \"Performance\"}))"
+        }
+      ],
+      "title": "Performance",
+      "type": "gauge"
+    },
+    {
+      "datasource": "InfluxDB",
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 70 },
+              { "color": "green", "value": 90 }
+            ]
+          },
+          "min": 0,
+          "max": 100,
+          "unit": "percent"
+        }
+      },
+      "gridPos": { "h": 7, "w": 6, "x": 18, "y": 1 },
+      "id": 4,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"LineQuality\")\n  |> last()\n  |> map(fn: (r) => ({r with _value: r._value * 100.0, _field: \"Quality\"}))"
+        }
+      ],
+      "title": "Quality",
+      "type": "gauge"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 8 },
+      "id": 101,
+      "title": "OEE Components Trend",
+      "type": "row"
+    },
+    {
+      "datasource": "InfluxDB",
+      "description": "Line-level OEE and its A/P/Q components over time",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "fillOpacity": 5,
+            "lineWidth": 2,
+            "showPoints": "never"
+          },
+          "unit": "percent"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "LineOEE" },
+            "properties": [
+              { "id": "color", "value": { "fixedColor": "white", "mode": "fixed" } },
+              { "id": "custom.lineWidth", "value": 3 },
+              { "id": "displayName", "value": "OEE" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "LineAvailability" },
+            "properties": [
+              { "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } },
+              { "id": "displayName", "value": "Availability" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "LinePerformance" },
+            "properties": [
+              { "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } },
+              { "id": "displayName", "value": "Performance" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "LineQuality" },
+            "properties": [
+              { "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } },
+              { "id": "displayName", "value": "Quality" }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 9 },
+      "id": 5,
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"LineOEE\" or r._field == \"LineAvailability\" or r._field == \"LinePerformance\" or r._field == \"LineQuality\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> map(fn: (r) => ({r with _value: r._value * 100.0}))"
+        }
+      ],
+      "title": "Line OEE Components Over Time",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 },
+      "id": 102,
+      "title": "Per-Machine OEE Comparison",
+      "type": "row"
+    },
+    {
+      "datasource": "InfluxDB",
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 40 },
+              { "color": "yellow", "value": 60 },
+              { "color": "green", "value": 80 }
+            ]
+          },
+          "min": 0,
+          "max": 100,
+          "unit": "percent"
+        }
+      },
+      "gridPos": { "h": 7, "w": 6, "x": 0, "y": 19 },
+      "id": 6,
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showUnfilled": true
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_OEE$/)\n  |> last()\n  |> map(fn: (r) => ({r with _value: r._value * 100.0}))"
+        }
+      ],
+      "title": "OEE per Machine",
+      "type": "bargauge"
+    },
+    {
+      "datasource": "InfluxDB",
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 70 },
+              { "color": "green", "value": 90 }
+            ]
+          },
+          "min": 0,
+          "max": 100,
+          "unit": "percent"
+        }
+      },
+      "gridPos": { "h": 7, "w": 6, "x": 6, "y": 19 },
+      "id": 7,
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showUnfilled": true
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_Availability$/)\n  |> last()\n  |> map(fn: (r) => ({r with _value: r._value * 100.0}))"
+        }
+      ],
+      "title": "Availability per Machine",
+      "type": "bargauge"
+    },
+    {
+      "datasource": "InfluxDB",
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 70 },
+              { "color": "green", "value": 90 }
+            ]
+          },
+          "min": 0,
+          "max": 100,
+          "unit": "percent"
+        }
+      },
+      "gridPos": { "h": 7, "w": 6, "x": 12, "y": 19 },
+      "id": 8,
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showUnfilled": true
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_Performance$/)\n  |> last()\n  |> map(fn: (r) => ({r with _value: r._value * 100.0}))"
+        }
+      ],
+      "title": "Performance per Machine",
+      "type": "bargauge"
+    },
+    {
+      "datasource": "InfluxDB",
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 70 },
+              { "color": "green", "value": 90 }
+            ]
+          },
+          "min": 0,
+          "max": 100,
+          "unit": "percent"
+        }
+      },
+      "gridPos": { "h": 7, "w": 6, "x": 18, "y": 19 },
+      "id": 9,
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showUnfilled": true
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_Quality$/)\n  |> last()\n  |> map(fn: (r) => ({r with _value: r._value * 100.0}))"
+        }
+      ],
+      "title": "Quality per Machine",
+      "type": "bargauge"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 26 },
+      "id": 103,
+      "title": "Per-Machine OEE Trends",
+      "type": "row"
+    },
+    {
+      "datasource": "InfluxDB",
+      "description": "OEE trend for each machine",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "showPoints": "never"
+          },
+          "unit": "percent"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 27 },
+      "id": 10,
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_OEE$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> map(fn: (r) => ({r with _value: r._value * 100.0}))"
+        }
+      ],
+      "title": "OEE Trend per Machine",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "InfluxDB",
+      "description": "Availability trend for each machine — identifies downtime-constrained stations",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "showPoints": "never"
+          },
+          "unit": "percent"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 27 },
+      "id": 11,
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_Availability$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> map(fn: (r) => ({r with _value: r._value * 100.0}))"
+        }
+      ],
+      "title": "Availability Trend per Machine",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 35 },
+      "id": 104,
+      "title": "Production Quality & Output",
+      "type": "row"
+    },
+    {
+      "datasource": "InfluxDB",
+      "description": "Good parts produced per machine",
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 36 },
+      "id": 12,
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showUnfilled": false
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_GoodParts$/)\n  |> last()"
+        }
+      ],
+      "title": "Good Parts per Machine",
+      "type": "bargauge"
+    },
+    {
+      "datasource": "InfluxDB",
+      "description": "Defective parts per machine — highlights quality problems",
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 5 },
+              { "color": "red", "value": 20 }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 36 },
+      "id": 13,
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showUnfilled": false
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_DefectParts$/)\n  |> last()"
+        }
+      ],
+      "title": "Defective Parts per Machine",
+      "type": "bargauge"
+    },
+    {
+      "datasource": "InfluxDB",
+      "description": "Target vs actual PPM — shows speed losses",
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "filterable": true }
+        }
+      },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 36 },
+      "id": 14,
+      "options": {
+        "showHeader": true,
+        "sortBy": [{ "desc": false, "displayName": "_field" }]
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_(TargetPPM|ActualPPM|PartCount|Utilisation)$/)\n  |> last()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")"
+        }
+      ],
+      "title": "Machine Performance Summary",
+      "type": "table"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 43 },
+      "id": 105,
+      "title": "Performance & Quality Trends",
+      "type": "row"
+    },
+    {
+      "datasource": "InfluxDB",
+      "description": "Performance ratio trend — identifies speed loss patterns",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "showPoints": "never"
+          },
+          "unit": "percent"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 44 },
+      "id": 15,
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_Performance$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> map(fn: (r) => ({r with _value: r._value * 100.0}))"
+        }
+      ],
+      "title": "Performance Trend per Machine",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "InfluxDB",
+      "description": "Quality ratio trend — identifies defect rate patterns",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "showPoints": "never"
+          },
+          "unit": "percent"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 44 },
+      "id": 16,
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_Quality$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> map(fn: (r) => ({r with _value: r._value * 100.0}))"
+        }
+      ],
+      "title": "Quality Trend per Machine",
+      "type": "timeseries"
+    }
+  ],
+  "schemaVersion": 36,
+  "style": "dark",
+  "tags": ["manufacturing", "simantha", "oee"],
+  "templating": {
+    "list": [
+      {
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "datasource": "InfluxDB",
+        "definition": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"manufacturing\", tag: \"run_id\")",
+        "includeAll": true,
+        "name": "run_id",
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"manufacturing\", tag: \"run_id\")",
+        "refresh": 2,
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "OEE Detail",
+  "uid": "simantha-oee-detail",
+  "version": 1
+}

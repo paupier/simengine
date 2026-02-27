@@ -1,0 +1,568 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": "-- Grafana --",
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "gnetId": null,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "title": "Maintenance Summary",
+      "type": "row"
+    },
+    {
+      "datasource": "InfluxDB",
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 1 },
+      "id": 1,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"Sys_TotalRepairs\")\n  |> last()"
+        }
+      ],
+      "title": "Total Repairs",
+      "type": "stat"
+    },
+    {
+      "datasource": "InfluxDB",
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 3 }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 1 },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"Sys_QueueLength\")\n  |> last()"
+        }
+      ],
+      "title": "Repair Queue",
+      "type": "stat"
+    },
+    {
+      "datasource": "InfluxDB",
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          },
+          "mappings": [
+            { "options": { "0": { "text": "No", "color": "green" } }, "type": "value" },
+            { "options": { "1": { "text": "Yes", "color": "red" } }, "type": "value" }
+          ],
+          "unit": "none"
+        }
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 1 },
+      "id": 3,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"Sys_MaintenanceActive\")\n  |> last()"
+        }
+      ],
+      "title": "Maintenance Active",
+      "type": "stat"
+    },
+    {
+      "datasource": "InfluxDB",
+      "description": "Downtime accumulated per machine (seconds)",
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 60 },
+              { "color": "red", "value": 300 }
+            ]
+          },
+          "unit": "s"
+        }
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 1 },
+      "id": 4,
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showUnfilled": true
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_DownTime$/)\n  |> last()"
+        }
+      ],
+      "title": "Downtime per Machine",
+      "type": "bargauge"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 6 },
+      "id": 101,
+      "title": "Time-in-State Breakdown",
+      "type": "row"
+    },
+    {
+      "datasource": "InfluxDB",
+      "description": "Full time breakdown per machine: processing, blocked, starved, down, idle",
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "filterable": true },
+          "unit": "s"
+        }
+      },
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 7 },
+      "id": 5,
+      "options": {
+        "showHeader": true,
+        "sortBy": [{ "desc": false, "displayName": "_field" }]
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_(ProcessingTime|BlockedTime|StarvedTime|DownTime|IdleTime)$/)\n  |> last()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")"
+        }
+      ],
+      "title": "Time-in-State Summary (seconds)",
+      "type": "table"
+    },
+    {
+      "datasource": "InfluxDB",
+      "description": "Downtime trend per machine over time",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "fillOpacity": 15,
+            "lineWidth": 2,
+            "showPoints": "never"
+          },
+          "unit": "s"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "id": 6,
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_DownTime$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)"
+        }
+      ],
+      "title": "Cumulative Downtime per Machine",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "InfluxDB",
+      "description": "Blocked and starved time — identifies line balance issues",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "fillOpacity": 15,
+            "lineWidth": 2,
+            "showPoints": "never"
+          },
+          "unit": "s"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "id": 7,
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_(BlockedTime|StarvedTime)$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)"
+        }
+      ],
+      "title": "Blocked & Starved Time per Machine",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 22 },
+      "id": 102,
+      "title": "Failure Mode Analysis — ${machine}",
+      "type": "row"
+    },
+    {
+      "datasource": "InfluxDB",
+      "description": "MTBF per failure mode for selected machine",
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 300 },
+              { "color": "green", "value": 600 }
+            ]
+          },
+          "unit": "s"
+        }
+      },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 23 },
+      "id": 8,
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showUnfilled": true
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^${machine}_\\w+MTBF$/)\n  |> last()"
+        }
+      ],
+      "title": "MTBF per Failure Mode",
+      "type": "bargauge"
+    },
+    {
+      "datasource": "InfluxDB",
+      "description": "MTTR per failure mode for selected machine — lower is better",
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 30 },
+              { "color": "red", "value": 120 }
+            ]
+          },
+          "unit": "s"
+        }
+      },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 23 },
+      "id": 9,
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showUnfilled": true
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^${machine}_\\w+MTTR$/)\n  |> last()"
+        }
+      ],
+      "title": "MTTR per Failure Mode",
+      "type": "bargauge"
+    },
+    {
+      "datasource": "InfluxDB",
+      "description": "Failure occurrences per mode for selected machine",
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 3 },
+              { "color": "red", "value": 10 }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 30 },
+      "id": 10,
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showUnfilled": false
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^${machine}_\\w+FailureCount$/)\n  |> last()"
+        }
+      ],
+      "title": "Failure Count per Mode",
+      "type": "bargauge"
+    },
+    {
+      "datasource": "InfluxDB",
+      "description": "Total downtime per failure mode for selected machine",
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 60 },
+              { "color": "red", "value": 300 }
+            ]
+          },
+          "unit": "s"
+        }
+      },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 30 },
+      "id": 11,
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showUnfilled": true
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^${machine}_\\w+TotalDowntime$/)\n  |> last()"
+        }
+      ],
+      "title": "Total Downtime per Failure Mode",
+      "type": "bargauge"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 37 },
+      "id": 103,
+      "title": "Reliability Trends — All Machines",
+      "type": "row"
+    },
+    {
+      "datasource": "InfluxDB",
+      "description": "MTBF across all machines and failure modes over time",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "fillOpacity": 5,
+            "lineWidth": 2,
+            "showPoints": "never"
+          },
+          "unit": "s"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 38 },
+      "id": 12,
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_\\w+MTBF$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)"
+        }
+      ],
+      "title": "MTBF Trends (All Machines)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "InfluxDB",
+      "description": "MTTR across all machines and failure modes over time",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "fillOpacity": 5,
+            "lineWidth": 2,
+            "showPoints": "never"
+          },
+          "unit": "s"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 38 },
+      "id": 13,
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_\\w+MTTR$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)"
+        }
+      ],
+      "title": "MTTR Trends (All Machines)",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 46 },
+      "id": 104,
+      "title": "Maintenance Tracking",
+      "type": "row"
+    },
+    {
+      "datasource": "InfluxDB",
+      "description": "Corrective vs preventive maintenance counts per machine",
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "filterable": true }
+        }
+      },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 47 },
+      "id": 14,
+      "options": {
+        "showHeader": true,
+        "sortBy": [{ "desc": false, "displayName": "_field" }]
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_(CMCount|PMCount|StrategyType|ActiveFailureMode)$/)\n  |> last()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")"
+        }
+      ],
+      "title": "Maintenance Strategy Summary",
+      "type": "table"
+    },
+    {
+      "datasource": "InfluxDB",
+      "description": "Repair queue length and total repairs over time",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "stepAfter",
+            "fillOpacity": 20,
+            "lineWidth": 2,
+            "showPoints": "never"
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Sys_QueueLength" },
+            "properties": [
+              { "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } },
+              { "id": "displayName", "value": "Queue Length" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Sys_TotalRepairs" },
+            "properties": [
+              { "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } },
+              { "id": "displayName", "value": "Total Repairs" },
+              { "id": "custom.axisPlacement", "value": "right" }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 47 },
+      "id": 15,
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"Sys_QueueLength\" or r._field == \"Sys_TotalRepairs\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)"
+        }
+      ],
+      "title": "Repair Queue & Total Repairs Over Time",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 54 },
+      "id": 105,
+      "title": "Failure Events (Historian)",
+      "type": "row"
+    },
+    {
+      "datasource": "InfluxDB",
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "filterable": true }
+        }
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 55 },
+      "id": 16,
+      "options": {
+        "showHeader": true,
+        "sortBy": [{ "desc": true, "displayName": "Time" }]
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sim_events\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r.event_type == \"STATE_CHANGE\")\n  |> filter(fn: (r) => r._field == \"new_state\")\n  |> filter(fn: (r) => r._value == \"FAILED\" or r._value == \"UNDER_REPAIR\")\n  |> keep(columns: [\"_time\", \"_value\", \"source\", \"event_type\"])\n  |> rename(columns: {\"_value\": \"state\", \"_time\": \"time\"})\n  |> sort(columns: [\"time\"], desc: true)\n  |> limit(n: 100)"
+        }
+      ],
+      "title": "Recent Failure & Repair Events",
+      "type": "table"
+    }
+  ],
+  "schemaVersion": 36,
+  "style": "dark",
+  "tags": ["manufacturing", "simantha", "downtime", "reliability", "mttr"],
+  "templating": {
+    "list": [
+      {
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "datasource": "InfluxDB",
+        "definition": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"manufacturing\", tag: \"run_id\")",
+        "includeAll": true,
+        "name": "run_id",
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"manufacturing\", tag: \"run_id\")",
+        "refresh": 2,
+        "type": "query"
+      },
+      {
+        "current": { "selected": false, "text": "M1", "value": "M1" },
+        "name": "machine",
+        "options": [
+          { "selected": true, "text": "M1", "value": "M1" },
+          { "selected": false, "text": "M2", "value": "M2" },
+          { "selected": false, "text": "M3", "value": "M3" },
+          { "selected": false, "text": "M4", "value": "M4" },
+          { "selected": false, "text": "M5", "value": "M5" },
+          { "selected": false, "text": "M6", "value": "M6" },
+          { "selected": false, "text": "M7", "value": "M7" },
+          { "selected": false, "text": "M8", "value": "M8" }
+        ],
+        "query": "M1,M2,M3,M4,M5,M6,M7,M8",
+        "type": "custom"
+      }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Downtime & Reliability",
+  "uid": "simantha-downtime-reliability",
+  "version": 1
+}
