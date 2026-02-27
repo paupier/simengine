@@ -27,7 +27,7 @@
     },
     {
       "datasource": "InfluxDB",
-      "description": "Shows state transitions for each machine as colored bars. Green=PROCESSING, Red=FAILED, Yellow=BLOCKED, Orange=STARVED, Blue=IDLE, Purple=UNDER_REPAIR, Gray=PAUSED",
+      "description": "Shows state transitions for each machine as colored bars. Green=PROCESSING, Red=FAILED, Yellow=BLOCKED, Orange=STARVED, Blue=IDLE, Purple=UNDER_REPAIR, Cyan=DEGRADED, Gray=PAUSED",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -42,7 +42,8 @@
             { "options": { "STARVED": { "color": "orange", "index": 3, "text": "STARVED" } }, "type": "value" },
             { "options": { "IDLE": { "color": "blue", "index": 4, "text": "IDLE" } }, "type": "value" },
             { "options": { "UNDER_REPAIR": { "color": "purple", "index": 5, "text": "UNDER_REPAIR" } }, "type": "value" },
-            { "options": { "PAUSED": { "color": "text", "index": 6, "text": "PAUSED" } }, "type": "value" }
+            { "options": { "PAUSED": { "color": "text", "index": 6, "text": "PAUSED" } }, "type": "value" },
+            { "options": { "DEGRADED": { "color": "#00bcd4", "index": 7, "text": "DEGRADED" } }, "type": "value" }
           ]
         }
       },
@@ -56,7 +57,7 @@
       },
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sim_events\")\n  |> filter(fn: (r) => r.event_type == \"STATE_CHANGE\")\n  |> filter(fn: (r) => r.source_type == \"machine\")\n  |> filter(fn: (r) => r._field == \"new_state\")\n  |> group(columns: [\"source\"])"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sim_events\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r.event_type == \"STATE_CHANGE\")\n  |> filter(fn: (r) => r.source_type == \"machine\")\n  |> filter(fn: (r) => r._field == \"new_state\")\n  |> group(columns: [\"source\"])"
         }
       ],
       "title": "Machine State Timeline",
@@ -86,14 +87,15 @@
           { "matcher": { "id": "byName", "options": "BLOCKED" }, "properties": [{ "id": "color", "value": { "fixedColor": "yellow", "mode": "fixed" } }] },
           { "matcher": { "id": "byName", "options": "STARVED" }, "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }] },
           { "matcher": { "id": "byName", "options": "IDLE" }, "properties": [{ "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } }] },
-          { "matcher": { "id": "byName", "options": "UNDER_REPAIR" }, "properties": [{ "id": "color", "value": { "fixedColor": "purple", "mode": "fixed" } }] }
+          { "matcher": { "id": "byName", "options": "UNDER_REPAIR" }, "properties": [{ "id": "color", "value": { "fixedColor": "purple", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "DEGRADED" }, "properties": [{ "id": "color", "value": { "fixedColor": "#00bcd4", "mode": "fixed" } }] }
         ]
       },
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 10 },
       "id": 2,
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sim_events\")\n  |> filter(fn: (r) => r.event_type == \"STATE_CHANGE\")\n  |> filter(fn: (r) => r.source_type == \"machine\")\n  |> filter(fn: (r) => r._field == \"new_state\")\n  |> group(columns: [\"source\", \"_value\"])\n  |> count()\n  |> group(columns: [\"source\"])\n  |> pivot(rowKey: [\"source\"], columnKey: [\"_value\"], valueColumn: \"_value\")"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sim_events\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r.event_type == \"STATE_CHANGE\")\n  |> filter(fn: (r) => r.source_type == \"machine\")\n  |> filter(fn: (r) => r._field == \"new_state\")\n  |> group(columns: [\"source\", \"_value\"])\n  |> count()\n  |> group(columns: [\"source\"])\n  |> pivot(rowKey: [\"source\"], columnKey: [\"_value\"], valueColumn: \"_value\")"
         }
       ],
       "title": "State Transition Counts by Machine",
@@ -108,14 +110,14 @@
             "lineInterpolation": "linear",
             "fillOpacity": 10
           },
-          "unit": "percentunit"
+          "unit": "percent"
         }
       },
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 10 },
       "id": 3,
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sim_events\")\n  |> filter(fn: (r) => r.event_type == \"STATE_CHANGE\" or r.event_type == \"PRODUCTION_SUMMARY\")\n  |> filter(fn: (r) => r.source_type == \"machine\")\n  |> filter(fn: (r) => r._field == \"utilisation\")\n  |> group(columns: [\"source\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_Utilisation$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> map(fn: (r) => ({r with _value: r._value * 100.0}))"
         }
       ],
       "title": "Machine Utilization Trend",
@@ -144,7 +146,7 @@
       "id": 4,
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sim_events\")\n  |> filter(fn: (r) => r.event_type == \"STATE_CHANGE\")\n  |> filter(fn: (r) => r.source_type == \"buffer\")\n  |> filter(fn: (r) => r._field == \"buffer_level\")\n  |> group(columns: [\"source\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^B\\d+_Level$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)"
         }
       ],
       "title": "Buffer Levels Over Time",
@@ -154,11 +156,24 @@
   "schemaVersion": 36,
   "style": "dark",
   "tags": ["manufacturing", "simantha", "state-timeline"],
-  "templating": { "list": [] },
+  "templating": {
+    "list": [
+      {
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "datasource": "InfluxDB",
+        "definition": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"manufacturing\", tag: \"run_id\")",
+        "includeAll": true,
+        "name": "run_id",
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"manufacturing\", tag: \"run_id\")",
+        "refresh": 2,
+        "type": "query"
+      }
+    ]
+  },
   "time": { "from": "now-1h", "to": "now" },
   "timepicker": {},
   "timezone": "browser",
   "title": "Machine State Timeline",
   "uid": "simantha-state-timeline",
-  "version": 1
+  "version": 2
 }

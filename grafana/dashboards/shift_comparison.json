@@ -38,7 +38,7 @@
           "unit": "short"
         }
       },
-      "gridPos": { "h": 5, "w": 8, "x": 0, "y": 1 },
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 1 },
       "id": 1,
       "options": {
         "colorMode": "value",
@@ -49,7 +49,7 @@
       },
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sim_events\")\n  |> filter(fn: (r) => r.event_type == \"SHIFT_CHANGE\")\n  |> filter(fn: (r) => r._field == \"sim_time\")\n  |> count()"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sim_events\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r.event_type == \"SHIFT_CHANGE\")\n  |> filter(fn: (r) => r._field == \"sim_time\")\n  |> count()"
         }
       ],
       "title": "Total Shift Changes",
@@ -68,7 +68,7 @@
           "unit": "none"
         }
       },
-      "gridPos": { "h": 5, "w": 8, "x": 8, "y": 1 },
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 1 },
       "id": 2,
       "options": {
         "colorMode": "value",
@@ -79,7 +79,7 @@
       },
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sim_events\")\n  |> filter(fn: (r) => r.event_type == \"SHIFT_CHANGE\")\n  |> filter(fn: (r) => r._field == \"message\")\n  |> last()"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"Shift_Name\")\n  |> last()"
         }
       ],
       "title": "Current Shift",
@@ -98,7 +98,7 @@
           "unit": "short"
         }
       },
-      "gridPos": { "h": 5, "w": 8, "x": 16, "y": 1 },
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 1 },
       "id": 3,
       "options": {
         "colorMode": "value",
@@ -109,73 +109,54 @@
       },
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sim_events\")\n  |> filter(fn: (r) => r.event_type == \"PRODUCTION_SUMMARY\")\n  |> filter(fn: (r) => r._field == \"partcount\")\n  |> last()"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"ShiftTotal_Parts\")\n  |> last()"
         }
       ],
       "title": "Total Parts (All Shifts)",
       "type": "stat"
     },
     {
+      "datasource": "InfluxDB",
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 50 },
+              { "color": "green", "value": 80 }
+            ]
+          },
+          "unit": "percent"
+        }
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 1 },
+      "id": 10,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"CurrShift_OEE\")\n  |> last()\n  |> map(fn: (r) => ({r with _value: r._value * 100.0}))"
+        }
+      ],
+      "title": "Current Shift OEE",
+      "type": "stat"
+    },
+    {
       "collapsed": false,
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 6 },
       "id": 101,
-      "title": "Shift Comparison",
+      "title": "Shift Production",
       "type": "row"
     },
     {
       "datasource": "InfluxDB",
-      "description": "Parts produced per shift (from SHIFT_CHANGE events)",
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "drawStyle": "bars",
-            "fillOpacity": 80
-          },
-          "unit": "short"
-        }
-      },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 7 },
-      "id": 4,
-      "targets": [
-        {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sim_events\")\n  |> filter(fn: (r) => r.event_type == \"SHIFT_CHANGE\")\n  |> filter(fn: (r) => r._field == \"extra_json\")\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> group(columns: [\"shift_name\"])"
-        }
-      ],
-      "title": "Parts per Shift",
-      "type": "barchart"
-    },
-    {
-      "datasource": "InfluxDB",
-      "description": "OEE per shift (from SHIFT_CHANGE events extra data)",
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "drawStyle": "bars",
-            "fillOpacity": 80
-          },
-          "unit": "percentunit"
-        }
-      },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 7 },
-      "id": 5,
-      "targets": [
-        {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sim_events\")\n  |> filter(fn: (r) => r.event_type == \"PRODUCTION_SUMMARY\")\n  |> filter(fn: (r) => r._field == \"oee\")\n  |> group(columns: [\"shift_name\"])\n  |> mean()"
-        }
-      ],
-      "title": "Average OEE per Shift",
-      "type": "barchart"
-    },
-    {
-      "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 15 },
-      "id": 102,
-      "title": "Production Timeline",
-      "type": "row"
-    },
-    {
-      "datasource": "InfluxDB",
-      "description": "Production summary metrics over time, colored by shift",
+      "description": "Parts produced in current shift over time",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -186,20 +167,43 @@
           "unit": "short"
         }
       },
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 7 },
+      "id": 4,
+      "targets": [
+        {
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"CurrShift_Parts\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)"
+        }
+      ],
+      "title": "Current Shift Parts Over Time",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "InfluxDB",
+      "description": "Cumulative production across all shifts",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "fillOpacity": 10
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 7 },
       "id": 6,
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sim_events\")\n  |> filter(fn: (r) => r.event_type == \"PRODUCTION_SUMMARY\")\n  |> filter(fn: (r) => r._field == \"partcount\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"Throughput\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)"
         }
       ],
-      "title": "Cumulative Production (with Shift Boundaries)",
+      "title": "Cumulative Production",
       "type": "timeseries"
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 24 },
-      "id": 103,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 15 },
+      "id": 102,
       "title": "Shift Event Log",
       "type": "row"
     },
@@ -210,7 +214,7 @@
           "custom": { "filterable": true }
         }
       },
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 25 },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
       "id": 7,
       "options": {
         "showHeader": true,
@@ -218,7 +222,7 @@
       },
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sim_events\")\n  |> filter(fn: (r) => r.event_type == \"SHIFT_CHANGE\")\n  |> filter(fn: (r) => r._field == \"message\" or r._field == \"extra_json\")\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> sort(columns: [\"_time\"], desc: true)"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sim_events\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r.event_type == \"SHIFT_CHANGE\")\n  |> filter(fn: (r) => r._field == \"message\" or r._field == \"extra_json\")\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> sort(columns: [\"_time\"], desc: true)"
         }
       ],
       "title": "Shift Change History",
@@ -228,11 +232,24 @@
   "schemaVersion": 36,
   "style": "dark",
   "tags": ["manufacturing", "simantha", "shifts"],
-  "templating": { "list": [] },
+  "templating": {
+    "list": [
+      {
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "datasource": "InfluxDB",
+        "definition": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"manufacturing\", tag: \"run_id\")",
+        "includeAll": true,
+        "name": "run_id",
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"manufacturing\", tag: \"run_id\")",
+        "refresh": 2,
+        "type": "query"
+      }
+    ]
+  },
   "time": { "from": "now-1h", "to": "now" },
   "timepicker": {},
   "timezone": "browser",
   "title": "Shift Comparison",
   "uid": "simantha-shift-comparison",
-  "version": 1
+  "version": 2
 }

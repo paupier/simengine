@@ -51,7 +51,7 @@
       },
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sim_events\")\n  |> filter(fn: (r) => r.event_type == \"ALARM\")\n  |> filter(fn: (r) => r.severity == \"CRITICAL\")\n  |> filter(fn: (r) => r._field == \"sim_time\")\n  |> count()"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sim_events\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r.event_type == \"ALARM\")\n  |> filter(fn: (r) => r.severity == \"CRITICAL\")\n  |> filter(fn: (r) => r._field == \"sim_time\")\n  |> count()"
         }
       ],
       "title": "Critical Alarms",
@@ -82,7 +82,7 @@
       },
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sim_events\")\n  |> filter(fn: (r) => r.event_type == \"ALARM\")\n  |> filter(fn: (r) => r.severity == \"MEDIUM\")\n  |> filter(fn: (r) => r._field == \"sim_time\")\n  |> count()"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sim_events\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r.event_type == \"ALARM\")\n  |> filter(fn: (r) => r.severity == \"MEDIUM\")\n  |> filter(fn: (r) => r._field == \"sim_time\")\n  |> count()"
         }
       ],
       "title": "Medium Alarms",
@@ -112,7 +112,7 @@
       },
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sim_events\")\n  |> filter(fn: (r) => r.event_type == \"ALARM\")\n  |> filter(fn: (r) => r.severity == \"LOW\")\n  |> filter(fn: (r) => r._field == \"sim_time\")\n  |> count()"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sim_events\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r.event_type == \"ALARM\")\n  |> filter(fn: (r) => r.severity == \"LOW\")\n  |> filter(fn: (r) => r._field == \"sim_time\")\n  |> count()"
         }
       ],
       "title": "Low Alarms",
@@ -142,7 +142,7 @@
       },
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sim_events\")\n  |> filter(fn: (r) => r.event_type == \"ALARM\")\n  |> filter(fn: (r) => r._field == \"sim_time\")\n  |> count()"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sim_events\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r.event_type == \"ALARM\")\n  |> filter(fn: (r) => r._field == \"sim_time\")\n  |> count()"
         }
       ],
       "title": "Total Alarms",
@@ -176,7 +176,7 @@
       "id": 5,
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sim_events\")\n  |> filter(fn: (r) => r.event_type == \"ALARM\")\n  |> filter(fn: (r) => r._field == \"sim_time\")\n  |> group(columns: [\"severity\"])\n  |> count()\n  |> group()"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sim_events\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r.event_type == \"ALARM\")\n  |> filter(fn: (r) => r._field == \"sim_time\")\n  |> group(columns: [\"severity\"])\n  |> count()\n  |> group()"
         }
       ],
       "title": "Alarms by Severity",
@@ -197,7 +197,7 @@
       "id": 6,
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sim_events\")\n  |> filter(fn: (r) => r.event_type == \"ALARM\")\n  |> filter(fn: (r) => r._field == \"sim_time\")\n  |> group(columns: [\"source\"])\n  |> count()\n  |> group()"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sim_events\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r.event_type == \"ALARM\")\n  |> filter(fn: (r) => r._field == \"sim_time\")\n  |> group(columns: [\"source\"])\n  |> count()\n  |> group()"
         }
       ],
       "title": "Alarms by Equipment",
@@ -225,7 +225,7 @@
       },
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sim_events\")\n  |> filter(fn: (r) => r.event_type == \"ALARM\")\n  |> filter(fn: (r) => r._field == \"message\")\n  |> keep(columns: [\"_time\", \"_value\", \"source\", \"severity\", \"event_type\"])\n  |> rename(columns: {\"_value\": \"message\", \"_time\": \"time\"})\n  |> sort(columns: [\"time\"], desc: true)\n  |> limit(n: 100)"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sim_events\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r.event_type == \"ALARM\")\n  |> filter(fn: (r) => r._field == \"message\")\n  |> keep(columns: [\"_time\", \"_value\", \"source\", \"severity\", \"event_type\"])\n  |> rename(columns: {\"_value\": \"message\", \"_time\": \"time\"})\n  |> sort(columns: [\"time\"], desc: true)\n  |> limit(n: 100)"
         }
       ],
       "title": "Recent Alarm Events",
@@ -235,11 +235,24 @@
   "schemaVersion": 36,
   "style": "dark",
   "tags": ["manufacturing", "simantha", "alarms"],
-  "templating": { "list": [] },
+  "templating": {
+    "list": [
+      {
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "datasource": "InfluxDB",
+        "definition": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"manufacturing\", tag: \"run_id\")",
+        "includeAll": true,
+        "name": "run_id",
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"manufacturing\", tag: \"run_id\")",
+        "refresh": 2,
+        "type": "query"
+      }
+    ]
+  },
   "time": { "from": "now-1h", "to": "now" },
   "timepicker": {},
   "timezone": "browser",
   "title": "Alarm Event Log",
   "uid": "simantha-alarm-log",
-  "version": 1
+  "version": 2
 }

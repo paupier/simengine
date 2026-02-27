@@ -698,6 +698,8 @@ def collect_production_summary(
         severity="INFO",
         message=f"Production summary at t={sim_time:.0f}",
         partcount=total_parts_produced,
+        buffer_level=total_wip,
+        oee=round(line_oee, 4),
         shift_number=shift_number,
         shift_name=shift_name,
         extra={

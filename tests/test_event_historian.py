@@ -563,6 +563,21 @@ class TestCollectProductionSummary:
         assert event.extra["line_performance"] == 0.0
         assert event.extra["line_quality"] == 0.0
 
+    def test_production_summary_sets_oee_and_buffer_level_fields(self):
+        """oee and buffer_level must be set directly on SimEvent, not only in extra."""
+        event = collect_production_summary(
+            sim_time=120.0,
+            total_parts_produced=80,
+            total_wip=5,
+            line_oee=0.78,
+            shift_manager=None,
+        )
+        assert event.oee == 0.78
+        assert event.buffer_level == 5
+        # Also still present in extra for backward compatibility
+        assert event.extra["line_oee"] == 0.78
+        assert event.extra["total_wip"] == 5
+
 
 class TestStateChangeEventAPQ:
     """Test that STATE_CHANGE events include A, P, Q in extra_json."""
