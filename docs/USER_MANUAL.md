@@ -1,7 +1,7 @@
 # Simantha OPC UA - Complete User Manual
 
-**Version:** 2.2
-**Last Updated:** 2026-02-25
+**Version:** 2.3
+**Last Updated:** 2026-02-26
 **Difficulty:** Beginner to Advanced
 
 ---
@@ -80,7 +80,7 @@ Simantha OPC UA is a **manufacturing digital twin** that simulates a production 
 - **UA Expert:** OPC UA client for testing (free from Unified Automation)
 - **Prosys OPC UA Browser:** Alternative OPC UA client
 - **Node-RED:** For custom dashboards
-- **Grafana + InfluxDB:** For historical trending (future phase)
+- **Grafana + InfluxDB:** For historical trending (included in Docker stack)
 
 ### Supported Operating Systems
 
@@ -228,19 +228,20 @@ Press Ctrl+C to stop.
 3. **Browse Address Space:**
    - Expand: **Objects** → **WeylandIndustries** → **LV426_Colony** → **AtmosphereProcessor01** → **Nostromo_BioProductPakaging_Equipment**
    - You'll see ISA-95 structure:
-     - Identification (line metadata)
-     - OperationsState (SimTime, controls)
-     - OperationsPerformance (throughput, WIP, scrap)
-     - Resources (Machine1, Buffer1, Machine2, etc.)
-     - SupportFunctions (Maintenance, ShiftManagement)
+     - `Identification/` — line metadata (EquipmentID, RunID)
+     - `OperationsState/` — SimTime, LineState, Controls (writable)
+     - `OperationsPerformance/` — Throughput, TotalWIP, TotalScrap, ScrapRate
+     - `OEE/` — Line-level Availability, Performance, Quality, OEE
+     - `Resources/` — M1_Equipment, B1_StorageUnit, M2_Equipment, etc.
+     - `SupportFunctions/` — Maintenance, ShiftManagement
 
 4. **View Live Data:**
    - Drag variables to the **Data Access View** (bottom panel)
    - Try these first (under the Equipment node):
      - `OperationsState/SimTime` - Simulation time
      - `OperationsPerformance/Throughput` - Total parts produced
-     - `Resources/Machine1/OperationsState/State` - Machine 1 state
-     - `Resources/Buffer1/Level` - Buffer level
+     - `Resources/M1_Equipment/OperationsState/State` - Machine 1 state
+     - `Resources/B1_StorageUnit/CurrentLevel` - Buffer level
 
 **You should see values updating in real-time!** 🎉
 
@@ -248,20 +249,20 @@ Press Ctrl+C to stop.
 
 **In UA Expert, find the Controls node:**
 
-1. Navigate to: `Line1/System/Controls`
+1. Navigate to: `Nostromo_BioProductPakaging_Equipment/OperationsState/Controls`
 2. **Pause the line:**
-   - Right-click `cmdPauseLine`
+   - Right-click `CmdPauseLine`
    - Select **Write Value**
    - Change to `true`
    - Click **Write**
    - Watch `SimTime` stop incrementing
 
 3. **Resume:**
-   - Write `false` to `cmdPauseLine`
+   - Write `false` to `CmdPauseLine`
    - Simulation resumes
 
 4. **Adjust arrival rate:**
-   - Write a value to `setInterarrivalTime`
+   - Write a value to `SetInterarrivalTime`
    - `0.0` = parts arrive as fast as possible
    - `2.0` = 2-second delay between parts
    - Watch buffer level and throughput change!
@@ -289,6 +290,8 @@ Open `http://localhost:8080` in your browser. The dashboard provides:
 - **Scenario selection** and simulation start/stop
 - **Live dashboard** with per-machine OEE bars, PPM, Cp/Cpk, shift progress, line OEE, and scrap metrics
 - **Config editor** at `/config` for creating and editing scenarios with YAML preview and validation
+- **Reports page** at `/reports` for post-run analysis (OEE charts, throughput trends, time-in-state, anomaly detection, run comparison from CSV historian data)
+- **Validation page** at `/validation` for checking the data pipeline health (OPC UA → Telegraf → InfluxDB)
 
 **Docker mode (full stack with InfluxDB + Grafana):**
 ```bash
@@ -454,8 +457,8 @@ Scrap/rework **routing** (physical diversion of parts to scrap sinks) still happ
 
 4. **Browse Address Space:**
    - Expand the server node
-   - Navigate: **Objects** → **Line1**
-   - You'll see the full hierarchy
+   - Navigate: **Objects** → **WeylandIndustries** → **LV426_Colony** → **AtmosphereProcessor01**
+   - You'll see the Equipment and Asset nodes for the line
 
 5. **Monitor Variables:**
    - **Drag and drop** variables to the **Data Access View** (bottom panel)
@@ -918,9 +921,9 @@ buffers:
 - Throughput: ~0.5 parts/second (limited by M1)
 
 **Observations:**
-- `Machine2/State` often shows "STARVED"
-- `Machine1/State` often shows "BLOCKED" (buffer full)
-- `Buffer1/CurrentLevel` fluctuates near 0
+- `M2_Equipment/OperationsState/State` often shows "STARVED"
+- `M1_Equipment/OperationsState/State` often shows "BLOCKED" (buffer full)
+- `B1_StorageUnit/CurrentLevel` fluctuates near 0
 
 **Use case:** Understanding bottlenecks and buffer dynamics
 
@@ -955,9 +958,9 @@ maintainer:
 - Throughput drops during M1 failures
 
 **Observations:**
-- `Machine1/State` cycles: PROCESSING → FAILED → UNDER_REPAIR → PROCESSING
-- `Machine1/HealthState` = 0 (healthy) or 1 (failed)
-- `Maintenance/MaintenanceActive` = true during repairs
+- `M1_Equipment/OperationsState/State` cycles: PROCESSING → FAILED → UNDER_REPAIR → PROCESSING
+- `M1_Equipment/OperationsState/HealthState` = 0 (healthy) or 1 (failed)
+- `SupportFunctions/Maintenance/MaintenanceActive` = true during repairs
 - Buffer drains when M1 is down
 
 **Use case:** Learning failure/maintenance modeling
@@ -1003,9 +1006,9 @@ machines:
 - Real Quality OEE calculation
 
 **Observations:**
-- `Machine1/OEE/Quality` < 1.0 (defects reduce quality)
-- `Machine1/OEE/DefectivePartCount` increases
-- `Machine1/Alarms/QualityAlertActive` triggers if >5% defects
+- `M1_Equipment/OEE/Quality` < 1.0 (defects reduce quality)
+- `M1_Equipment/OEE/DefectivePartCount` increases
+- `M1_Equipment/Alarms/QualityAlertActive` triggers if >5% defects
 
 **Use case:** Quality modeling and OEE analysis
 
@@ -1036,8 +1039,8 @@ machines:
 - MTBF/MTTR tracking per failure mode
 
 **Observations:**
-- `Machine1/FailureModes/ActiveFailureMode` shows which mode failed
-- `Machine1/FailureModes/MechanicalMTBF` shows mean time between failures
+- `M1_Equipment/FailureModes/ActiveFailureMode` shows which mode failed
+- `M1_Equipment/FailureModes/MechanicalMTBF` shows mean time between failures
 - More realistic failure patterns than simple degradation
 
 **Use case:** Realistic reliability modeling
@@ -1066,9 +1069,9 @@ machines:
 - Western Electric rules
 
 **Observations:**
-- `Machine1/SPC/Capability/Cpk` shows process capability
-- `Machine1/SPC/Status/InControl` = false when out of control
-- `Machine1/SPC/Status/Violations` lists rule violations
+- `M1_Equipment/SPC/Capability/Cpk` shows process capability
+- `M1_Equipment/SPC/Status/InControl` = false when out of control
+- `M1_Equipment/SPC/Status/Violations` lists rule violations
 
 **Use case:** Quality control and Six Sigma analysis
 
@@ -1119,10 +1122,10 @@ shifts:
 - Cumulative totals preserved across shifts
 
 **Observations:**
-- `Shift/CurrentShiftName` changes at each boundary (Day → Evening → Night → Day)
-- `Shift/CurrentShift/PartsProduced` resets to 0 at each shift change
-- `Shift/Totals/TotalPartsProduced` always increases (never resets)
-- `Shift/ShiftTimeRemaining` counts down to next shift change
+- `ShiftManagement/CurrentShiftName` changes at each boundary (Day → Evening → Night → Day)
+- `ShiftManagement/CurrentShift/PartsProduced` resets to 0 at each shift change
+- `ShiftManagement/Totals/TotalPartsProduced` always increases (never resets)
+- `ShiftManagement/ShiftTimeRemaining` counts down to next shift change
 
 **Use case:** Learning shift-based production tracking and reporting
 
@@ -1141,7 +1144,7 @@ shifts:
 
 **Observations:**
 - Shift OEE varies as failures occur within shifts
-- `Shift/CurrentShift/Availability` reflects per-shift uptime
+- `ShiftManagement/CurrentShift/Availability` reflects per-shift uptime
 - Failure counts tracked per machine per shift
 - Previous shift summary available for comparison
 
@@ -1184,9 +1187,9 @@ scrap_sinks:
 - Scrap rate visible in OPC UA
 
 **Observations:**
-- `Machine1/QualityRouting/ScrapCount` increases as defects occur
-- `LineKPIs/TotalScrap` shows total scrapped parts
-- `LineKPIs/ScrapRate` shows overall scrap percentage
+- `M1_Equipment/QualityRouting/ScrapCount` increases as defects occur
+- `OperationsPerformance/TotalScrap` shows total scrapped parts
+- `OperationsPerformance/ScrapRate` shows overall scrap percentage
 - Buffer levels unaffected (scrap goes to side bins, not downstream)
 
 **Use case:** Quality-based routing with scrap tracking
@@ -1221,9 +1224,9 @@ scrap_sinks:
 - Failed rework routes to scrap sink
 
 **Observations:**
-- `Machine1/QualityRouting/ReworkCount` shows total rework attempts
-- `Machine1/QualityRouting/ReworkSuccessCount` shows successful reworks
-- `Machine1/QualityRouting/ReworkSuccessRate` shows success percentage
+- `M1_Equipment/QualityRouting/ReworkCount` shows total rework attempts
+- `M1_Equipment/QualityRouting/ReworkSuccessCount` shows successful reworks
+- `M1_Equipment/QualityRouting/ReworkSuccessRate` shows success percentage
 - Many defective parts are "saved" by rework, reducing scrap
 
 **Use case:** Virtual rework modeling and scrap reduction analysis
@@ -1256,6 +1259,59 @@ python src/opcua_server.py --scenario full_feature_line --seed 42
 - SCRAP and REWORK events appear in historian alongside state changes
 
 **Use case:** Complete digital twin demonstration with every feature enabled
+
+---
+
+### Scenario N: Full Feature 8-Machine Line
+
+**File:** `full_feature_8_machine_line`
+**Complexity:** Expert
+
+**Characteristics:**
+- 8 machines in serial with 7 buffers
+- All features: advanced failures, SPC on all 8 machines, quality routing, 3-shift rotation, CSV historian
+- Scrap sinks per machine, rework on selected machines
+- Predictive and corrective maintenance strategies
+
+**Run it:**
+```bash
+python src/opcua_server.py --scenario full_feature_8_machine_line --seed 42
+```
+
+**Use case:** Full-scale digital twin at production line scale. Stress-testing OPC UA address space, Telegraf polling, and Grafana dashboards with many machines.
+
+---
+
+### Scenario O: Warm-Up Line
+
+**File:** `warm_up_line`
+**Complexity:** Intermediate
+
+**Characteristics:**
+- 2-machine line with `warm_up_time: 300` (5 minutes)
+- Simantha runs the simulation for `warm_up_time + sim_time` but only collects data (sink.level, parts_made, quality counters) after the warm-up period
+- Produces more accurate steady-state metrics by discarding the transient start-up phase
+
+**Run it:**
+```bash
+python src/opcua_server.py --scenario warm_up_line --seed 42
+```
+
+**Use case:** Understanding the warm-up feature and steady-state analysis
+
+---
+
+### Additional Scenarios
+
+The following scenarios are also available in `config/line_models.yaml`:
+
+| Scenario | Description |
+|----------|-------------|
+| `priority_maintenance_line` | PriorityMaintainer with configurable scheduling (FIFO, SPT, priority, bottleneck) |
+| `multi_state_degradation_line` | Multi-state health degradation (0 → 1 → 2 → ... → h_max) with DEGRADED state |
+| `historian_line` | Basic CSV historian without other advanced features |
+| `influxdb_historian_line` | InfluxDB historian backend |
+| `neo4j_historian_line` | Neo4j graph database historian |
 
 ---
 
@@ -1294,9 +1350,9 @@ Under the Equipment node:
 
 ---
 
-### `Resources / MachineN /` *(per machine)*
+### `Resources / M{i}_Equipment /` *(per machine)*
 
-Each machine node has ISA-95 sub-groups:
+Each machine node (e.g., `M1_Equipment`, `M2_Equipment`) has ISA-95 sub-groups:
 
 | Sub-group | Variable | Type | Description |
 |-----------|----------|------|-------------|
@@ -1309,7 +1365,7 @@ Each machine node has ISA-95 sub-groups:
 | | `Utilisation` | Double | ProcessingTime / TotalTime |
 | | `TargetPPM`, `ActualPPM` | Double | Target and actual parts per minute |
 
-**`MachineN / OEE /`**
+**`M{i}_Equipment / OEE /`**
 
 | Variable | Access | Type | Description |
 |----------|--------|------|-------------|
@@ -1321,7 +1377,7 @@ Each machine node has ISA-95 sub-groups:
 | `DefectivePartCount` | READ | Int32 | Defective parts |
 | `TheoreticalOutput` | READ | Double | Theoretical max output |
 
-**`MachineN / Alarms /`**
+**`M{i}_Equipment / Alarms /`**
 
 | Variable | Access | Type | Description |
 |----------|--------|------|-------------|
@@ -1330,7 +1386,7 @@ Each machine node has ISA-95 sub-groups:
 | `MaintenanceActive` | READ | Boolean | Maintenance alarm active |
 | `QualityAlertActive` | READ | Boolean | Quality alert active |
 
-**`MachineN / QualityRouting /`** *(if `quality_routing.enabled: true`)*
+**`M{i}_Equipment / QualityRouting /`** *(if `quality_routing.enabled: true`)*
 
 | Variable | Access | Type | Description |
 |----------|--------|------|-------------|
@@ -1340,7 +1396,7 @@ Each machine node has ISA-95 sub-groups:
 | `ReworkSuccessRate` | READ | Double | ReworkSuccessCount / ReworkCount |
 | `GoodCount` | READ | Int32 | Total good parts (including successful reworks) |
 
-**`MachineN / FailureModes /`** *(if `enable_advanced_failures: true`)*
+**`M{i}_Equipment / FailureModes /`** *(if `enable_advanced_failures: true`)*
 
 | Variable | Access | Type | Description |
 |----------|--------|------|-------------|
@@ -1350,7 +1406,7 @@ Each machine node has ISA-95 sub-groups:
 | `{Mode}MTBF` | READ | Double | Mean time between failures |
 | `{Mode}MTTR` | READ | Double | Mean time to repair |
 
-**`MachineN / MaintenanceStrategy /`** *(if `enable_advanced_failures: true`)*
+**`M{i}_Equipment / MaintenanceStrategy /`** *(if `enable_advanced_failures: true`)*
 
 | Variable | Access | Type | Description |
 |----------|--------|------|-------------|
@@ -1359,7 +1415,7 @@ Each machine node has ISA-95 sub-groups:
 | `PMCount` | READ | Int32 | Preventive maintenance count |
 | `CMCount` | READ | Int32 | Corrective maintenance count |
 
-**`MachineN / SPC /`** *(if `enable_spc: true`)*
+**`M{i}_Equipment / SPC /`** *(if `enable_spc: true`)*
 
 | Group | Variable | Type | Description |
 |-------|----------|------|-------------|
@@ -1383,14 +1439,16 @@ Each machine node has ISA-95 sub-groups:
 
 ---
 
-### `Resources / BufferN /` *(per buffer)*
+### `Resources / B{i}_StorageUnit /` *(per buffer)*
+
+Each buffer node (e.g., `B1_StorageUnit`, `B2_StorageUnit`):
 
 | Variable | Access | Type | Description |
 |----------|--------|------|-------------|
-| `Level` | READ | Int32 | Current WIP count |
+| `CurrentLevel` | READ | Int32 | Current WIP count |
 | `Capacity` | READ | Int32 | Max buffer capacity |
 
-**`BufferN / Alarms /`**
+**`B{i}_StorageUnit / Alarms /`**
 
 | Variable | Access | Type | Description |
 |----------|--------|------|-------------|
@@ -1400,11 +1458,13 @@ Each machine node has ISA-95 sub-groups:
 
 ---
 
-### `Resources / ScrapBinN /` *(per scrap sink, if configured)*
+### `Resources / {ScrapName}_StorageUnit /` *(per scrap sink, if configured)*
+
+Each scrap sink (e.g., `ScrapBin1_StorageUnit`, `ScrapBin2_StorageUnit`):
 
 | Variable | Access | Type | Description |
 |----------|--------|------|-------------|
-| `Level` | READ | Int32 | Number of scrapped parts in this bin |
+| `CurrentLevel` | READ | Int32 | Number of scrapped parts in this bin |
 
 ---
 
@@ -1499,7 +1559,7 @@ python src/opcua_server.py [OPTIONS]
 | Argument | Description | Default | Example |
 |----------|-------------|---------|---------|
 | `--scenario` | Scenario name from YAML | balanced_line | `--scenario failure_line` |
-| `--seed` | Random seed (reproducibility) | None (random) | `--seed 42` |
+| `--seed` | Random seed (see below) | Auto-generated | `--seed 42` |
 | `--trace` | Enable DES event tracing (pickle output) | off | `--trace` |
 
 **Examples:**
@@ -1508,12 +1568,55 @@ python src/opcua_server.py [OPTIONS]
 # Run specific scenario
 python src/opcua_server.py --scenario bottleneck_line
 
-# Reproducible random defects
+# Reproducible run with fixed seed
 python src/opcua_server.py --scenario quality_line --seed 123
 
-# Combined
-python src/opcua_server.py --scenario spc_quality_line --seed 456
+# Full-feature 8-machine line with reproducibility
+python src/opcua_server.py --scenario full_feature_8_machine_line --seed 42
+
+# Warm-up line with tracing
+python src/opcua_server.py --scenario warm_up_line --seed 42 --trace
 ```
+
+#### Understanding `--seed` (Randomness and Reproducibility)
+
+The `--seed` argument controls all random behavior in the simulation. This is essential for reproducible experiments.
+
+**What `--seed` affects:**
+- Defect generation (which parts are defective)
+- Quality routing decisions (scrap vs. rework outcome)
+- SPC measurement noise (the Gaussian noise added to cycle time measurements)
+- MTTF/MTTR sampling (when machines fail and how long repairs take, via scipy distributions)
+- Degradation transitions (Markov chain state changes)
+
+**How it works:**
+
+The seed is applied to both Python's `random` module and NumPy's `numpy.random` before **every** simulation step. This is necessary because Simantha re-runs the entire simulation from time 0 on each step (see Section 5 architecture). Without re-seeding, the RNG state would differ between steps, causing KPIs like throughput and scrap count to fluctuate unpredictably.
+
+```
+Step 1: seed(42) → simulate(0..1)   → sink.level = 1
+Step 2: seed(42) → simulate(0..2)   → sink.level = 2  (events in 0..1 identical)
+Step 3: seed(42) → simulate(0..3)   → sink.level = 3  (events in 0..2 identical)
+```
+
+**Auto-generated seeds:**
+
+If `--seed` is omitted, a seed is automatically generated from the current timestamp and printed to the console at startup:
+
+```
+Auto-generated seed: 1740512345
+```
+
+You can copy this seed value and use it with `--seed 1740512345` to reproduce the exact same run later.
+
+**Limitations:**
+
+Simantha's internal RNG (used for its Markov chain transitions) is not directly controllable. However, since both `random` and `numpy.random` are re-seeded, the vast majority of random behavior is reproducible. Minor variations may occur in Simantha's internal scheduling.
+
+**Practical tips:**
+- Use `--seed 42` (or any fixed value) when comparing scenarios or debugging
+- Omit `--seed` for realistic "random each time" behavior
+- Record the auto-generated seed from the console if you want to reproduce an interesting run
 
 ### Feature 2: Programmatic Control
 
@@ -1528,12 +1631,15 @@ client.connect()
 
 try:
     root = client.get_objects_node()
-    line1 = root.get_child(["2:Line1"])
-    controls = line1.get_child(["2:System", "2:Controls"])
+    enterprise = root.get_child(["2:WeylandIndustries"])
+    site = enterprise.get_child(["2:LV426_Colony"])
+    area = site.get_child(["2:AtmosphereProcessor01"])
+    equip = area.get_child(["2:Nostromo_BioProductPakaging_Equipment"])
+    controls = equip.get_child(["2:OperationsState", "2:Controls"])
 
     # Get control variables
-    pause = controls.get_child(["2:cmdPauseLine"])
-    interarrival = controls.get_child(["2:setInterarrivalTime"])
+    pause = controls.get_child(["2:CmdPauseLine"])
+    interarrival = controls.get_child(["2:SetInterarrivalTime"])
 
     # Experiment: Vary arrival rate
     print("Starting experiment...")
@@ -1562,16 +1668,21 @@ client = Client("opc.tcp://localhost:4840/simantha/")
 client.connect()
 
 root = client.get_objects_node()
-line1 = root.get_child(["2:Line1"])
+enterprise = root.get_child(["2:WeylandIndustries"])
+site = enterprise.get_child(["2:LV426_Colony"])
+area = site.get_child(["2:AtmosphereProcessor01"])
+equip = area.get_child(["2:Nostromo_BioProductPakaging_Equipment"])
 
 # Get variables to log
-system = line1.get_child(["2:System"])
-sim_time = system.get_child(["2:SimTime"])
-throughput = system.get_child(["2:Throughput"])
+ops_state = equip.get_child(["2:OperationsState"])
+sim_time = ops_state.get_child(["2:SimTime"])
+ops_perf = equip.get_child(["2:OperationsPerformance"])
+throughput = ops_perf.get_child(["2:Throughput"])
 
-machine1 = line1.get_child(["2:Machine1"])
-state = machine1.get_child(["2:State"])
-util = machine1.get_child(["2:Utilisation"])
+resources = equip.get_child(["2:Resources"])
+m1 = resources.get_child(["2:M1_Equipment"])
+state = m1.get_child(["2:OperationsState", "2:State"])
+util = m1.get_child(["2:OperationsPerformance", "2:Utilisation"])
 
 # Open CSV file
 with open('simulation_log.csv', 'w', newline='') as csvfile:
@@ -1609,8 +1720,12 @@ client.connect()
 
 try:
     root = client.get_objects_node()
-    line1 = root.get_child(["2:Line1"])
-    shift = line1.get_child(["2:Shift"])
+    enterprise = root.get_child(["2:WeylandIndustries"])
+    site = enterprise.get_child(["2:LV426_Colony"])
+    area = site.get_child(["2:AtmosphereProcessor01"])
+    equip = area.get_child(["2:Nostromo_BioProductPakaging_Equipment"])
+    support = equip.get_child(["2:SupportFunctions"])
+    shift = support.get_child(["2:ShiftManagement"])
 
     # Current shift info
     shift_name = shift.get_child(["2:CurrentShiftName"])
@@ -1653,6 +1768,7 @@ finally:
 **Subscribe to alarm changes:**
 
 ```python
+import time
 from opcua import Client
 
 class AlarmHandler:
@@ -1663,15 +1779,19 @@ client = Client("opc.tcp://localhost:4840/simantha/")
 client.connect()
 
 root = client.get_objects_node()
-line1 = root.get_child(["2:Line1"])
-machine1 = line1.get_child(["2:Machine1"])
-alarms = machine1.get_child(["2:Alarms"])
+enterprise = root.get_child(["2:WeylandIndustries"])
+site = enterprise.get_child(["2:LV426_Colony"])
+area = site.get_child(["2:AtmosphereProcessor01"])
+equip = area.get_child(["2:Nostromo_BioProductPakaging_Equipment"])
+resources = equip.get_child(["2:Resources"])
+m1 = resources.get_child(["2:M1_Equipment"])
+alarms = m1.get_child(["2:Alarms"])
 
-# Subscribe to alarm message
-alarm_msg = alarms.get_child(["2:LastAlarmMessage"])
+# Subscribe to failure alarm
+failure_alarm = alarms.get_child(["2:MachineFailedActive"])
 handler = AlarmHandler()
 sub = client.create_subscription(1000, handler)
-handle = sub.subscribe_data_change(alarm_msg)
+handle = sub.subscribe_data_change(failure_alarm)
 
 print("Monitoring alarms... Press Ctrl+C to stop")
 try:
@@ -1723,13 +1843,19 @@ python src/opcua_server.py --scenario full_feature_line --seed 42
 
 | Column | Description | Example |
 |--------|-------------|---------|
-| `timestamp` | Wall-clock time | 2026-02-09T14:30:00 |
-| `sim_time` | Simulation time (s) | 351.0 |
+| `run_id` | Unique run identifier | full_feature_line_20260226_143000 |
+| `timestamp` | Simulation time (seconds) | 351.0 |
+| `wall_clock` | Real wall-clock time | 2026-02-09T14:30:00 |
 | `event_type` | Event category | STATE_CHANGE |
 | `source` | Equipment name | M1 |
 | `source_type` | Equipment type | machine |
 | `severity` | LOW / MEDIUM / HIGH / CRITICAL | CRITICAL |
 | `message` | Human-readable description | M1 failed |
+| `old_state` | Previous state (for STATE_CHANGE) | PROCESSING |
+| `new_state` | New state (for STATE_CHANGE) | FAILED |
+| `partcount` | Part count at event time | 142 |
+| `oee` | OEE at event time | 0.85 |
+| `extra_json` | Additional event data (JSON) | {"cpk": 0.85} |
 
 **InfluxDB historian** (for Grafana dashboards):
 
@@ -1913,7 +2039,7 @@ Or the process is killed by the OS after running for thousands of simulation ste
 **Solutions:**
 
 1. **Check simulation not paused:**
-   - `cmdPauseLine` should be `false`
+   - `CmdPauseLine` should be `false`
    - `SimTime` should be incrementing
 
 2. **Refresh client:**
@@ -2098,28 +2224,29 @@ var_custom.set_value(custom_kpi)
 
 Before closing this manual, verify you can:
 
-✅ Install Python and dependencies
-✅ Start the OPC UA server
-✅ Connect with UA Expert
-✅ Monitor real-time variables
-✅ Write control commands (pause, interarrival)
-✅ Load different scenarios (including shift scenarios)
-✅ Understand the OPC UA address space (including Shift nodes)
-✅ Monitor shift changes and per-shift KPIs
-✅ Configure scrap sinks and quality routing for machines
-✅ Enable event historian (CSV, InfluxDB, or Neo4j)
-✅ Run the `full_feature_line` scenario with all features enabled
-✅ Troubleshoot common issues
+- Install Python and dependencies
+- Start the OPC UA server with `--scenario` and `--seed`
+- Connect with UA Expert and browse the ISA-95 address space
+- Monitor real-time variables
+- Write control commands (`CmdPauseLine`, `SetInterarrivalTime`)
+- Load different scenarios (including shift, SPC, and quality routing scenarios)
+- Understand the OPC UA address space hierarchy
+- Use the Web UI dashboard, config editor, reports page, and validation page
+- Configure scrap sinks and quality routing for machines
+- Enable event historian (CSV, InfluxDB, or Neo4j)
+- Run `full_feature_8_machine_line` with all features at scale
+- Troubleshoot common issues
 
 **Next Steps:**
 
-1. Try `full_feature_line` scenario - combines all features in one run
+1. Try `full_feature_8_machine_line` scenario — full-scale digital twin with 8 machines
 2. Experiment with scrap/rework routing (`scrap_line`, `rework_line` scenarios)
-3. Enable CSV historian and analyze event logs in `results/historian/`
-4. Connect InfluxDB + Grafana for real-time dashboards
-5. Create custom configurations with quality routing and shift schedules
-6. Integrate with your SCADA/HMI system
-7. Use shift-level and quality data for production analysis and optimization
+3. Enable CSV historian and analyze event logs via the reports page (`/reports`)
+4. Deploy the Docker stack (InfluxDB + Grafana + Web UI) for historical trending
+5. Validate the data pipeline via the validation page (`/validation`)
+6. Create custom configurations with quality routing, SPC, and shift schedules
+7. Integrate with your SCADA/HMI system
+8. Use shift-level and quality data for production analysis and optimization
 
 ---
 
@@ -2131,5 +2258,5 @@ For updates and contributions:
 
 ---
 
-*Document Version: 2.2*
-*Last Updated: 2026-02-25*
+*Document Version: 2.3*
+*Last Updated: 2026-02-26*
