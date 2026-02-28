@@ -889,9 +889,140 @@ def analyze_time_in_state(df):
 # Full Analysis
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Section 12: Recipe Segment Analysis
+# ---------------------------------------------------------------------------
+
+
+def analyze_recipe_segments(df):
+    """Analyze per-segment production metrics from SEGMENT_START/SEGMENT_END events.
+
+    Returns dict with segment_count, segments list, and has_recipe flag.
+    """
+    _require_pandas()
+    result = {"has_recipe": False, "segment_count": 0, "segments": []}
+
+    start_events = df[df["event_type"] == "SEGMENT_START"]
+    end_events = df[df["event_type"] == "SEGMENT_END"]
+
+    if start_events.empty:
+        return result
+
+    result["has_recipe"] = True
+    extras_start = parse_extra_json(start_events["extra_json"])
+    extras_end = parse_extra_json(end_events["extra_json"])
+
+    segments = []
+    for i, (_, start_row) in enumerate(start_events.iterrows()):
+        seg_extra = extras_start.iloc[i] if i < len(extras_start) else {}
+        if not isinstance(seg_extra, dict):
+            seg_extra = {}
+
+        seg_name = seg_extra.get("segment", f"Segment {i+1}")
+        seg_index = seg_extra.get("segment_index", i + 1)
+        start_time = start_row["timestamp"]
+
+        # Find matching end event
+        end_extra = {}
+        end_time = None
+        parts = 0
+        oee = 0.0
+        stop_reason = "unknown"
+
+        if i < len(end_events):
+            end_row = end_events.iloc[i]
+            end_time = end_row["timestamp"]
+            end_extra = extras_end.iloc[i] if i < len(extras_end) else {}
+            if not isinstance(end_extra, dict):
+                end_extra = {}
+            parts = end_extra.get("parts_produced", 0)
+            oee = end_extra.get("oee", 0.0)
+            stop_reason = end_extra.get("stop_reason", "unknown")
+
+        duration = (end_time - start_time) if end_time is not None else 0
+        segments.append({
+            "name": seg_name,
+            "index": seg_index,
+            "start_time": float(start_time),
+            "end_time": float(end_time) if end_time is not None else None,
+            "duration": float(duration),
+            "parts_produced": int(parts),
+            "oee": float(oee),
+            "stop_reason": stop_reason,
+            "stop_mode": seg_extra.get("stop_mode", ""),
+            "target_quantity": seg_extra.get("target_quantity"),
+            "target_duration": seg_extra.get("target_duration"),
+        })
+
+    result["segment_count"] = len(segments)
+    result["segments"] = segments
+    result["total_parts"] = sum(s["parts_produced"] for s in segments)
+    result["total_duration"] = sum(s["duration"] for s in segments)
+
+    # Recipe name from first event
+    first_extra = extras_start.iloc[0] if len(extras_start) > 0 else {}
+    if isinstance(first_extra, dict):
+        result["recipe_name"] = first_extra.get("recipe", "")
+
+    return result
+
+
+def analyze_changeovers(df):
+    """Analyze planned vs actual changeover performance.
+
+    Returns dict with changeover list and summary statistics.
+    """
+    _require_pandas()
+    result = {"has_changeovers": False, "changeovers": [], "summary": {}}
+
+    co_events = df[df["event_type"] == "CHANGEOVER"]
+    if co_events.empty:
+        return result
+
+    result["has_changeovers"] = True
+    extras = parse_extra_json(co_events["extra_json"])
+
+    changeovers = []
+    deltas = []
+    for i, (_, row) in enumerate(co_events.iterrows()):
+        extra = extras.iloc[i] if i < len(extras) else {}
+        if not isinstance(extra, dict):
+            extra = {}
+
+        planned = extra.get("planned", 0)
+        actual = extra.get("actual", 0)
+        delta = extra.get("delta", actual - planned)
+
+        changeovers.append({
+            "timestamp": float(row["timestamp"]),
+            "from_segment": extra.get("from_segment", ""),
+            "to_segment": extra.get("to_segment", ""),
+            "planned": float(planned),
+            "actual": float(actual),
+            "delta": float(delta),
+            "pct_over": float(delta / planned * 100) if planned > 0 else 0.0,
+        })
+        deltas.append(delta)
+
+    result["changeovers"] = changeovers
+
+    if deltas:
+        result["summary"] = {
+            "count": len(deltas),
+            "avg_delta": float(sum(deltas) / len(deltas)),
+            "worst_changeover": float(max(deltas)),
+            "best_changeover": float(min(deltas)),
+            "total_planned": float(sum(c["planned"] for c in changeovers)),
+            "total_actual": float(sum(c["actual"] for c in changeovers)),
+            "total_changeover_time": float(sum(c["actual"] for c in changeovers)),
+        }
+
+    return result
+
+
 def run_full_analysis(df):
     """Run all analysis sections. Returns combined dict."""
-    return {
+    result = {
         "overview": analyze_overview(df),
         "continuity": analyze_continuity(df),
         "oee": analyze_oee(df),
@@ -905,6 +1036,14 @@ def run_full_analysis(df):
         "oee_sanity": analyze_oee_sanity(df),
         "time_in_state": analyze_time_in_state(df),
     }
+
+    # Add recipe analysis if recipe events are present
+    recipe_segments = analyze_recipe_segments(df)
+    if recipe_segments["has_recipe"]:
+        result["recipe_segments"] = recipe_segments
+        result["changeovers"] = analyze_changeovers(df)
+
+    return result
 
 
 # ---------------------------------------------------------------------------

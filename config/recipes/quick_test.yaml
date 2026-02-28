@@ -1,0 +1,15 @@
+name: "Quick Test Recipe"
+description: "Short recipe for automated testing and CI validation"
+base_scenario: balanced_line
+
+segments:
+  - name: "Batch 1"
+    quantity: 20
+    max_duration: 300
+    changeover:
+      target: 10
+      distribution: constant
+      value: 10
+
+  - name: "Batch 2"
+    duration: 60

@@ -1,7 +1,7 @@
 # Simantha OPC UA - Complete User Manual
 
-**Version:** 2.3
-**Last Updated:** 2026-02-26
+**Version:** 2.4
+**Last Updated:** 2026-02-28
 **Difficulty:** Beginner to Advanced
 
 ---
@@ -18,8 +18,9 @@
 8. [Available Scenarios](#8-available-scenarios)
 9. [OPC UA Address Space Reference](#9-opc-ua-address-space-reference)
 10. [Advanced Features](#10-advanced-features)
-11. [Troubleshooting](#11-troubleshooting)
-12. [Appendix](#12-appendix)
+11. [Run Recipes](#11-run-recipes)
+12. [Troubleshooting](#12-troubleshooting)
+13. [Appendix](#13-appendix)
 
 ---
 
@@ -297,6 +298,20 @@ Open `http://localhost:8080` in your browser. The dashboard provides:
 ```bash
 docker compose -f docker/docker-compose.yml up --build -d
 ```
+
+### Quick Start with Recipes
+
+Recipes let you run multi-segment production schedules with automatic changeovers between products:
+
+```bash
+# Run a multi-segment production recipe
+python src/opcua_server.py --recipe monday_schedule --seed 42
+
+# Short recipe for testing
+python src/opcua_server.py --recipe quick_test --seed 1
+```
+
+See [Section 11: Run Recipes](#11-run-recipes) for full details on recipe configuration and usage.
 
 ---
 
@@ -1898,7 +1913,138 @@ historian:
 
 ---
 
-## 11. Troubleshooting
+## 11. Run Recipes
+
+Recipes define ordered production segments with changeover periods, enabling multi-product scheduling without modifying scenario configs.
+
+### 11.1 Recipe YAML Format
+
+Recipe files are stored in `config/recipes/`. Example:
+
+```yaml
+name: "Monday Production Schedule"
+description: "Product A morning, changeover to Product B, then back"
+base_scenario: full_feature_line
+
+segments:
+  - name: "Product A Morning"
+    quantity: 500           # stop after 500 parts
+    max_duration: 18000     # safety timeout (5h)
+    overrides:
+      machines:
+        - name: M1
+          cycle_time: 10
+          defect_rate: 0.02
+    changeover:
+      target: 300           # planned changeover (seconds)
+      distribution: lognormal
+      mean: 300
+      std: 60
+
+  - name: "Product B Afternoon"
+    duration: 7200          # time-boxed (2 hours)
+    overrides:
+      machines:
+        - name: M1
+          cycle_time: 15
+    changeover:
+      target: 900
+      distribution: normal
+      mean: 900
+      std: 120
+
+  - name: "Product A Evening"
+    quantity: 300
+    max_duration: 14400
+```
+
+### 11.2 Stop Conditions
+
+Each segment requires exactly one stop mode:
+- **`quantity: N`** -- Batch mode: stop after N parts produced. Optional `max_duration` safety timeout.
+- **`duration: N`** -- Time-boxed mode: stop after N sim-time seconds.
+
+### 11.3 Segment Overrides
+
+Overrides modify machine parameters for that segment only. Only these parameters can be overridden:
+- `cycle_time`, `defect_rate`, `target_ppm`, `health_multiplier`
+
+The topology (machine count, buffers, scrap sinks) stays identical across all segments.
+
+Since `cycle_time` cannot change after Simantha init, the system is rebuilt between segments. This is seamless because `simulate()` always runs from time 0.
+
+### 11.4 Changeover Configuration
+
+Changeovers use the same `DistributionFactory` as failure modes:
+- `constant`, `exponential`, `normal`, `lognormal`, `weibull`, `uniform`
+
+The `target` field is the planned changeover time. The actual duration is sampled from the distribution. During changeover, `LineState = "CHANGEOVER"` on OPC UA.
+
+Changeover seeds are deterministic: `sim_seed + (segment_index + 1) * 10000`.
+
+### 11.5 Running a Recipe
+
+```bash
+# --recipe and --scenario are mutually exclusive
+python src/opcua_server.py --recipe monday_schedule --seed 42
+```
+
+The console shows progress per segment and changeover planned-vs-actual:
+```
+--- Segment 1/3: Product A Morning ---
+    Target: 500 parts (max 18000s)
+    Completed: 500 parts in 5230s (quantity_reached)
+    Changeover: planned=300s actual=287s (delta=-13s)
+--- Segment 2/3: Product B Afternoon ---
+    Duration: 7200s
+    Completed: 412 parts in 7200s (duration_reached)
+```
+
+### 11.6 Recipe OPC UA Variables
+
+Under `OperationsState/Recipe/`:
+
+| Variable | Type | Description |
+|----------|------|-------------|
+| RecipeName | String | Active recipe name |
+| SegmentName | String | Current segment name |
+| SegmentIndex | Int32 | Current segment (1-based) |
+| TotalSegments | Int32 | Total segments in recipe |
+| SegmentTimeRemaining | Double | Countdown for duration-based segments |
+| SegmentQuantityTarget | Int32 | Target parts (0 if time-based) |
+| SegmentQuantityProduced | Int32 | Parts in current segment |
+| SegmentStopMode | String | "quantity" or "duration" |
+| ChangeoverState | Boolean | True during changeover |
+| LastChangeoverPlanned | Double | Last changeover planned seconds |
+| LastChangeoverActual | Double | Last changeover actual seconds |
+
+### 11.7 Recipe Events in Historian
+
+New event types logged to CSV/InfluxDB/Neo4j:
+- `SEGMENT_START` -- Logged when a segment begins
+- `SEGMENT_END` -- Logged with parts produced, OEE, and stop reason
+- `CHANGEOVER` -- Logged with planned, actual, and delta times
+- `RECIPE_COMPLETE` -- Logged with total parts and segment summary
+
+### 11.8 Available Example Recipes
+
+| Recipe | Segments | Description |
+|--------|----------|-------------|
+| `monday_schedule` | 3 | Product A -> changeover -> Product B -> changeover -> Product A |
+| `single_product` | 1 | Simple single-segment batch |
+| `quick_test` | 2 | Short recipe for CI testing |
+
+### 11.9 Web UI Recipe Support
+
+The Flask web UI supports recipes:
+- **`/api/recipes`** -- List available recipes
+- **`/api/recipe/<name>`** -- GET/PUT recipe configuration
+- **`/api/recipe`** (POST) -- Create new recipe
+- **`/api/start-recipe`** -- Start simulation in recipe mode
+
+---
+
+## 12. Troubleshooting
 
 ### Common Issues
 
@@ -2078,7 +2224,7 @@ Or the process is killed by the OS after running for thousands of simulation ste
 
 ---
 
-## 12. Appendix
+## 13. Appendix
 
 ### A. Keyboard Shortcuts (UA Expert)
 
@@ -2258,5 +2404,5 @@ For updates and contributions:
 
 ---
 
-*Document Version: 2.3*
-*Last Updated: 2026-02-26*
+*Document Version: 2.4*
+*Last Updated: 2026-02-28*

@@ -101,6 +101,7 @@ app.json.sort_keys = False
 # ---------------------------------------------------------------------------
 sim_process = None
 sim_scenario = None
+sim_recipe = None
 sim_start_time = None
 sim_run_id = None
 sim_log = deque(maxlen=200)  # Ring buffer for stdout capture
@@ -118,6 +119,11 @@ CONFIG_PATH = Path(os.environ.get(
 ORIGINAL_CONFIG_PATH = Path(os.environ.get(
     "SIMANTHA_ORIGINAL_CONFIG_PATH",
     str(_PROJECT_ROOT / "config" / "line_models.yaml")
+))
+
+RECIPES_DIR = Path(os.environ.get(
+    "SIMANTHA_RECIPES_DIR",
+    str(_PROJECT_ROOT / "config" / "recipes")
 ))
 
 OPCUA_SERVER_SCRIPT = os.environ.get(
@@ -189,11 +195,35 @@ def list_scenarios():
 
 
 # ---------------------------------------------------------------------------
+# Recipe listing
+# ---------------------------------------------------------------------------
+def list_recipes():
+    """List recipe YAML files from config/recipes/ directory.
+
+    Returns a list of recipe names (without .yaml extension).
+    """
+    if not RECIPES_DIR.exists():
+        return []
+    return sorted(
+        f.stem for f in RECIPES_DIR.glob("*.yaml")
+        if f.is_file()
+    )
+
+
+def load_recipe(name):
+    """Load a single recipe YAML file and return parsed content."""
+    recipe_path = RECIPES_DIR / f"{name}.yaml"
+    if not recipe_path.exists():
+        return None
+    with open(recipe_path, "r") as f:
+        return _ryaml.load(f)
+
+
+# ---------------------------------------------------------------------------
 # Subprocess management
 # ---------------------------------------------------------------------------
 def _capture_logs():
     """Background thread: read subprocess stdout into ring buffer."""
-    global sim_process
     proc = sim_process
     if proc is None:
         return
@@ -229,7 +259,8 @@ def _regenerate_telegraf_config(scenario_name, run_id=""):
 
 def start_simulation(scenario, seed=None):
     """Spawn opcua_server.py as a subprocess."""
-    global sim_process, sim_scenario, sim_start_time, sim_run_id, _opcua_client
+    global sim_process, sim_scenario, sim_recipe
+    global sim_start_time, sim_run_id
 
     with sim_lock:
         stop_simulation()
@@ -258,6 +289,54 @@ def start_simulation(scenario, seed=None):
             env=env,
         )
         sim_scenario = scenario
+        sim_recipe = None
+        sim_start_time = time.time()
+
+        # Disconnect OPC UA client (will reconnect lazily)
+        _disconnect_opcua()
+
+        # Background log capture thread
+        t = threading.Thread(target=_capture_logs, daemon=True)
+        t.start()
+
+
+def start_simulation_recipe(recipe_name, seed=None):
+    """Spawn opcua_server.py in recipe mode as a subprocess."""
+    global sim_process, sim_scenario, sim_recipe
+    global sim_start_time, sim_run_id
+
+    with sim_lock:
+        stop_simulation()
+
+        # Generate RunID for this run
+        run_id = f"{recipe_name}_{dt.now().strftime('%Y%m%d_%H%M%S')}"
+        sim_run_id = run_id
+
+        # Load recipe to get base_scenario for Telegraf config
+        recipe_data = load_recipe(recipe_name)
+        if recipe_data and isinstance(recipe_data, dict):
+            base_scenario = recipe_data.get("base_scenario", "balanced_line")
+            _regenerate_telegraf_config(base_scenario, run_id=run_id)
+
+        cmd = ["python", OPCUA_SERVER_SCRIPT, "--recipe", recipe_name]
+        if seed is not None:
+            cmd += ["--seed", str(seed)]
+
+        env = os.environ.copy()
+        env["SIMANTHA_CONFIG_PATH"] = str(CONFIG_PATH)
+        env["SIMANTHA_RUN_ID"] = run_id
+
+        sim_log.clear()
+        sim_process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            env=env,
+        )
+        sim_scenario = None
+        sim_recipe = recipe_name
         sim_start_time = time.time()
 
         # Disconnect OPC UA client (will reconnect lazily)
@@ -270,7 +349,8 @@ def start_simulation(scenario, seed=None):
 
 def stop_simulation():
     """Gracefully stop the simulation subprocess."""
-    global sim_process, sim_scenario, sim_start_time, sim_run_id, _opcua_client
+    global sim_process, sim_scenario, sim_recipe
+    global sim_start_time, sim_run_id
 
     _disconnect_opcua()
 
@@ -286,6 +366,7 @@ def stop_simulation():
             sim_process.wait(timeout=5)
     sim_process = None
     sim_scenario = None
+    sim_recipe = None
     sim_start_time = None
     sim_run_id = None
 
@@ -425,6 +506,31 @@ def _read_opcua_values():
         except Exception:
             pass
 
+        # Recipe state (optional) — under OperationsState/Recipe
+        recipe_info = {}
+        try:
+            recipe_node = ops_state.get_child(["2:Recipe"])
+            rname = recipe_node.get_child(["2:RecipeName"]).get_value()
+            # Only include recipe info if a recipe is actually active
+            if rname:
+                recipe_info["recipe_name"] = rname
+                recipe_info["segment_name"] = recipe_node.get_child(
+                    ["2:SegmentName"]).get_value()
+                recipe_info["segment_index"] = recipe_node.get_child(
+                    ["2:SegmentIndex"]).get_value()
+                recipe_info["total_segments"] = recipe_node.get_child(
+                    ["2:TotalSegments"]).get_value()
+                recipe_info["changeover_state"] = recipe_node.get_child(
+                    ["2:ChangeoverState"]).get_value()
+                recipe_info["segment_time_remaining"] = recipe_node.get_child(
+                    ["2:SegmentTimeRemaining"]).get_value()
+                recipe_info["segment_quantity_target"] = recipe_node.get_child(
+                    ["2:SegmentQuantityTarget"]).get_value()
+                recipe_info["segment_quantity_produced"] = recipe_node.get_child(
+                    ["2:SegmentQuantityProduced"]).get_value()
+        except Exception:
+            pass
+
         result = {
             "sim_time": sim_time,
             "throughput": throughput,
@@ -435,6 +541,8 @@ def _read_opcua_values():
             "line_kpis": line_kpis,
             "shift": shift_info,
         }
+        if recipe_info:
+            result["recipe"] = recipe_info
         if machine_errors:
             result["machine_errors"] = machine_errors
         return result
@@ -472,6 +580,7 @@ def api_status():
     result = {
         "running": running,
         "scenario": sim_scenario,
+        "recipe": sim_recipe,
         "run_id": sim_run_id,
         "uptime_seconds": uptime,
         "pid": sim_process.pid if sim_process else None,
@@ -655,6 +764,120 @@ def api_scenario_yaml(name):
     buf = StringIO()
     _ryaml.dump({name: all_configs[name]}, buf)
     return jsonify({"yaml": buf.getvalue()})
+
+
+# ---------------------------------------------------------------------------
+# Recipe API routes
+# ---------------------------------------------------------------------------
+@app.route("/api/recipes")
+def api_recipes():
+    """List available recipe names from config/recipes/."""
+    return jsonify(list_recipes())
+
+
+@app.route("/api/recipe/<name>")
+def api_get_recipe(name):
+    """Return full config for a single recipe as JSON."""
+    data = load_recipe(name)
+    if data is None:
+        return jsonify({"error": f"Recipe '{name}' not found"}), 404
+    return jsonify(data)
+
+
+@app.route("/api/recipe", methods=["POST"])
+def api_create_recipe():
+    """Create a new recipe YAML file.
+
+    Accepts JSON body with 'name' (string) and 'content' (YAML string).
+    """
+    data = request.get_json(force=True)
+    name = data.get("name")
+    content = data.get("content")
+
+    if not name:
+        return jsonify({"error": "Missing 'name' field"}), 400
+    if not content:
+        return jsonify({"error": "Missing 'content' field"}), 400
+
+    # Sanitize name: only allow alphanumeric, underscore, hyphen
+    if not re.match(r'^[a-zA-Z0-9_-]+$', name):
+        return jsonify({"error": "Invalid recipe name. "
+                        "Use only letters, numbers, underscores, hyphens."}), 400
+
+    # Ensure recipes directory exists
+    RECIPES_DIR.mkdir(parents=True, exist_ok=True)
+
+    recipe_path = RECIPES_DIR / f"{name}.yaml"
+    if recipe_path.exists():
+        return jsonify({"error": f"Recipe '{name}' already exists"}), 409
+
+    # Validate that content is valid YAML
+    try:
+        _ryaml.load(StringIO(content))
+    except Exception as e:
+        return jsonify({"error": f"Invalid YAML: {e}"}), 400
+
+    with open(recipe_path, "w") as f:
+        f.write(content)
+
+    return jsonify({"status": "created", "recipe": name}), 201
+
+
+@app.route("/api/recipe/<name>", methods=["PUT"])
+def api_update_recipe(name):
+    """Update an existing recipe YAML file.
+
+    Accepts JSON body with 'content' (YAML string).
+    """
+    recipe_path = RECIPES_DIR / f"{name}.yaml"
+    if not recipe_path.exists():
+        return jsonify({"error": f"Recipe '{name}' not found"}), 404
+
+    data = request.get_json(force=True)
+    content = data.get("content")
+
+    if not content:
+        return jsonify({"error": "Missing 'content' field"}), 400
+
+    # Validate that content is valid YAML
+    try:
+        _ryaml.load(StringIO(content))
+    except Exception as e:
+        return jsonify({"error": f"Invalid YAML: {e}"}), 400
+
+    with open(recipe_path, "w") as f:
+        f.write(content)
+
+    return jsonify({"status": "ok", "recipe": name})
+
+
+@app.route("/api/start-recipe", methods=["POST"])
+def api_start_recipe():
+    """Start simulation with a recipe.
+
+    Accepts JSON body with 'recipe' (name) and optional 'seed' (integer).
+    Spawns opcua_server.py with --recipe flag.
+    """
+    data = request.get_json(force=True) if request.data else {}
+    recipe_name = data.get("recipe")
+    seed = data.get("seed")
+
+    if not recipe_name:
+        return jsonify({"error": "Missing 'recipe' field"}), 400
+
+    # Validate recipe exists
+    recipe_path = RECIPES_DIR / f"{recipe_name}.yaml"
+    if not recipe_path.exists():
+        return jsonify({"error": f"Unknown recipe: {recipe_name}"}), 400
+
+    if seed is not None:
+        try:
+            seed = int(seed)
+        except (ValueError, TypeError):
+            return jsonify({"error": "seed must be an integer"}), 400
+
+    start_simulation_recipe(recipe_name, seed)
+    return jsonify({"status": "started", "recipe": recipe_name, "seed": seed})
 
 
 # ---------------------------------------------------------------------------

@@ -1885,10 +1885,42 @@ def build_opcua_server(config: dict):
         shift_vars = create_shift_management_node(support, idx,
                                                   node_prefix=f"{sf_p}.ShiftManagement")
 
+    # --- Recipe tracking (under OperationsState) ---
+    rcp_p = f"{os_p}.Recipe"
+    recipe_node = ops_state.add_object(_nid(rcp_p, idx), _qn("Recipe", idx))
+    var_recipe_name = recipe_node.add_variable(_nid(f"{rcp_p}.RecipeName", idx), _qn("RecipeName", idx), "")
+    var_recipe_desc = recipe_node.add_variable(_nid(f"{rcp_p}.RecipeDescription", idx), _qn("RecipeDescription", idx), "")
+    var_seg_name = recipe_node.add_variable(_nid(f"{rcp_p}.SegmentName", idx), _qn("SegmentName", idx), "")
+    var_seg_index = recipe_node.add_variable(_nid(f"{rcp_p}.SegmentIndex", idx), _qn("SegmentIndex", idx), 0)
+    var_total_segments = recipe_node.add_variable(_nid(f"{rcp_p}.TotalSegments", idx), _qn("TotalSegments", idx), 0)
+    var_seg_time_remaining = recipe_node.add_variable(_nid(f"{rcp_p}.SegmentTimeRemaining", idx), _qn("SegmentTimeRemaining", idx), 0.0)
+    var_seg_qty_target = recipe_node.add_variable(_nid(f"{rcp_p}.SegmentQuantityTarget", idx), _qn("SegmentQuantityTarget", idx), 0)
+    var_seg_qty_produced = recipe_node.add_variable(_nid(f"{rcp_p}.SegmentQuantityProduced", idx), _qn("SegmentQuantityProduced", idx), 0)
+    var_seg_stop_mode = recipe_node.add_variable(_nid(f"{rcp_p}.SegmentStopMode", idx), _qn("SegmentStopMode", idx), "")
+    var_co_state = recipe_node.add_variable(_nid(f"{rcp_p}.ChangeoverState", idx), _qn("ChangeoverState", idx), False)
+    var_co_planned = recipe_node.add_variable(_nid(f"{rcp_p}.LastChangeoverPlanned", idx), _qn("LastChangeoverPlanned", idx), 0.0)
+    var_co_actual = recipe_node.add_variable(_nid(f"{rcp_p}.LastChangeoverActual", idx), _qn("LastChangeoverActual", idx), 0.0)
+
     # Writable controls
     writable_vars = [var_pause_line, var_interarrival]
     for v in writable_vars:
         v.set_writable()
+
+    # Recipe vars sub-dict
+    recipe_vars = {
+        "recipe_name": var_recipe_name,
+        "recipe_description": var_recipe_desc,
+        "segment_name": var_seg_name,
+        "segment_index": var_seg_index,
+        "total_segments": var_total_segments,
+        "segment_time_remaining": var_seg_time_remaining,
+        "segment_quantity_target": var_seg_qty_target,
+        "segment_quantity_produced": var_seg_qty_produced,
+        "segment_stop_mode": var_seg_stop_mode,
+        "changeover_state": var_co_state,
+        "last_changeover_planned": var_co_planned,
+        "last_changeover_actual": var_co_actual,
+    }
 
     # Return structured dictionary (internal keys unchanged for main loop compatibility)
     opcua_vars = {
@@ -1924,9 +1956,254 @@ def build_opcua_server(config: dict):
             "total_scrap": var_total_scrap,
             "scrap_rate": var_scrap_rate,
         },
+        "recipe": recipe_vars,
     }
 
     return server, opcua_vars, idx
+
+
+# ========== SEGMENT RUNNER ==========
+
+
+def run_segment(
+    system, source, sink, machines, buffers, maintainer, scrap_sinks,
+    server, opcua_vars, config, sim_seed,
+    max_sim_time=float('inf'),
+    target_quantity=None,
+    segment_name="",
+    extra_base=None,
+    trace=False,
+    shift_manager=None,
+    historian=None,
+    neo4j_hist=None,
+    recipe_vars=None,
+):
+    """Run simulation until time limit OR quantity target is reached.
+
+    This is the extracted core simulation loop, usable both for single-scenario
+    mode (called from main with max_sim_time=inf) and for recipe segments.
+
+    Args:
+        system: Simantha System object
+        source, sink: Source and Sink objects
+        machines: dict of machine_name -> machine_obj
+        buffers: dict of buffer_name -> buffer_obj
+        maintainer: Simantha Maintainer (or None)
+        scrap_sinks: dict of scrap_name -> Sink
+        server: OPC UA Server
+        opcua_vars: OPC UA variable dict
+        config: Effective scenario config (with overrides applied)
+        sim_seed: Random seed for reproducibility
+        max_sim_time: Stop after this many sim-seconds (float('inf') for unlimited)
+        target_quantity: Stop after this many parts produced (None for time-based)
+        segment_name: For logging / OPC UA display
+        extra_base: dict merged into historian events (recipe/segment context)
+        trace: Enable Simantha DES event trace
+        shift_manager: ShiftManager instance (shared across segments)
+        historian: EventHistorian instance (shared across segments)
+        neo4j_hist: Neo4jHistorian instance (shared across segments)
+        recipe_vars: OPC UA recipe variables dict (or None for single-scenario)
+
+    Returns:
+        tuple: (final_sim_time, parts_produced, stop_reason, oee)
+            stop_reason: "quantity_reached", "duration_reached",
+                         "max_duration_reached", or "interrupted"
+            oee: line-level OEE at end of segment
+    """
+    import numpy as np
+
+    sim_time = 0.0
+    sim_step = 1.0
+    real_step = 1.0
+    warm_up_time = int(config.get("warm_up_time", 0))
+
+    prev_sink_level = 0
+    total_parts_produced = 0
+
+    # Initialize per-machine metrics
+    machine_metrics = {}
+    spc_monitors = {}
+
+    for machine_name in machines.keys():
+        machine_cfg = next(m for m in config["machines"] if m["name"] == machine_name)
+        if "target_ppm" in machine_cfg:
+            target_ppm = machine_cfg["target_ppm"]
+            cycle_time = max(1, int(60.0 / target_ppm))
+        else:
+            cycle_time = machine_cfg.get("cycle_time", 1.0)
+            target_ppm = 60.0 / cycle_time
+
+        base_defect_rate = machine_cfg.get("defect_rate", 0.0)
+        health_multiplier = machine_cfg.get("health_multiplier", 3.0)
+
+        machine_metrics[machine_name] = {
+            "partcount": 0,
+            "blocked_time": 0.0,
+            "starved_time": 0.0,
+            "down_time": 0.0,
+            "processing_time": 0.0,
+            "idle_time": 0.0,
+            "prev_state": "IDLE",
+            "cycle_time": cycle_time,
+            "target_ppm": target_ppm,
+            "good_parts": 0,
+            "defective_parts": 0,
+            "base_defect_rate": base_defect_rate,
+            "health_multiplier": health_multiplier,
+            "prev_health_state": 0,
+            "prev_maint_active": False,
+            "prev_defect_rate": 0.0,
+            "alarm_machine_failed_active": False,
+            "alarm_maintenance_active": False,
+            "alarm_quality_alert_active": False,
+            "oee_cached": None,
+        }
+
+        if machine_cfg.get("enable_spc", False):
+            from spc_analytics import ProcessMonitor, SPCConfiguration
+            spc_config_dict = machine_cfg.get("spc", {})
+            spc_config = SPCConfiguration(
+                subgroup_size=spc_config_dict.get("subgroup_size", 5),
+                num_subgroups=spc_config_dict.get("num_subgroups", 25),
+                usl=spc_config_dict.get("usl", None),
+                lsl=spc_config_dict.get("lsl", None),
+                target=spc_config_dict.get("target", None),
+                enable_western_electric=spc_config_dict.get("enable_western_electric", True),
+                characteristic=spc_config_dict.get("characteristic", "cycle_time")
+            )
+            spc_monitors[machine_name] = ProcessMonitor(spc_config)
+            machine_metrics[machine_name]["spc_measurement_noise"] = spc_config_dict.get("measurement_noise", 0.02)
+
+    # Per-machine OEE shift snapshots
+    shift_oee_snapshots = {}
+    shift_start_time = 0.0
+    for machine_name in machines:
+        shift_oee_snapshots[machine_name] = {
+            "down_time_accum": 0.0,
+            "parts_made": 0,
+            "good_count": 0,
+            "scrap_count": 0,
+            "defective_count": 0,
+            "metric_good": 0,
+            "metric_defective": 0,
+        }
+
+    historian_state = {}
+    production_summary_counter = 0.0
+    production_summary_interval = config.get("historian", {}).get(
+        "events", {}
+    ).get("production_summary_interval", 60)
+
+    stop_reason = "interrupted"
+    line_oee = 0.0
+
+    while True:
+        # Check stop conditions
+        if sim_time >= max_sim_time:
+            if target_quantity is not None:
+                stop_reason = "max_duration_reached"
+            else:
+                stop_reason = "duration_reached"
+            break
+        if target_quantity is not None and total_parts_produced >= target_quantity:
+            stop_reason = "quantity_reached"
+            break
+
+        # Read controls from OPC UA
+        pause_line, interarrival = read_opcua_controls(opcua_vars)
+        source.interarrival_time = interarrival if interarrival > 0 else None
+
+        # Step simulation
+        if not pause_line:
+            sim_time += sim_step
+            random.seed(sim_seed)
+            np.random.seed(sim_seed)
+            system.simulate(warm_up_time=warm_up_time, simulation_time=sim_time,
+                            verbose=False, collect_data=False, trace=trace)
+
+        # Part counter
+        delta_parts, total_parts_produced, prev_sink_level = update_part_counter(
+            sink.level, prev_sink_level)
+
+        # Shift rotation
+        shift_rotated = check_shift_rotation(shift_manager, sim_time, pause_line)
+        if shift_rotated:
+            shift_start_time = sim_time
+            for mname, mobj in machines.items():
+                shift_oee_snapshots[mname] = {
+                    "down_time_accum": machine_metrics[mname]["down_time"],
+                    "parts_made": mobj.parts_made,
+                    "good_count": getattr(mobj, '_good_count', 0),
+                    "scrap_count": getattr(mobj, '_scrap_count', 0),
+                    "defective_count": getattr(mobj, '_defective_count', 0),
+                }
+                shift_oee_snapshots[mname]["metric_good"] = machine_metrics[mname]["good_parts"]
+                shift_oee_snapshots[mname]["metric_defective"] = machine_metrics[mname]["defective_parts"]
+            for mname in machines:
+                machine_metrics[mname]["oee_cached"] = None
+
+        # System metrics
+        total_wip, maint_active, maint_queue_length, total_repairs = \
+            collect_system_metrics(buffers, maintainer, machines)
+
+        # Per-machine processing
+        machine_alarms_map = {}
+        for machine_name, machine_obj in machines.items():
+            alarms = process_machine_step(
+                machine_name, machine_obj, machine_metrics[machine_name],
+                config["machines"], total_parts_produced, pause_line, sim_step,
+                maintainer, shift_manager, spc_monitors, opcua_vars, sink,
+                sim_time,
+                shift_oee_snapshot=shift_oee_snapshots.get(machine_name),
+                shift_start_time=shift_start_time)
+            if alarms:
+                machine_alarms_map[machine_name] = alarms
+
+        # Buffer levels and alarms
+        buffer_alarms_map = update_buffers(buffers, opcua_vars)
+
+        # Scrap tracking
+        update_scrap_tracking(scrap_sinks, total_parts_produced, opcua_vars)
+
+        # Line-level OEE
+        line_avail, line_perf, line_qual, line_oee = \
+            calculate_line_level_oee(machines, machine_metrics)
+
+        line_good = sum(m.get("good_parts", 0) for m in machine_metrics.values())
+        line_defective = sum(m.get("defective_parts", 0) for m in machine_metrics.values())
+
+        # Write system KPIs to OPC UA
+        write_system_opcua_vars(opcua_vars, sim_time, total_parts_produced, total_wip,
+                                line_avail, line_perf, line_qual, line_oee,
+                                maint_active, maint_queue_length, total_repairs,
+                                pause_line=pause_line,
+                                line_good_parts=line_good,
+                                line_defective_parts=line_defective)
+
+        # Shift OPC UA updates
+        update_shift_opcua_vars(shift_manager, opcua_vars, sim_time, delta_parts)
+
+        # Update recipe OPC UA vars
+        if recipe_vars:
+            recipe_vars["segment_quantity_produced"].set_value(total_parts_produced)
+            if target_quantity is None:
+                recipe_vars["segment_time_remaining"].set_value(
+                    max(0.0, max_sim_time - sim_time)
+                )
+
+        # Historian events
+        production_summary_counter = record_historian_events(
+            historian, neo4j_hist, sim_time, machines, machine_metrics,
+            buffers, machine_alarms_map, buffer_alarms_map, shift_manager,
+            shift_rotated, spc_monitors, historian_state, config,
+            total_parts_produced, total_wip, line_oee, delta_parts,
+            production_summary_counter, production_summary_interval, sim_step,
+            line_availability=line_avail, line_performance=line_perf,
+            line_quality=line_qual)
+
+        time.sleep(real_step)
+
+    return sim_time, total_parts_produced, stop_reason, line_oee
 
 
 def main(argv=None):
@@ -1935,13 +2212,20 @@ def main(argv=None):
 
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description="Simantha OPC UA Server")
-    parser.add_argument("--scenario", default="balanced_line",
-                       help="Scenario name from line_models.yaml (default: balanced_line)")
+    mode_group = parser.add_mutually_exclusive_group()
+    mode_group.add_argument("--scenario", default=None,
+                            help="Scenario name from line_models.yaml (default: balanced_line)")
+    mode_group.add_argument("--recipe", default=None,
+                            help="Recipe YAML name from config/recipes/ (e.g. monday_schedule)")
     parser.add_argument("--seed", type=int, default=None,
                        help="Random seed for reproducible simulation")
     parser.add_argument("--trace", action="store_true",
                        help="Enable Simantha DES event trace (outputs pickle file)")
     args = parser.parse_args(argv)
+
+    # Default to balanced_line if neither --scenario nor --recipe given
+    if args.scenario is None and args.recipe is None:
+        args.scenario = "balanced_line"
 
     # Set random seed (seeds both Python random and numpy for scipy)
     # Auto-generate if not provided; re-used before each simulate() for monotonic results
@@ -1954,6 +2238,25 @@ def main(argv=None):
     np.random.seed(sim_seed)
     print(f"Using random seed: {sim_seed}")
 
+    # ---- Recipe mode ----
+    if args.recipe:
+        from recipe_runner import (
+            load_recipe_config, parse_recipe, validate_recipe, run_recipe,
+        )
+        raw = load_recipe_config(args.recipe)
+        recipe = parse_recipe(raw)
+        validate_recipe(recipe)
+
+        run_id = os.environ.get(
+            "SIMANTHA_RUN_ID",
+            f"{args.recipe}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        )
+        print(f"RunID: {run_id}")
+
+        run_recipe(recipe, sim_seed, args, run_id)
+        return
+
+    # ---- Single-scenario mode (default) ----
     # Generate RunID (env var override for web UI coordination)
     run_id = os.environ.get(
         "SIMANTHA_RUN_ID",
@@ -1972,93 +2275,6 @@ def main(argv=None):
     server, opcua_vars, idx = build_opcua_server(config)
     opcua_vars["system"]["run_id"].set_value(run_id)
 
-    sim_time = 0.0
-    sim_step = 1.0
-    real_step = 1.0
-    warm_up_time = int(config.get("warm_up_time", 0))
-
-    # Part counter: sink.level is authoritative after each simulate() call
-    prev_sink_level = 0
-
-    # Initialize per-machine metrics dictionaries
-    machine_metrics = {}
-
-    # SPC monitors for machines with enable_spc=True
-    spc_monitors = {}
-
-    for machine_name in machines.keys():
-        # Find corresponding config to get cycle_time and target_ppm
-        machine_cfg = next(m for m in config["machines"] if m["name"] == machine_name)
-        if "target_ppm" in machine_cfg:
-            target_ppm = machine_cfg["target_ppm"]
-            cycle_time = max(1, int(60.0 / target_ppm))
-        else:
-            cycle_time = machine_cfg.get("cycle_time", 1.0)
-            target_ppm = 60.0 / cycle_time  # Derive from cycle_time
-
-        # Quality parameters
-        base_defect_rate = machine_cfg.get("defect_rate", 0.0)
-        health_multiplier = machine_cfg.get("health_multiplier", 3.0)
-
-        machine_metrics[machine_name] = {
-            "partcount": 0,
-            "blocked_time": 0.0,
-            "starved_time": 0.0,
-            "down_time": 0.0,
-            "processing_time": 0.0,
-            "idle_time": 0.0,
-            "prev_state": "IDLE",
-            "cycle_time": cycle_time,
-            "target_ppm": target_ppm,
-
-            # Quality tracking
-            "good_parts": 0,
-            "defective_parts": 0,
-            "base_defect_rate": base_defect_rate,
-            "health_multiplier": health_multiplier,
-
-            # Alarm state tracking
-            "prev_health_state": 0,
-            "prev_maint_active": False,
-            "prev_defect_rate": 0.0,
-            "alarm_machine_failed_active": False,
-            "alarm_maintenance_active": False,
-            "alarm_quality_alert_active": False,
-
-            # OEE tracking
-            "oee_cached": None,
-        }
-
-        # Create SPC monitor if enabled
-        if machine_cfg.get("enable_spc", False):
-            spc_config_dict = machine_cfg.get("spc", {})
-            spc_config = SPCConfiguration(
-                subgroup_size=spc_config_dict.get("subgroup_size", 5),
-                num_subgroups=spc_config_dict.get("num_subgroups", 25),
-                usl=spc_config_dict.get("usl", None),
-                lsl=spc_config_dict.get("lsl", None),
-                target=spc_config_dict.get("target", None),
-                enable_western_electric=spc_config_dict.get("enable_western_electric", True),
-                characteristic=spc_config_dict.get("characteristic", "cycle_time")
-            )
-            spc_monitors[machine_name] = ProcessMonitor(spc_config)
-            machine_metrics[machine_name]["spc_measurement_noise"] = spc_config_dict.get("measurement_noise", 0.02)
-            print(f"  SPC enabled for {machine_name}: {spc_config.characteristic} (USL={spc_config.usl}, LSL={spc_config.lsl})")
-
-    # Per-machine snapshots at shift start (for shift-relative OEE)
-    shift_oee_snapshots = {}
-    shift_start_time = 0.0
-    for machine_name in machines:
-        shift_oee_snapshots[machine_name] = {
-            "down_time_accum": 0.0,
-            "parts_made": 0,
-            "good_count": 0,
-            "scrap_count": 0,
-            "defective_count": 0,
-            "metric_good": 0,
-            "metric_defective": 0,
-        }
-
     # Create shift manager if configured
     shift_manager = create_shift_manager_from_config(config, list(machines.keys()))
     if shift_manager:
@@ -2068,9 +2284,6 @@ def main(argv=None):
 
     # Create event historian if configured
     historian = create_historian_from_config(config, args.scenario, run_id=run_id)
-    historian_state = {}  # Separate edge-detection state for historian
-    production_summary_counter = 0.0
-    production_summary_interval = config.get("historian", {}).get("events", {}).get("production_summary_interval", 60)
     if historian:
         print(f"  Event historian enabled: {historian.describe()}")
 
@@ -2087,100 +2300,23 @@ def main(argv=None):
     print("Press Ctrl+C to stop.")
 
     try:
-        while True:
-            # Read controls from OPC UA
-            pause_line, interarrival = read_opcua_controls(opcua_vars)
-            # interarrival_time=0 means "use Simantha default" (unlimited supply, no flooding)
-            source.interarrival_time = interarrival if interarrival > 0 else None
-
-            # Step simulation (CRITICAL: increment sim_time BEFORE simulate)
-            # Re-seed RNGs so simulate(N) and simulate(N+1) share identical
-            # random state for [0,N], making sink.level monotonically increase.
-            if not pause_line:
-                sim_time += sim_step
-                random.seed(sim_seed)
-                np.random.seed(sim_seed)
-                system.simulate(warm_up_time=warm_up_time, simulation_time=sim_time,
-                                verbose=False, collect_data=False, trace=args.trace)
-
-            # Part counter (sink.level is authoritative after each simulate() call)
-            delta_parts, total_parts_produced, prev_sink_level = update_part_counter(
-                sink.level, prev_sink_level)
-
-            # Shift rotation check
-            shift_rotated = check_shift_rotation(shift_manager, sim_time, pause_line)
-
-            # Snapshot Simantha counters at shift boundary for shift-relative OEE
-            if shift_rotated:
-                shift_start_time = sim_time
-                for mname, mobj in machines.items():
-                    shift_oee_snapshots[mname] = {
-                        "down_time_accum": machine_metrics[mname]["down_time"],
-                        "parts_made": mobj.parts_made,
-                        "good_count": getattr(mobj, '_good_count', 0),
-                        "scrap_count": getattr(mobj, '_scrap_count', 0),
-                        "defective_count": getattr(mobj, '_defective_count', 0),
-                    }
-                    # Also snapshot non-QR accumulated metrics
-                    shift_oee_snapshots[mname]["metric_good"] = machine_metrics[mname]["good_parts"]
-                    shift_oee_snapshots[mname]["metric_defective"] = machine_metrics[mname]["defective_parts"]
-                # Force OEE recalculation on next step
-                for mname in machines:
-                    machine_metrics[mname]["oee_cached"] = None
-
-            # System-level metrics (WIP, maintenance)
-            total_wip, maint_active, maint_queue_length, total_repairs = \
-                collect_system_metrics(buffers, maintainer, machines)
-
-            # Per-machine: state detection, metrics, defects, alarms, OEE, SPC, OPC UA writes
-            machine_alarms_map = {}
-            for machine_name, machine_obj in machines.items():
-                alarms = process_machine_step(
-                    machine_name, machine_obj, machine_metrics[machine_name],
-                    config["machines"], total_parts_produced, pause_line, sim_step,
-                    maintainer, shift_manager, spc_monitors, opcua_vars, sink,
-                    sim_time,
-                    shift_oee_snapshot=shift_oee_snapshots.get(machine_name),
-                    shift_start_time=shift_start_time)
-                if alarms:
-                    machine_alarms_map[machine_name] = alarms
-
-            # Buffer levels and alarms
-            buffer_alarms_map = update_buffers(buffers, opcua_vars)
-
-            # Scrap tracking
-            update_scrap_tracking(scrap_sinks, total_parts_produced, opcua_vars)
-
-            # Line-level OEE (bottleneck model)
-            line_avail, line_perf, line_qual, line_oee = \
-                calculate_line_level_oee(machines, machine_metrics)
-
-            # Aggregate line-level good/defective parts from machine metrics
-            line_good = sum(m.get("good_parts", 0) for m in machine_metrics.values())
-            line_defective = sum(m.get("defective_parts", 0) for m in machine_metrics.values())
-
-            # Write system KPIs to OPC UA
-            write_system_opcua_vars(opcua_vars, sim_time, total_parts_produced, total_wip,
-                                    line_avail, line_perf, line_qual, line_oee,
-                                    maint_active, maint_queue_length, total_repairs,
-                                    pause_line=pause_line,
-                                    line_good_parts=line_good,
-                                    line_defective_parts=line_defective)
-
-            # Shift OPC UA updates
-            update_shift_opcua_vars(shift_manager, opcua_vars, sim_time, delta_parts)
-
-            # Historian events
-            production_summary_counter = record_historian_events(
-                historian, neo4j_hist, sim_time, machines, machine_metrics,
-                buffers, machine_alarms_map, buffer_alarms_map, shift_manager,
-                shift_rotated, spc_monitors, historian_state, config,
-                total_parts_produced, total_wip, line_oee, delta_parts,
-                production_summary_counter, production_summary_interval, sim_step,
-                line_availability=line_avail, line_performance=line_perf,
-                line_quality=line_qual)
-
-            time.sleep(real_step)
+        run_segment(
+            system=system,
+            source=source,
+            sink=sink,
+            machines=machines,
+            buffers=buffers,
+            maintainer=maintainer,
+            scrap_sinks=scrap_sinks,
+            server=server,
+            opcua_vars=opcua_vars,
+            config=config,
+            sim_seed=sim_seed,
+            trace=args.trace,
+            shift_manager=shift_manager,
+            historian=historian,
+            neo4j_hist=neo4j_hist,
+        )
 
     except KeyboardInterrupt:
         print("\n\nSimulation stopped by user")

@@ -2,7 +2,7 @@
 
 **Namespace URI:** `http://simantha.nist.gov/`
 **Namespace Index:** `ns=2`
-**Last Updated:** 2026-02-25
+**Last Updated:** 2026-02-28
 
 > **Authoritative reference:** See the [User Manual, Section 9](user_manual.md#9-opc-ua-address-space-reference) for full tables with descriptions.
 
@@ -27,9 +27,22 @@ Objects/
          │  │  ├─ SimTime                         (Double, READ)
          │  │  ├─ LineState                       (String, READ)
          │  │  ├─ LineMode                        (String, READ)
-         │  │  └─ Controls/
-         │  │     ├─ CmdPauseLine                 (Boolean, WRITE)
-         │  │     └─ SetInterarrivalTime          (Double, WRITE)
+         │  │  ├─ Controls/
+         │  │  │  ├─ CmdPauseLine                 (Boolean, WRITE)
+         │  │  │  └─ SetInterarrivalTime          (Double, WRITE)
+         │  │  └─ Recipe/                          (populated when --recipe is used)
+         │  │     ├─ RecipeName                    (String, READ)
+         │  │     ├─ RecipeDescription             (String, READ)
+         │  │     ├─ SegmentName                   (String, READ)
+         │  │     ├─ SegmentIndex                  (Int32, READ)   1-based
+         │  │     ├─ TotalSegments                 (Int32, READ)
+         │  │     ├─ SegmentTimeRemaining          (Double, READ)
+         │  │     ├─ SegmentQuantityTarget         (Int32, READ)   0 if time-based
+         │  │     ├─ SegmentQuantityProduced        (Int32, READ)
+         │  │     ├─ SegmentStopMode               (String, READ)  "quantity" or "duration"
+         │  │     ├─ ChangeoverState               (Boolean, READ) True during changeover
+         │  │     ├─ LastChangeoverPlanned          (Double, READ)
+         │  │     └─ LastChangeoverActual           (Double, READ)
          │  │
          │  ├─ OperationsPerformance/
          │  │  ├─ Throughput                      (Int32, READ)
@@ -226,6 +239,31 @@ With multi-state degradation, `failed_health = h_max` (the highest health state 
 
 ---
 
+## Recipe Node Structure
+
+The `Recipe/` node under `OperationsState/` tracks multi-segment recipe execution. All variables are always present in the address space but only populated when running with `--recipe`.
+
+```
+OperationsState/
+  └─ Recipe/
+     ├─ RecipeName                    (String)   Active recipe name ("" if none)
+     ├─ RecipeDescription             (String)   Recipe description
+     ├─ SegmentName                   (String)   Current segment name
+     ├─ SegmentIndex                  (Int32)    Current segment (1-based, 0 if inactive)
+     ├─ TotalSegments                 (Int32)    Total segments in recipe
+     ├─ SegmentTimeRemaining          (Double)   Countdown for duration-based segments
+     ├─ SegmentQuantityTarget         (Int32)    Target parts (0 if time-based)
+     ├─ SegmentQuantityProduced       (Int32)    Parts produced in current segment
+     ├─ SegmentStopMode               (String)   "quantity" or "duration"
+     ├─ ChangeoverState               (Boolean)  True during changeover period
+     ├─ LastChangeoverPlanned         (Double)   Last changeover planned duration (seconds)
+     └─ LastChangeoverActual          (Double)   Last changeover actual duration (seconds)
+```
+
+During a changeover between segments, `ChangeoverState = True` and `LineState = "CHANGEOVER"`. The `SegmentTimeRemaining` counts down during changeovers.
+
+---
+
 ## Browsing Nodes (Python Client)
 
 Navigate the ISA-95 hierarchy using browse paths:
@@ -264,6 +302,7 @@ These nodes only appear when enabled in the scenario config (`config/line_models
 | `QualityRouting/` | `quality_routing.enabled: true` |
 | `ShiftManagement/` | `shifts: schedule: [...]` |
 | `ScrapBinN/` | `scrap_sinks: [...]` |
+| `Recipe/` | `--recipe` CLI argument (always present, populated when active) |
 
 ---
 

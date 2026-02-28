@@ -482,18 +482,18 @@ class TestNodeCounts:
         """3 machines (basic only) + 2 buffers + system nodes."""
         conf = generate_telegraf_conf(balanced_line_config)
         count = _count_nodes(conf)
-        # System: 1 id (RunID) + 3 ops_state + 4 ops_perf + 6 OEE + 1 event + 3 maint = 18
+        # System: 1 id (RunID) + 3 ops_state + 12 recipe + 4 ops_perf + 6 OEE + 1 event + 3 maint = 30
         # Per machine (no optional): 1 state + 9 perf + 7 OEE + 4 alarms = 21
         # 3 machines: 63
         # 2 buffers: 4
-        expected = 18 + (21 * 3) + (2 * 2)
+        expected = 30 + (21 * 3) + (2 * 2)
         assert count == expected, f"Expected {expected} nodes, got {count}"
 
     def test_full_feature_2machine_node_count(self, full_feature_2machine_config):
         """2-machine full-feature line."""
         conf = generate_telegraf_conf(full_feature_2machine_config)
         count = _count_nodes(conf)
-        # System: 18 (1 id + 3 ops_state + 4 ops_perf + 6 OEE + 1 event + 3 maint)
+        # System: 30 (1 id + 3 ops_state + 12 recipe + 4 ops_perf + 6 OEE + 1 event + 3 maint)
         # Machine1 (all features, degradation=True):
         #   1+2 ops_state + 9 perf + 7 OEE + 4 alarms
         #   + 1+8 FM + 4 MS + 5 QR + 17 SPC = 58
@@ -503,20 +503,20 @@ class TestNodeCounts:
         # 1 buffer: 2
         # 2 scrap sinks: 2
         # Shifts: 27
-        expected = 18 + 58 + 58 + 2 + 2 + 27
+        expected = 30 + 58 + 58 + 2 + 2 + 27
         assert count == expected, f"Expected {expected} nodes, got {count}"
 
     def test_eight_machine_node_count(self, eight_machine_config):
         """8-machine full-feature line."""
         conf = generate_telegraf_conf(eight_machine_config)
         count = _count_nodes(conf)
-        # System: 18 (1 id + 3 ops_state + 4 ops_perf + 6 OEE + 1 event + 3 maint)
+        # System: 30 (1 id + 3 ops_state + 12 recipe + 4 ops_perf + 6 OEE + 1 event + 3 maint)
         # Per machine: 58
         # 8 machines: 464
         # 7 buffers: 14
         # 8 scrap sinks: 8
         # Shifts: 27
-        expected = 18 + (58 * 8) + (2 * 7) + 8 + 27
+        expected = 30 + (58 * 8) + (2 * 7) + 8 + 27
         assert count == expected, f"Expected {expected} nodes, got {count}"
 
 
@@ -687,15 +687,15 @@ class TestEdgeCases:
         }
         conf = generate_telegraf_conf(config)
         count = _count_nodes(conf)
-        # 18 system + 21 machine = 39
-        assert count == 39
+        # 30 system + 21 machine = 51
+        assert count == 51
 
     def test_empty_machines_list(self):
         config = {"machines": [], "buffers": []}
         conf = generate_telegraf_conf(config)
         count = _count_nodes(conf)
-        # Only system nodes (including RunID)
-        assert count == 18
+        # Only system nodes (including RunID + 12 recipe)
+        assert count == 30
 
     def test_quality_routing_disabled_explicitly(self):
         config = {

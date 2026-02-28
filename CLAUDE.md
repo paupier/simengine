@@ -17,6 +17,10 @@ python src/opcua_server.py
 python src/opcua_server.py --scenario full_feature_line --seed 42
 python src/opcua_server.py --scenario warm_up_line --trace  # with warm-up and event tracing
 
+# Run a recipe (multi-segment production schedule)
+python src/opcua_server.py --recipe monday_schedule --seed 42
+python src/opcua_server.py --recipe quick_test --seed 1
+
 # Run all tests (CI-equivalent, excludes slow integration tests)
 pytest tests/ -v --ignore=tests/test_advanced_scenarios.py --ignore=tests/test_opcua_integration.py
 
@@ -54,7 +58,9 @@ docker compose -f docker/docker-compose.yml up --build -d
 
 ### Main Loop Architecture
 
-The simulation loop in `main()` delegates to extracted functions for each concern:
+The core simulation loop is extracted into `run_segment()`, which is called by both single-scenario mode (`main()`) and recipe mode (`run_recipe()`). It accepts stop conditions (`max_sim_time`, `target_quantity`) and returns `(sim_time, parts, stop_reason, oee)`.
+
+The simulation loop delegates to extracted functions for each concern:
 - `read_opcua_controls()` — read pause/interarrival from OPC UA clients
 - `update_part_counter()` — monotonic sink tracking
 - `check_shift_rotation()` — shift boundary detection
@@ -96,6 +102,25 @@ Features are composed via mixins. Adding a new axis (e.g., EnergyMixin) requires
 | `neo4j_historian.py` | `Neo4jHistorian` (optional graph DB backend) |
 | `quality_machine.py` | `QualityRoutingMixin`, scrap/rework routing, `_redirect_to()` buffer bookkeeping |
 | `priority_maintainer.py` | `PriorityMaintainer` with FIFO, SPT, priority, and bottleneck-first scheduling |
+| `recipe_runner.py` | Multi-segment recipe orchestration, changeover sampling, override application |
+
+### Run Recipes
+
+Recipes define ordered production segments with changeovers, loaded from `config/recipes/*.yaml`. Each segment references the base scenario topology with optional machine-level overrides (cycle_time, defect_rate, target_ppm). Stop conditions: `quantity` (batch) or `duration` (time-box), with optional `max_duration` safety timeout.
+
+Changeover durations use `DistributionFactory` for stochastic sampling (seeded by `--seed + segment_index * 10000`). During changeover, `LineState = "CHANGEOVER"` on OPC UA.
+
+Key functions:
+- `load_recipe_config(name)` — loads YAML from `config/recipes/`
+- `parse_recipe(raw)` → `RecipeConfig` with `List[SegmentConfig]`
+- `validate_recipe(recipe)` — checks base_scenario, overrides, distributions
+- `apply_segment_overrides(base_config, overrides)` → deep copy with overrides applied
+- `sample_changeover(changeover, seed)` → actual duration (preserves main RNG state)
+- `run_recipe(recipe, seed, args, run_id)` — orchestrates segments via `run_segment()`
+
+New event types: `SEGMENT_START`, `SEGMENT_END`, `CHANGEOVER`, `RECIPE_COMPLETE`.
+
+Recipe OPC UA nodes under `OperationsState/Recipe/`: RecipeName, SegmentName, SegmentIndex, TotalSegments, SegmentTimeRemaining, SegmentQuantityTarget, SegmentQuantityProduced, SegmentStopMode, ChangeoverState, LastChangeoverPlanned, LastChangeoverActual.
 
 ### Flask Web UI (`docker/webui/`)
 
@@ -121,6 +146,10 @@ Routes:
 - `/api/reports/analyze`, `/api/reports/runs` — Report generation and run history
 - `/api/validation/run`, `/api/validation/influxdb/status` — Pipeline validation
 - `/api/historian/files`, `/api/historian/download` — CSV historian file access
+- `/api/recipes` — List recipe YAML files
+- `/api/recipe/<name>` — GET/PUT single recipe config
+- `/api/recipe` — POST to create new recipe
+- `/api/start-recipe` — Start simulation in recipe mode
 
 ### Test Infrastructure
 

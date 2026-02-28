@@ -122,6 +122,23 @@ def generate_telegraf_conf(config,
     lines.append(_node("LineMode", f"{ep}.OperationsState.LineMode"))
     lines.append("")
 
+    # --- Recipe (OperationsState/Recipe) ---
+    rcp = f"{ep}.OperationsState.Recipe"
+    lines.append("    # Recipe")
+    lines.append(_node("Recipe_Name", f"{rcp}.RecipeName"))
+    lines.append(_node("Recipe_Description", f"{rcp}.RecipeDescription"))
+    lines.append(_node("Recipe_Segment", f"{rcp}.SegmentName"))
+    lines.append(_node("Recipe_SegmentIndex", f"{rcp}.SegmentIndex"))
+    lines.append(_node("Recipe_TotalSegments", f"{rcp}.TotalSegments"))
+    lines.append(_node("Recipe_SegmentTimeRemaining", f"{rcp}.SegmentTimeRemaining"))
+    lines.append(_node("Recipe_SegmentQuantityTarget", f"{rcp}.SegmentQuantityTarget"))
+    lines.append(_node("Recipe_SegmentQuantityProduced", f"{rcp}.SegmentQuantityProduced"))
+    lines.append(_node("Recipe_SegmentStopMode", f"{rcp}.SegmentStopMode"))
+    lines.append(_node("Recipe_ChangeoverState", f"{rcp}.ChangeoverState"))
+    lines.append(_node("Recipe_LastChangeoverPlanned", f"{rcp}.LastChangeoverPlanned"))
+    lines.append(_node("Recipe_LastChangeoverActual", f"{rcp}.LastChangeoverActual"))
+    lines.append("")
+
     # --- OperationsPerformance ---
     lines.append("    # Operations Performance")
     lines.append(_node("Throughput", f"{ep}.OperationsPerformance.Throughput"))

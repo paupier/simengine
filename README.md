@@ -11,13 +11,13 @@ A real-time **digital twin** of a manufacturing production line using [Simantha]
 ## 📋 Project Status
 
 **Status:** Feature-complete manufacturing digital twin
-**Last Updated:** 2026-02-25
+**Last Updated:** 2026-02-28
 
 ### Key Capabilities
 
 | Area | Features |
 |------|----------|
-| **Simulation** | N-machine serial lines (2-10+), config-driven topologies, 20 built-in scenarios |
+| **Simulation** | N-machine serial lines (2-10+), config-driven topologies, 20 built-in scenarios, run recipes |
 | **OPC UA** | ISA-95/ISO 23247 aligned address space, bidirectional control (pause, arrival rate) |
 | **Reliability** | Multi-state health degradation, advanced failure modes (Weibull, exponential, lognormal), competing risks |
 | **Maintenance** | Corrective/preventive/predictive strategies, priority maintainer (FIFO, SPT, priority, bottleneck) |
@@ -39,6 +39,7 @@ This project creates a **realistic manufacturing digital twin** that:
 - **Tracks** shift-based production with automatic rotation and per-shift OEE
 - **Logs** events to CSV, InfluxDB, and Neo4j with Grafana visualization
 - **Responds** to external control inputs (pause/resume, arrival rate adjustment)
+- **Schedules** multi-segment production recipes with stochastic changeover analysis
 - **Demonstrates** buffer dynamics, bottlenecks, failure impacts, and SPC analytics
 
 ### Real-World Behavior Modeled
@@ -121,6 +122,17 @@ python src/opcua_server.py --scenario full_feature_8_machine_line --seed 42
 python src/opcua_server.py --scenario failure_line --trace
 ```
 
+**Run a recipe (multi-segment production schedule):**
+```bash
+# 3-segment recipe: Product A → changeover → Product B → changeover → Product A
+python src/opcua_server.py --recipe monday_schedule --seed 42
+
+# Quick recipe for testing (2 segments with 10s changeover)
+python src/opcua_server.py --recipe quick_test --seed 1
+```
+
+Recipes define ordered production segments with changeover periods, enabling planned-vs-actual changeover analysis and multi-product scheduling. See [Run Recipes](#-run-recipes) below.
+
 **Expected output:**
 ```
 [OK] Configuration validated: 2 machines, 1 buffers
@@ -195,7 +207,7 @@ Under the Equipment node:
 │         Simantha Simulation          │  Discrete-Event Simulation
 │  Source → M1 → B1 → M2 → ... → Sink│  N-machine serial topology
 │  Health degradation, failures, SPC   │  Quality routing, shifts
-│  Maintenance (priority scheduling)   │
+│  Maintenance, run recipes            │  Multi-segment changeovers
 └──────────────┬───────────────────────┘
                │ Events
                ▼
@@ -219,8 +231,9 @@ Objects/
       └─ {Site}/                            # e.g. LV426_Colony
           └─ {Area}/                        # e.g. AtmosphereProcessor01
               ├─ {Line}_Equipment/          # Equipment model (live process data)
-              │   ├─ Identification/        # Line name, description
+              │   ├─ Identification/        # Line name, description, RunID
               │   ├─ OperationsState/       # SimTime, LineState, controls
+              │   │   └─ Recipe/            # Recipe tracking (segment, changeover)
               │   ├─ OperationsPerformance/ # Throughput, WIP, scrap KPIs, line OEE
               │   ├─ Resources/
               │   │   ├─ Machine1/ ... MachineN/    # Per-machine nodes
@@ -309,6 +322,7 @@ pytest tests/test_quality_routing.py -v       # Scrap, rework, warm-up guard (37
 pytest tests/test_report_engine.py -v         # Report engine (36 tests)
 pytest tests/test_failure_modes.py -v         # Failure modes (29 tests)
 pytest tests/test_spc_analytics.py -v         # SPC (23 tests)
+pytest tests/test_recipe_runner.py -v          # Recipe runner (76 tests)
 pytest tests/test_neo4j_historian.py -v       # Neo4j historian (23 tests)
 pytest tests/test_opcua_integration.py -v     # OPC UA integration (long-running)
 ```
@@ -449,12 +463,17 @@ simantha-opcua/
 │   ├─ shift_manager.py           # Shift tracking & rotation
 │   ├─ event_historian.py         # CSV/InfluxDB event historian
 │   ├─ neo4j_historian.py         # Neo4j graph DB historian
+│   ├─ recipe_runner.py           # Multi-segment recipe orchestration & changeovers
 │   └─ simantha_baseline.py       # Standalone baseline scenarios (batch mode)
 │
 ├─ config/
-│   └─ line_models.yaml           # Scenario definitions (20 scenarios)
+│   ├─ line_models.yaml           # Scenario definitions (20 scenarios)
+│   └─ recipes/                   # Recipe YAML files (multi-segment schedules)
+│       ├─ monday_schedule.yaml   # 3-segment: Product A → B → A with changeovers
+│       ├─ single_product.yaml    # 1-segment batch
+│       └─ quick_test.yaml        # 2-segment short recipe for testing
 │
-├─ tests/                          # 431 tests (excluding integration)
+├─ tests/                          # 511 tests (excluding integration)
 │   ├─ factories.py               # Shared test factories (make_event, make_part, etc.)
 │   ├─ test_new_features.py       # Warm-up, priority maintainer, degradation, MTTF scaling (57 tests)
 │   ├─ test_config_validation.py  # Configuration validation (48 tests)
@@ -467,6 +486,7 @@ simantha-opcua/
 │   ├─ test_failure_modes.py      # Failure mode unit tests (29 tests)
 │   ├─ test_spc_analytics.py      # SPC analytics (23 tests)
 │   ├─ test_neo4j_historian.py    # Neo4j historian (23 tests)
+│   ├─ test_recipe_runner.py       # Recipe loading, validation, changeover, overrides (76 tests)
 │   ├─ test_distribution_validation.py  # Statistical distribution tests (12 tests)
 │   └─ ...                        # Integration, scenario, advanced isolation tests
 │
@@ -528,17 +548,99 @@ simantha-opcua/
 
 ---
 
+## 🍳 Run Recipes
+
+Recipes define multi-segment production schedules with stochastic changeovers, enabling planned-vs-actual changeover analysis and multi-product scheduling.
+
+### Recipe YAML Format
+
+Store recipes in `config/recipes/`. Each segment references the base scenario topology with optional machine-level overrides:
+
+```yaml
+name: "Monday Production Schedule"
+base_scenario: full_feature_line   # topology source
+
+segments:
+  - name: "Product A Morning"
+    quantity: 500                   # batch mode: stop after 500 parts
+    max_duration: 18000            # safety timeout (5h)
+    overrides:
+      machines:
+        - name: M1
+          cycle_time: 10
+          defect_rate: 0.02
+    changeover:
+      target: 300                  # planned changeover (seconds)
+      distribution: lognormal
+      mean: 300
+      std: 60
+
+  - name: "Product B Afternoon"
+    duration: 7200                 # time-boxed mode: stop after 2h
+
+  - name: "Product A Evening"
+    quantity: 300                   # no changeover on last segment
+```
+
+### Stop Conditions
+
+- **`quantity: N`** — Batch mode with optional `max_duration` safety timeout
+- **`duration: N`** — Time-boxed mode (sim-seconds)
+
+### Changeover Distributions
+
+Changeover durations use the same `DistributionFactory` as failure modes: `constant`, `exponential`, `normal`, `lognormal`, `weibull`, `uniform`. The `target` is the planned time; actual is sampled from the distribution. During changeover, `LineState = "CHANGEOVER"` on OPC UA.
+
+### Running
+
+```bash
+python src/opcua_server.py --recipe monday_schedule --seed 42
+```
+
+Console output shows per-segment progress and changeover analysis:
+```
+--- Segment 1/3: Product A Morning ---
+    Target: 500 parts (max 18000s)
+    Completed: 500 parts in 5230s (quantity_reached)
+    Changeover: planned=300s actual=287s (delta=-13s)
+--- Segment 2/3: Product B Afternoon ---
+    Duration: 7200s
+    Completed: 412 parts in 7200s (duration_reached)
+```
+
+### Available Example Recipes
+
+| Recipe | Segments | Description |
+|--------|----------|-------------|
+| `monday_schedule` | 3 | Product A → changeover → Product B → changeover → Product A |
+| `single_product` | 1 | Simple single-segment batch (200 parts) |
+| `quick_test` | 2 | Short recipe for CI testing |
+
+### Recipe OPC UA Variables
+
+Under `OperationsState/Recipe/`: RecipeName, SegmentName, SegmentIndex, TotalSegments, SegmentTimeRemaining, SegmentQuantityTarget, SegmentQuantityProduced, SegmentStopMode, ChangeoverState, LastChangeoverPlanned, LastChangeoverActual.
+
+### Recipe Historian Events
+
+New event types: `SEGMENT_START`, `SEGMENT_END`, `CHANGEOVER`, `RECIPE_COMPLETE` — all logged with recipe context in the `extra` JSON field.
+
+---
+
 ## 🗺️ Roadmap
 
-### Recent Changes (2026-02-25)
+### Recent Changes (2026-02-28)
 
-- **OEE every step** — A, P, Q now recalculate every simulation step (previously gated to every 600s)
-- **OEE uses local downtime** — Availability uses the main loop's `down_time` accumulator (excludes warm-up) instead of Simantha's `machine.downtime` (includes warm-up)
-- **Quality warm-up fix** — Quality routing counters (`_good_count`, `_scrap_count`, `_defective_count`) only increment after warm-up, matching `parts_made` behavior. Quality now correctly shows < 100% when defects are configured.
-- **MTTF scaling** — With multi-state degradation, per-step MTTF = configured MTTF / `failed_health`, so total expected failure time matches the configured MTTF
+- **Run Recipes** — Multi-segment production scheduling with stochastic changeovers (`--recipe` CLI arg)
+- **`run_segment()` extraction** — Core simulation loop extracted into reusable function for both single-scenario and recipe modes
+- **Recipe OPC UA nodes** — 12 new variables under `OperationsState/Recipe/` for segment tracking and changeover state
+- **Recipe historian events** — `SEGMENT_START`, `SEGMENT_END`, `CHANGEOVER`, `RECIPE_COMPLETE` event types
+- **Recipe Web UI** — `/api/recipes`, `/api/start-recipe` endpoints for recipe management
+- **Report engine** — `analyze_recipe_segments()` and `analyze_changeovers()` for post-run analysis
 
 ### Previous Additions
 
+- **OEE every step** — A, P, Q recalculate every simulation step using shift-relative deltas
+- **MTTF scaling** — Multi-state degradation: per-step MTTF = configured MTTF / `failed_health`
 - **Warm-up periods** — `warm_up_time` config parameter skips transient data collection
 - **Priority Maintainer** — `PriorityMaintainer` with FIFO, SPT, priority, and bottleneck-first scheduling
 - **Multi-state degradation** — `health_states` config with configurable h_max, p_degrade, and CBM thresholds

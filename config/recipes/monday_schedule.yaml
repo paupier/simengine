@@ -1,0 +1,35 @@
+name: "Monday Production Schedule"
+description: "Product A morning run, changeover to Product B, then back to A"
+base_scenario: full_feature_line
+
+segments:
+  - name: "Product A Morning"
+    quantity: 500
+    max_duration: 18000
+    overrides:
+      machines:
+        - name: M1
+          cycle_time: 10
+          defect_rate: 0.02
+    changeover:
+      target: 300
+      distribution: lognormal
+      mean: 300
+      std: 60
+
+  - name: "Product B Afternoon"
+    duration: 7200
+    overrides:
+      machines:
+        - name: M1
+          cycle_time: 15
+          defect_rate: 0.05
+    changeover:
+      target: 900
+      distribution: normal
+      mean: 900
+      std: 120
+
+  - name: "Product A Evening"
+    quantity: 300
+    max_duration: 14400
