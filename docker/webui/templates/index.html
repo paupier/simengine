@@ -50,15 +50,35 @@
         <div class="row">
             <!-- Left column: Controls -->
             <div class="col-md-3">
-                <!-- Scenario Selection -->
+                <!-- Run Mode Selection -->
                 <div class="card mb-3">
-                    <div class="card-header"><strong>Scenario Selection</strong></div>
-                    <div class="card-body">
-                        <div class="mb-3">
-                            <label for="scenario-select" class="form-label">Scenario</label>
-                            <select id="scenario-select" class="form-select"></select>
-                            <small id="scenario-info" class="form-text text-muted"></small>
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <strong>Run Mode</strong>
+                        <div class="btn-group btn-group-sm">
+                            <input type="radio" class="btn-check" name="run-mode" id="mode-scenario" checked>
+                            <label class="btn btn-outline-primary" for="mode-scenario">Scenario</label>
+                            <input type="radio" class="btn-check" name="run-mode" id="mode-recipe">
+                            <label class="btn btn-outline-primary" for="mode-recipe">Recipe</label>
                         </div>
+                    </div>
+                    <div class="card-body">
+                        <!-- Scenario panel -->
+                        <div id="scenario-panel">
+                            <div class="mb-3">
+                                <label for="scenario-select" class="form-label">Scenario</label>
+                                <select id="scenario-select" class="form-select"></select>
+                                <small id="scenario-info" class="form-text text-muted"></small>
+                            </div>
+                        </div>
+                        <!-- Recipe panel -->
+                        <div id="recipe-panel" style="display:none;">
+                            <div class="mb-3">
+                                <label for="recipe-select" class="form-label">Recipe</label>
+                                <select id="recipe-select" class="form-select"></select>
+                                <small id="recipe-info" class="form-text text-muted"></small>
+                            </div>
+                        </div>
+                        <!-- Shared controls -->
                         <div class="mb-3">
                             <label for="seed-input" class="form-label">Random Seed (optional)</label>
                             <input type="number" id="seed-input" class="form-control" placeholder="e.g. 42">
@@ -161,6 +181,21 @@
                                 <div class="shift-bar-fill" id="shift-progress" style="width:0%"></div>
                             </div>
                         </div>
+
+                        <!-- Recipe progress -->
+                        <div id="recipe-progress" class="mt-3" style="display:none;">
+                            <div class="d-flex justify-content-between small text-muted mb-1">
+                                <span>Recipe: <strong id="rp-name">-</strong></span>
+                                <span>Segment <strong id="rp-seg-idx">-</strong>/<strong id="rp-seg-total">-</strong>
+                                    <span id="rp-changeover" class="badge bg-warning ms-2" style="display:none;">CHANGEOVER</span>
+                                </span>
+                            </div>
+                            <div class="small text-muted mb-1">Current: <strong id="rp-seg-name">-</strong></div>
+                            <div class="progress" style="height:6px;">
+                                <div class="progress-bar bg-info" id="rp-seg-bar" style="width:0%"></div>
+                            </div>
+                            <div class="small text-muted" id="rp-seg-detail">-</div>
+                        </div>
                     </div>
                 </div>
 
@@ -193,6 +228,16 @@
         document.getElementById('link-grafana').href = `http://${host}:3000`;
         document.getElementById('link-influxdb').href = `http://${host}:8086`;
 
+        // --- Mode toggle (Scenario vs Recipe) ---
+        document.getElementById('mode-scenario').addEventListener('change', () => {
+            document.getElementById('scenario-panel').style.display = '';
+            document.getElementById('recipe-panel').style.display = 'none';
+        });
+        document.getElementById('mode-recipe').addEventListener('change', () => {
+            document.getElementById('scenario-panel').style.display = 'none';
+            document.getElementById('recipe-panel').style.display = '';
+        });
+
         // --- Load scenarios ---
         async function loadScenarios() {
             const resp = await fetch('/api/scenarios');
@@ -217,18 +262,60 @@
             select.dispatchEvent(new Event('change'));
         }
 
+        // --- Load recipes ---
+        async function loadRecipes() {
+            try {
+                const resp = await fetch('/api/recipes');
+                const recipes = await resp.json();
+                const select = document.getElementById('recipe-select');
+                select.innerHTML = '';
+                for (const name of recipes) {
+                    const opt = document.createElement('option');
+                    opt.value = name;
+                    opt.textContent = name;
+                    select.appendChild(opt);
+                }
+                select.addEventListener('change', async () => {
+                    const info = document.getElementById('recipe-info');
+                    if (!select.value) { info.textContent = ''; return; }
+                    try {
+                        const r = await fetch('/api/recipe/' + select.value);
+                        const data = await r.json();
+                        const desc = data.description || '';
+                        const base = data.base_scenario || '?';
+                        const segs = (data.segments || []).length;
+                        info.textContent = desc ? `${desc} (${base}, ${segs} segments)` :
+                            `Base: ${base}, ${segs} segment${segs !== 1 ? 's' : ''}`;
+                    } catch (e) { info.textContent = ''; }
+                });
+                select.dispatchEvent(new Event('change'));
+            } catch (e) {}
+        }
+
         // --- Start / Stop ---
         async function startSim() {
-            const scenario = document.getElementById('scenario-select').value;
+            const isRecipeMode = document.getElementById('mode-recipe').checked;
             const seedVal = document.getElementById('seed-input').value;
-            const body = { scenario };
-            if (seedVal) body.seed = parseInt(seedVal);
 
-            await fetch('/api/start', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body)
-            });
+            if (isRecipeMode) {
+                const recipe = document.getElementById('recipe-select').value;
+                const body = { recipe };
+                if (seedVal) body.seed = parseInt(seedVal);
+                await fetch('/api/start-recipe', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+            } else {
+                const scenario = document.getElementById('scenario-select').value;
+                const body = { scenario };
+                if (seedVal) body.seed = parseInt(seedVal);
+                await fetch('/api/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+            }
         }
 
         async function stopSim() {
@@ -363,7 +450,8 @@
                 }
 
                 // Update info
-                document.getElementById('status-scenario').textContent = data.scenario || '-';
+                document.getElementById('status-scenario').textContent =
+                    data.recipe ? `Recipe: ${data.recipe}` : (data.scenario || '-');
                 document.getElementById('status-uptime').textContent =
                     data.uptime_seconds ? `${Math.floor(data.uptime_seconds)}s` : '-';
                 document.getElementById('status-pid').textContent = data.pid || '-';
@@ -421,6 +509,36 @@
                         shiftDiv.style.display = 'none';
                     }
 
+                    // Recipe progress
+                    const rpDiv = document.getElementById('recipe-progress');
+                    if (data.opcua && data.opcua.recipe) {
+                        const rp = data.opcua.recipe;
+                        rpDiv.style.display = '';
+                        document.getElementById('rp-name').textContent = rp.recipe_name;
+                        document.getElementById('rp-seg-name').textContent = rp.segment_name;
+                        document.getElementById('rp-seg-idx').textContent = rp.segment_index;
+                        document.getElementById('rp-seg-total').textContent = rp.total_segments;
+
+                        const coBadge = document.getElementById('rp-changeover');
+                        coBadge.style.display = rp.changeover_state ? '' : 'none';
+
+                        const target = rp.segment_quantity_target;
+                        const produced = rp.segment_quantity_produced;
+                        if (target > 0) {
+                            const pct = Math.min(100, (produced / target * 100)).toFixed(0);
+                            document.getElementById('rp-seg-bar').style.width = pct + '%';
+                            document.getElementById('rp-seg-detail').textContent =
+                                `${produced} / ${target} parts (${pct}%)`;
+                        } else {
+                            const remaining = rp.segment_time_remaining || 0;
+                            document.getElementById('rp-seg-bar').style.width = '0%';
+                            document.getElementById('rp-seg-detail').textContent =
+                                `Time remaining: ${Math.floor(remaining)}s`;
+                        }
+                    } else {
+                        rpDiv.style.display = 'none';
+                    }
+
                     // Update interarrival slider to match server value
                     const slider = document.getElementById('interarrival-range');
                     if (document.activeElement !== slider) {
@@ -443,6 +561,7 @@
                     document.getElementById('kpi-line-oee').style.color = '';
                     document.getElementById('kpi-scrap').textContent = '-';
                     document.getElementById('shift-info').style.display = 'none';
+                    document.getElementById('recipe-progress').style.display = 'none';
                     document.getElementById('machine-details').innerHTML =
                         '<span class="text-muted">Start a simulation to see machine details</span>';
                 }
@@ -482,6 +601,7 @@
 
         // --- Init ---
         loadScenarios();
+        loadRecipes();
         setInterval(pollStatus, 2000);
         setInterval(pollLogs, 3000);
     </script>
