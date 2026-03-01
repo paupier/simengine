@@ -851,6 +851,40 @@ def api_update_recipe(name):
     return jsonify({"status": "ok", "recipe": name})
 
 
+@app.route("/recipes")
+def recipes_editor():
+    """Render the recipe editor page."""
+    return render_template("recipes.html")
+
+
+@app.route("/api/recipe/<name>/yaml")
+def api_recipe_yaml(name):
+    """Return raw YAML text for a recipe."""
+    recipe_path = RECIPES_DIR / f"{name}.yaml"
+    if not recipe_path.exists():
+        return jsonify({"error": f"Recipe '{name}' not found"}), 404
+    with open(recipe_path, "r") as f:
+        content = f.read()
+    return jsonify({"yaml": content})
+
+
+@app.route("/api/recipe/<name>", methods=["DELETE"])
+def api_delete_recipe(name):
+    """Delete a recipe YAML file."""
+    recipe_path = RECIPES_DIR / f"{name}.yaml"
+    if not recipe_path.exists():
+        return jsonify({"error": f"Recipe '{name}' not found"}), 404
+
+    # Sanitize: ensure the name doesn't escape the recipes directory
+    try:
+        recipe_path.resolve().relative_to(RECIPES_DIR.resolve())
+    except ValueError:
+        return jsonify({"error": "Invalid recipe name"}), 400
+
+    recipe_path.unlink()
+    return jsonify({"status": "deleted", "recipe": name})
+
+
 @app.route("/api/start-recipe", methods=["POST"])
 def api_start_recipe():
     """Start simulation with a recipe.

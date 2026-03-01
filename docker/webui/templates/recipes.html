@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simantha - Recipe Editor</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background: #f8f9fa; }
+        .yaml-editor {
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 12px;
+            border-radius: 6px;
+            border: none;
+            resize: vertical;
+            tab-size: 2;
+            width: 100%;
+            min-height: 300px;
+        }
+        .yaml-editor:focus { outline: 2px solid #0d6efd; }
+        .segment-summary {
+            font-size: 0.82rem;
+            border-radius: 6px;
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+        }
+        .segment-item {
+            padding: 8px 12px;
+            border-bottom: 1px solid #e9ecef;
+        }
+        .segment-item:last-child { border-bottom: none; }
+        .segment-name { font-weight: 600; color: #212529; }
+        .segment-detail { color: #6c757d; font-size: 0.78rem; }
+        .changeover-tag {
+            font-size: 0.7rem; padding: 1px 6px; border-radius: 10px;
+            background: #fd7e1422; color: #fd7e14; border: 1px solid #fd7e1444;
+        }
+        .stop-tag {
+            font-size: 0.7rem; padding: 1px 6px; border-radius: 10px;
+            background: #0d6efd22; color: #0d6efd; border: 1px solid #0d6efd44;
+        }
+        .override-tag {
+            font-size: 0.7rem; padding: 1px 6px; border-radius: 10px;
+            background: #6f42c122; color: #6f42c1; border: 1px solid #6f42c144;
+        }
+        .ref-section { font-size: 0.82rem; }
+        .ref-section h6 { font-size: 0.85rem; margin-bottom: 6px; }
+        .ref-code {
+            font-family: 'Courier New', monospace;
+            font-size: 0.78rem;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 10px;
+            border-radius: 6px;
+            white-space: pre;
+            overflow-x: auto;
+        }
+        .scenario-list-item {
+            font-size: 0.8rem;
+            padding: 3px 0;
+            color: #495057;
+        }
+        .scenario-list-item code {
+            font-size: 0.75rem;
+            background: #e9ecef;
+            padding: 1px 4px;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a href="/" class="navbar-brand mb-0 h1">Simantha Digital Twin</a>
+            <div>
+                <a href="/" class="btn btn-sm btn-outline-light me-2">Dashboard</a>
+                <a href="/reports" class="btn btn-sm btn-outline-info me-2">Reports</a>
+                <a href="/validation" class="btn btn-sm btn-outline-warning me-2">Validation</a>
+                <a href="/config" class="btn btn-sm btn-outline-light me-2">Config</a>
+                <a href="/recipes" class="btn btn-sm btn-light me-2">Recipes</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-3">
+        <div class="row">
+            <!-- Left: Editor -->
+            <div class="col-md-7">
+                <div class="card mb-3">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <strong>Recipe Editor</strong>
+                        <div>
+                            <select id="recipe-select" class="form-select form-select-sm d-inline-block" style="width:auto;"
+                                    onchange="loadRecipe(this.value)">
+                                <option value="">-- Select Recipe --</option>
+                            </select>
+                            <button class="btn btn-sm btn-outline-primary ms-2" onclick="newRecipe()">New</button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div id="alert-area"></div>
+
+                        <!-- Recipe name (for new recipes) -->
+                        <div class="mb-3" id="name-group" style="display:none;">
+                            <label class="form-label">Recipe Name</label>
+                            <input type="text" id="recipe-name" class="form-control form-control-sm"
+                                   placeholder="my_recipe (letters, numbers, underscores, hyphens)">
+                        </div>
+
+                        <!-- Description (read-only display) -->
+                        <div id="recipe-description" class="mb-2 text-muted small"></div>
+
+                        <!-- Base scenario display -->
+                        <div class="mb-3" id="base-scenario-group" style="display:none;">
+                            <label class="form-label small fw-bold">Base Scenario</label>
+                            <span id="base-scenario-display" class="badge bg-secondary ms-2"></span>
+                        </div>
+
+                        <!-- YAML editor -->
+                        <label class="form-label small fw-bold">Recipe YAML</label>
+                        <textarea id="yaml-editor" class="yaml-editor" rows="20"
+                                  spellcheck="false"
+                                  oninput="parseSegments()"
+                                  onblur="parseSegments()"></textarea>
+
+                        <!-- Segment summary (auto-parsed) -->
+                        <div id="segment-summary" class="segment-summary mt-3" style="display:none;">
+                            <div class="px-3 py-2 border-bottom bg-white" style="border-radius: 6px 6px 0 0;">
+                                <strong class="small">Segments</strong>
+                            </div>
+                            <div id="segment-list"></div>
+                        </div>
+
+                        <!-- Actions -->
+                        <div class="d-flex gap-2 mt-3">
+                            <button class="btn btn-primary" onclick="saveRecipe()">Save</button>
+                            <button class="btn btn-outline-danger" id="btn-delete" onclick="deleteRecipe()" style="display:none;">Delete</button>
+                            <div class="ms-auto d-flex gap-2 align-items-center">
+                                <input type="number" id="recipe-seed" class="form-control form-control-sm" style="width:100px;" placeholder="Seed">
+                                <button class="btn btn-success btn-sm" onclick="startRecipe()">Start Simulation</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right: Reference -->
+            <div class="col-md-5">
+                <!-- Format reference -->
+                <div class="card mb-3">
+                    <div class="card-header"><strong>Recipe YAML Reference</strong></div>
+                    <div class="card-body ref-section">
+                        <h6>Structure</h6>
+                        <div class="ref-code">name: "Recipe Name"
+description: "What this recipe does"
+base_scenario: balanced_line
+
+segments:
+  - name: "Segment 1"
+    quantity: 500        # stop after N parts
+    max_duration: 18000  # safety timeout (s)
+    overrides:           # optional
+      machines:
+        - name: M1
+          cycle_time: 10
+          defect_rate: 0.02
+    changeover:          # before next segment
+      target: 300
+      distribution: lognormal
+      mean: 300
+      std: 60
+
+  - name: "Segment 2"
+    duration: 7200       # stop after N seconds</div>
+
+                        <h6 class="mt-3">Stop Conditions</h6>
+                        <ul class="small mb-2">
+                            <li><code>quantity</code> — stop after producing N parts (batch mode)</li>
+                            <li><code>duration</code> — stop after N seconds (time-box mode)</li>
+                            <li><code>max_duration</code> — safety timeout for quantity-based stops</li>
+                        </ul>
+
+                        <h6>Changeover Distributions</h6>
+                        <ul class="small mb-2">
+                            <li><code>constant</code> — <code>value: 10</code></li>
+                            <li><code>normal</code> — <code>mean: 300, std: 60</code></li>
+                            <li><code>lognormal</code> — <code>mean: 300, std: 60</code></li>
+                            <li><code>exponential</code> — <code>mean: 120</code></li>
+                            <li><code>uniform</code> — <code>min: 60, max: 180</code></li>
+                            <li><code>weibull</code> — <code>shape: 2, scale: 300</code></li>
+                        </ul>
+
+                        <h6>Machine Overrides</h6>
+                        <p class="small mb-0">Override per-segment machine settings under <code>overrides.machines</code>. Match by <code>name</code>. Supported fields: <code>cycle_time</code>, <code>target_ppm</code>, <code>defect_rate</code>.</p>
+                    </div>
+                </div>
+
+                <!-- Available scenarios -->
+                <div class="card">
+                    <div class="card-header"><strong>Available Base Scenarios</strong></div>
+                    <div class="card-body" id="scenarios-list">
+                        <div class="text-muted small">Loading...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js"></script>
+    <script>
+        let isNewRecipe = false;
+        let currentRecipe = null;
+
+        const TEMPLATE_YAML = `name: "My Recipe"
+description: "Describe the production schedule"
+base_scenario: balanced_line
+
+segments:
+  - name: "Batch 1"
+    quantity: 100
+    max_duration: 3600
+    changeover:
+      target: 60
+      distribution: constant
+      value: 60
+
+  - name: "Batch 2"
+    quantity: 100
+    max_duration: 3600
+`;
+
+        // --- Load recipe list ---
+        async function loadRecipeList() {
+            const resp = await fetch('/api/recipes');
+            const recipes = await resp.json();
+            const select = document.getElementById('recipe-select');
+            select.innerHTML = '<option value="">-- Select Recipe --</option>';
+            for (const name of recipes) {
+                const opt = document.createElement('option');
+                opt.value = name;
+                opt.textContent = name;
+                select.appendChild(opt);
+            }
+        }
+
+        // --- Load available scenarios for reference panel ---
+        async function loadScenariosList() {
+            const resp = await fetch('/api/scenarios');
+            const scenarios = await resp.json();
+            const container = document.getElementById('scenarios-list');
+            let html = '';
+            for (const [name, info] of Object.entries(scenarios)) {
+                const desc = info.description ? ` — ${info.description}` : '';
+                const machines = info.machines ? ` (${info.machines}M)` : '';
+                html += `<div class="scenario-list-item"><code>${name}</code>${machines}${desc}</div>`;
+            }
+            container.innerHTML = html || '<div class="text-muted small">No scenarios found</div>';
+        }
+
+        // --- Load a recipe into the editor ---
+        async function loadRecipe(name) {
+            if (!name) {
+                document.getElementById('recipe-description').textContent = '';
+                document.getElementById('base-scenario-group').style.display = 'none';
+                document.getElementById('segment-summary').style.display = 'none';
+                return;
+            }
+            isNewRecipe = false;
+            currentRecipe = name;
+            document.getElementById('name-group').style.display = 'none';
+            document.getElementById('btn-delete').style.display = '';
+
+            // Load raw YAML
+            const resp = await fetch(`/api/recipe/${name}/yaml`);
+            const data = await resp.json();
+            if (data.error) {
+                showAlert(data.error, 'danger');
+                return;
+            }
+            document.getElementById('yaml-editor').value = data.yaml;
+
+            // Parse for description and base_scenario
+            try {
+                const parsed = jsyaml.load(data.yaml);
+                document.getElementById('recipe-description').textContent =
+                    parsed.description || '';
+                if (parsed.base_scenario) {
+                    document.getElementById('base-scenario-group').style.display = '';
+                    document.getElementById('base-scenario-display').textContent =
+                        parsed.base_scenario;
+                }
+            } catch (e) {
+                document.getElementById('recipe-description').textContent = '';
+            }
+
+            parseSegments();
+        }
+
+        // --- New recipe ---
+        function newRecipe() {
+            isNewRecipe = true;
+            currentRecipe = null;
+            document.getElementById('name-group').style.display = '';
+            document.getElementById('recipe-name').value = '';
+            document.getElementById('recipe-select').value = '';
+            document.getElementById('recipe-description').textContent = '';
+            document.getElementById('base-scenario-group').style.display = 'none';
+            document.getElementById('btn-delete').style.display = 'none';
+            document.getElementById('yaml-editor').value = TEMPLATE_YAML;
+            parseSegments();
+        }
+
+        // --- Save recipe ---
+        async function saveRecipe() {
+            const content = document.getElementById('yaml-editor').value.trim();
+            if (!content) {
+                showAlert('Recipe YAML cannot be empty', 'warning');
+                return;
+            }
+
+            let url, method, body;
+
+            if (isNewRecipe) {
+                const name = document.getElementById('recipe-name').value.trim();
+                if (!name) {
+                    showAlert('Please enter a recipe name', 'warning');
+                    return;
+                }
+                if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
+                    showAlert('Recipe name can only contain letters, numbers, underscores, and hyphens', 'warning');
+                    return;
+                }
+                url = '/api/recipe';
+                method = 'POST';
+                body = JSON.stringify({ name: name, content: content });
+            } else {
+                url = `/api/recipe/${currentRecipe}`;
+                method = 'PUT';
+                body = JSON.stringify({ content: content });
+            }
+
+            const resp = await fetch(url, {
+                method: method,
+                headers: { 'Content-Type': 'application/json' },
+                body: body
+            });
+            const result = await resp.json();
+
+            if (resp.ok) {
+                const savedName = result.recipe;
+                showAlert(`Recipe saved: ${savedName}`, 'success');
+                await loadRecipeList();
+                if (isNewRecipe) {
+                    isNewRecipe = false;
+                    document.getElementById('name-group').style.display = 'none';
+                    document.getElementById('btn-delete').style.display = '';
+                }
+                document.getElementById('recipe-select').value = savedName;
+                currentRecipe = savedName;
+            } else {
+                showAlert(result.error, 'danger');
+            }
+        }
+
+        // --- Delete recipe ---
+        async function deleteRecipe() {
+            if (!currentRecipe) return;
+            if (!confirm(`Delete recipe "${currentRecipe}"? This cannot be undone.`)) return;
+
+            const resp = await fetch(`/api/recipe/${currentRecipe}`, { method: 'DELETE' });
+            const result = await resp.json();
+
+            if (resp.ok) {
+                showAlert(`Recipe deleted: ${currentRecipe}`, 'success');
+                currentRecipe = null;
+                document.getElementById('recipe-select').value = '';
+                document.getElementById('yaml-editor').value = '';
+                document.getElementById('recipe-description').textContent = '';
+                document.getElementById('base-scenario-group').style.display = 'none';
+                document.getElementById('segment-summary').style.display = 'none';
+                document.getElementById('btn-delete').style.display = 'none';
+                await loadRecipeList();
+            } else {
+                showAlert(result.error, 'danger');
+            }
+        }
+
+        // --- Start recipe simulation ---
+        async function startRecipe() {
+            const recipeName = isNewRecipe ? null : currentRecipe;
+            if (!recipeName) {
+                showAlert('Save the recipe first before starting a simulation', 'warning');
+                return;
+            }
+
+            const seedInput = document.getElementById('recipe-seed').value;
+            const body = { recipe: recipeName };
+            if (seedInput) body.seed = parseInt(seedInput);
+
+            const resp = await fetch('/api/start-recipe', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            const result = await resp.json();
+
+            if (resp.ok) {
+                showAlert(`Simulation started with recipe "${recipeName}"`, 'success');
+            } else {
+                showAlert(result.error, 'danger');
+            }
+        }
+
+        // --- Parse YAML and show segment summary ---
+        function parseSegments() {
+            const content = document.getElementById('yaml-editor').value;
+            const summaryEl = document.getElementById('segment-summary');
+            const listEl = document.getElementById('segment-list');
+
+            if (!content.trim()) {
+                summaryEl.style.display = 'none';
+                return;
+            }
+
+            try {
+                const parsed = jsyaml.load(content);
+                if (!parsed || !parsed.segments || !Array.isArray(parsed.segments)) {
+                    summaryEl.style.display = 'none';
+                    return;
+                }
+
+                // Update description and base_scenario
+                document.getElementById('recipe-description').textContent =
+                    parsed.description || '';
+                if (parsed.base_scenario) {
+                    document.getElementById('base-scenario-group').style.display = '';
+                    document.getElementById('base-scenario-display').textContent =
+                        parsed.base_scenario;
+                }
+
+                let html = '';
+                parsed.segments.forEach((seg, i) => {
+                    const name = seg.name || `Segment ${i + 1}`;
+                    const tags = [];
+
+                    // Stop condition
+                    if (seg.quantity) {
+                        tags.push(`<span class="stop-tag">${seg.quantity} parts</span>`);
+                    }
+                    if (seg.duration) {
+                        tags.push(`<span class="stop-tag">${seg.duration}s</span>`);
+                    }
+                    if (seg.max_duration && seg.quantity) {
+                        tags.push(`<span class="stop-tag">max ${seg.max_duration}s</span>`);
+                    }
+
+                    // Changeover
+                    if (seg.changeover) {
+                        const co = seg.changeover;
+                        const dist = co.distribution || 'constant';
+                        const target = co.target ? `${co.target}s` : '';
+                        tags.push(`<span class="changeover-tag">changeover: ${dist} ${target}</span>`);
+                    }
+
+                    // Overrides
+                    if (seg.overrides && seg.overrides.machines) {
+                        const count = seg.overrides.machines.length;
+                        tags.push(`<span class="override-tag">${count} override${count > 1 ? 's' : ''}</span>`);
+                    }
+
+                    html += `<div class="segment-item">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="segment-name">${i + 1}. ${name}</span>
+                            <div class="d-flex gap-1 flex-wrap">${tags.join('')}</div>
+                        </div>
+                    </div>`;
+                });
+
+                listEl.innerHTML = html;
+                summaryEl.style.display = html ? '' : 'none';
+            } catch (e) {
+                // Invalid YAML — show parse error
+                listEl.innerHTML = `<div class="segment-item text-danger small">YAML parse error: ${e.message}</div>`;
+                summaryEl.style.display = '';
+            }
+        }
+
+        // --- Alert helper ---
+        function showAlert(msg, type) {
+            const area = document.getElementById('alert-area');
+            area.innerHTML = `<div class="alert alert-${type} alert-dismissible fade show py-2" role="alert">
+                ${msg}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>`;
+            setTimeout(() => { area.innerHTML = ''; }, 5000);
+        }
+
+        // --- Init ---
+        loadRecipeList();
+        loadScenariosList();
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
