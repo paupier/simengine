@@ -175,6 +175,13 @@ Per-scenario options include:
 - `maintainer.machine_priorities` — dict of machine name → priority number (for `priority` strategy)
 - `enterprise`, `site`, `area`, `line_name` — ISA-95 hierarchy naming (all optional with defaults)
 
+### Machine Count Limits
+
+- **Minimum:** 2 machines (enforced by `validate_serial_topology()`)
+- **Maximum:** No hard limit — Simantha, OPC UA, Telegraf generator, and topology validation all use dynamic loops
+- **Tested:** Up to 8 machines (`full_feature_8_machine_line` scenario)
+- **Web UI soft limit:** The dashboard OPC UA reader in `app.py` scans `M1`–`M19` (`range(1, 20)`). Lines with 20+ machines work via OPC UA clients and CLI but won't fully display on the dashboard
+
 ### Event Historian Design
 
 Events are logged only on **state transitions** (edge detection), not every simulation step. The `historian_state` dict used for edge detection is **separate** from `metrics["prev_state"]` — this is critical to avoid deduplication bugs. InfluxDB and Neo4j use lazy imports so they're optional dependencies.
