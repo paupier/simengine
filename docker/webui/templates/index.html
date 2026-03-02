@@ -240,27 +240,50 @@
         });
 
         // --- Load scenarios ---
-        async function loadScenarios() {
-            const resp = await fetch('/api/scenarios');
-            const scenarios = await resp.json();
-            const select = document.getElementById('scenario-select');
-            select.innerHTML = '';
-            for (const [name, info] of Object.entries(scenarios)) {
-                const opt = document.createElement('option');
-                opt.value = name;
-                opt.textContent = `${name} (${info.machines}M)`;
-                select.appendChild(opt);
-            }
-            select.addEventListener('change', () => {
-                const info = scenarios[select.value];
-                const features = info.features.length > 0 ? info.features.join(', ') : 'basic';
-                document.getElementById('scenario-info').textContent =
-                    `${info.machines} machines, ${info.buffers} buffers | ${features}`;
-                if (info.description) {
-                    document.getElementById('scenario-info').textContent = info.description;
+        let _scenarioCache = {};
+        async function loadScenarios(retries) {
+            retries = retries !== undefined ? retries : 2;
+            try {
+                const resp = await fetch('/api/scenarios');
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                const scenarios = await resp.json();
+                if (!scenarios || typeof scenarios !== 'object' || Object.keys(scenarios).length === 0) {
+                    throw new Error('Empty scenario list');
                 }
-            });
-            select.dispatchEvent(new Event('change'));
+                _scenarioCache = scenarios;
+                const select = document.getElementById('scenario-select');
+                select.innerHTML = '';
+                for (const [name, info] of Object.entries(scenarios)) {
+                    const opt = document.createElement('option');
+                    opt.value = name;
+                    opt.textContent = `${name} (${info.machines}M)`;
+                    select.appendChild(opt);
+                }
+                // Only add the listener once (first successful load)
+                if (!select.dataset.listenerAdded) {
+                    select.addEventListener('change', () => {
+                        const info = _scenarioCache[select.value];
+                        if (!info) return;
+                        const features = info.features && info.features.length > 0
+                            ? info.features.join(', ') : 'basic';
+                        document.getElementById('scenario-info').textContent =
+                            `${info.machines} machines, ${info.buffers} buffers | ${features}`;
+                        if (info.description) {
+                            document.getElementById('scenario-info').textContent = info.description;
+                        }
+                    });
+                    select.dataset.listenerAdded = 'true';
+                }
+                select.dispatchEvent(new Event('change'));
+            } catch (e) {
+                console.error('loadScenarios failed:', e);
+                if (retries > 0) {
+                    setTimeout(() => loadScenarios(retries - 1), 2000);
+                } else {
+                    const select = document.getElementById('scenario-select');
+                    select.innerHTML = '<option value="">Failed to load scenarios</option>';
+                }
+            }
         }
 
         // --- Load recipes ---
