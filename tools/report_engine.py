@@ -534,11 +534,31 @@ def analyze_throughput(df):
     first = prod_summaries.iloc[0]
     last = prod_summaries.iloc[-1]
     elapsed = float(last["timestamp"] - first["timestamp"])
-    total_parts = int(last["partcount"]) if pd.notna(last["partcount"]) else 0
+
+    # In recipe mode each segment resets the Simantha system, so partcount
+    # resets to 0 at each segment boundary.  Sum parts from SEGMENT_END
+    # events which carry the authoritative per-segment total.
+    segment_ends = df[df["event_type"] == "SEGMENT_END"]
+    is_recipe = not segment_ends.empty
+
+    if is_recipe:
+        extras = parse_extra_json(segment_ends["extra_json"])
+        total_parts = 0
+        for i in range(len(segment_ends)):
+            ext = extras.iloc[i] if i < len(extras) else {}
+            if isinstance(ext, dict):
+                total_parts += int(ext.get("parts_produced", 0))
+    else:
+        total_parts = int(last["partcount"]) if pd.notna(last["partcount"]) else 0
 
     if elapsed > 0:
-        first_parts = int(first["partcount"]) if pd.notna(first["partcount"]) else 0
-        parts_delta = total_parts - first_parts
+        if is_recipe:
+            # For recipes, use total parts over total elapsed time
+            # (changeover time is part of elapsed)
+            parts_delta = total_parts
+        else:
+            first_parts = int(first["partcount"]) if pd.notna(first["partcount"]) else 0
+            parts_delta = total_parts - first_parts
         ppm = parts_delta / (elapsed / 60)
         result["total_parts"] = total_parts
         result["elapsed_s"] = round(elapsed, 0)
@@ -546,11 +566,27 @@ def analyze_throughput(df):
         result["ppm"] = round(ppm, 2)
         result["efficiency_pct"] = round(ppm / 60 * 100, 1)
 
-        # Timeseries for charting
-        result["timeseries"] = _to_timeseries(
-            prod_summaries["timestamp"].tolist(),
-            prod_summaries["partcount"].tolist(),
-        )
+        if is_recipe:
+            # Build cumulative timeseries that accounts for segment resets.
+            # Detect resets (partcount drops) and add offset to make it
+            # monotonically increasing.
+            raw_ts = prod_summaries["timestamp"].tolist()
+            raw_parts = prod_summaries["partcount"].tolist()
+            cum_parts = []
+            offset = 0
+            prev = 0
+            for p in raw_parts:
+                val = int(p) if pd.notna(p) else 0
+                if val < prev:
+                    offset += prev  # segment reset — carry forward
+                cum_parts.append(offset + val)
+                prev = val
+            result["timeseries"] = _to_timeseries(raw_ts, cum_parts)
+        else:
+            result["timeseries"] = _to_timeseries(
+                prod_summaries["timestamp"].tolist(),
+                prod_summaries["partcount"].tolist(),
+            )
     else:
         result["status"] = "WARN"
         result["message"] = "Zero elapsed time"
