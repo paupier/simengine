@@ -39,6 +39,7 @@
             <span class="navbar-brand mb-0 h1">Simantha Digital Twin</span>
             <div>
                 <a href="/reports" class="btn btn-sm btn-outline-info me-2">Reports</a>
+                <a href="/runs" class="btn btn-sm btn-outline-light me-2">Runs</a>
                 <a href="/validation" class="btn btn-sm btn-outline-warning me-2">Validation</a>
                 <a href="/config" class="btn btn-sm btn-outline-light me-2">Config</a>
                 <a href="/recipes" class="btn btn-sm btn-outline-light me-2">Recipes</a>
@@ -141,6 +142,9 @@
                             <div class="col text-muted">Scenario: <strong id="status-scenario">-</strong></div>
                             <div class="col text-muted">Uptime: <strong id="status-uptime">-</strong></div>
                             <div class="col text-muted">PID: <strong id="status-pid">-</strong></div>
+                        </div>
+                        <div id="status-run-id" class="small text-muted" style="display:none;">
+                            Run ID: <code id="status-run-id-value" style="cursor:pointer;" title="Click to copy">-</code>
                         </div>
                     </div>
                 </div>
@@ -479,6 +483,21 @@
                 document.getElementById('status-uptime').textContent =
                     data.uptime_seconds ? `${Math.floor(data.uptime_seconds)}s` : '-';
                 document.getElementById('status-pid').textContent = data.pid || '-';
+
+                // Run ID
+                const runIdDiv = document.getElementById('status-run-id');
+                const runIdVal = document.getElementById('status-run-id-value');
+                if (data.run_id && data.running) {
+                    runIdDiv.style.display = '';
+                    runIdVal.textContent = data.run_id;
+                    runIdVal.onclick = () => {
+                        navigator.clipboard.writeText(data.run_id).catch(() => {});
+                        runIdVal.title = 'Copied!';
+                        setTimeout(() => { runIdVal.title = 'Click to copy'; }, 1500);
+                    };
+                } else {
+                    runIdDiv.style.display = 'none';
+                }
 
                 // Update buttons
                 document.getElementById('btn-start').disabled = data.running;

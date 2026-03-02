@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simantha - Run History</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background: #f8f9fa; }
+        .run-id-cell {
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            cursor: pointer;
+            color: #0d6efd;
+        }
+        .run-id-cell:hover { text-decoration: underline; }
+        .badge-anomaly-ok { background: #198754; }
+        .badge-anomaly-bad { background: #dc3545; }
+        .toast-container { position: fixed; top: 20px; right: 20px; z-index: 9999; }
+        .current-run-banner { border-left: 4px solid #198754; }
+        .current-run-banner.stopped { border-left-color: #6c757d; }
+        .best-oee { background-color: rgba(25, 135, 84, 0.08); }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a href="/" class="navbar-brand mb-0 h1">Simantha Digital Twin</a>
+            <div>
+                <a href="/" class="btn btn-sm btn-outline-light me-2">Dashboard</a>
+                <a href="/reports" class="btn btn-sm btn-outline-info me-2">Reports</a>
+                <a href="/runs" class="btn btn-sm btn-light me-2">Runs</a>
+                <a href="/validation" class="btn btn-sm btn-outline-warning me-2">Validation</a>
+                <a href="/config" class="btn btn-sm btn-outline-light me-2">Config</a>
+                <a href="/recipes" class="btn btn-sm btn-outline-light me-2">Recipes</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Toast for copy notification -->
+    <div class="toast-container">
+        <div id="copy-toast" class="toast align-items-center text-bg-success border-0" role="alert" data-bs-delay="2000">
+            <div class="d-flex">
+                <div class="toast-body">Run ID copied to clipboard</div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+            </div>
+        </div>
+    </div>
+
+    <div class="container-fluid mt-3">
+        <!-- Current Run Banner -->
+        <div class="card mb-3 current-run-banner" id="current-run-card">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="mb-1">Current Run</h6>
+                        <div id="current-run-info">
+                            <span class="text-muted">Loading...</span>
+                        </div>
+                    </div>
+                    <div id="current-run-status"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Run History Table -->
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <strong>Run History</strong>
+                <button class="btn btn-outline-primary btn-sm" onclick="loadRuns()">Refresh</button>
+            </div>
+            <div class="card-body">
+                <div id="runs-loading" class="text-muted">Loading run history...</div>
+                <div id="runs-empty" class="text-muted" style="display:none;">
+                    No runs found. Start a simulation and analyze CSV files to build run history.
+                </div>
+                <div class="table-responsive" id="runs-table-wrap" style="display:none;">
+                    <table class="table table-sm table-hover" id="runs-table">
+                        <thead>
+                            <tr>
+                                <th>Run ID</th>
+                                <th>Scenario</th>
+                                <th>Date</th>
+                                <th>Duration</th>
+                                <th>Parts</th>
+                                <th>OEE (%)</th>
+                                <th>Scrap</th>
+                                <th>Anomalies</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // --- Copy run_id to clipboard ---
+        function copyRunId(runId) {
+            navigator.clipboard.writeText(runId).then(() => {
+                const toast = new bootstrap.Toast(document.getElementById('copy-toast'));
+                toast.show();
+            }).catch(() => {
+                // Fallback for older browsers
+                const ta = document.createElement('textarea');
+                ta.value = runId;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                const toast = new bootstrap.Toast(document.getElementById('copy-toast'));
+                toast.show();
+            });
+        }
+
+        // --- Parse date from run_id ---
+        function parseDateFromRunId(runId) {
+            const match = runId.match(/(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})/);
+            if (!match) return null;
+            const [, y, mo, d, h, mi, s] = match;
+            return new Date(y, mo - 1, d, h, mi, s);
+        }
+
+        function formatDate(date) {
+            if (!date) return '-';
+            const opts = { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' };
+            return date.toLocaleDateString(undefined, opts);
+        }
+
+        // --- Load current run status ---
+        async function loadCurrentRun() {
+            try {
+                const resp = await fetch('/api/status');
+                const data = await resp.json();
+                const card = document.getElementById('current-run-card');
+                const info = document.getElementById('current-run-info');
+                const status = document.getElementById('current-run-status');
+
+                if (data.running) {
+                    card.classList.remove('stopped');
+                    const label = data.recipe ? `Recipe: ${data.recipe}` : (data.scenario || '-');
+                    const uptime = data.uptime_seconds ? `${Math.floor(data.uptime_seconds)}s` : '-';
+                    info.innerHTML = `
+                        <span class="run-id-cell" onclick="copyRunId('${data.run_id}')" title="Click to copy">
+                            ${data.run_id || '-'}
+                        </span>
+                        <span class="text-muted ms-3">${label}</span>
+                        <span class="text-muted ms-3">Uptime: ${uptime}</span>
+                    `;
+                    status.innerHTML = '<span class="badge bg-success">Running</span>';
+                } else {
+                    card.classList.add('stopped');
+                    info.innerHTML = '<span class="text-muted">No simulation running</span>';
+                    status.innerHTML = '<span class="badge bg-secondary">Stopped</span>';
+                }
+            } catch (e) {
+                document.getElementById('current-run-info').innerHTML =
+                    '<span class="text-muted">Could not reach server</span>';
+            }
+        }
+
+        // --- Analyze a run ---
+        async function analyzeRun(csvFile, btn) {
+            btn.disabled = true;
+            btn.textContent = 'Analyzing...';
+            try {
+                const resp = await fetch('/api/reports/analyze', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({filename: csvFile})
+                });
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    alert('Analysis failed: ' + (err.error || 'Unknown error'));
+                    btn.disabled = false;
+                    btn.textContent = 'Analyze';
+                    return;
+                }
+                // Reload runs to show updated data
+                await loadRuns();
+            } catch (e) {
+                alert('Error: ' + e.message);
+                btn.disabled = false;
+                btn.textContent = 'Analyze';
+            }
+        }
+
+        // --- Load all runs ---
+        async function loadRuns() {
+            try {
+                const resp = await fetch('/api/runs');
+                const data = await resp.json();
+                const runs = data.runs || [];
+
+                document.getElementById('runs-loading').style.display = 'none';
+
+                if (runs.length === 0) {
+                    document.getElementById('runs-empty').style.display = '';
+                    document.getElementById('runs-table-wrap').style.display = 'none';
+                    return;
+                }
+
+                document.getElementById('runs-empty').style.display = 'none';
+                document.getElementById('runs-table-wrap').style.display = '';
+
+                // Find best OEE for highlighting
+                const oees = runs.filter(r => r.line_oee_mean != null).map(r => r.line_oee_mean);
+                const bestOee = oees.length > 1 ? Math.max(...oees) : null;
+
+                const tbody = document.querySelector('#runs-table tbody');
+                tbody.innerHTML = '';
+
+                for (const run of runs) {
+                    const date = parseDateFromRunId(run.run_id);
+                    const oee = run.line_oee_mean;
+                    const isBest = bestOee != null && oee === bestOee;
+                    const analyzed = run.analyzed !== false;
+                    const isLive = run.status === 'running';
+
+                    const tr = document.createElement('tr');
+                    if (isBest) tr.classList.add('best-oee');
+
+                    // Run ID
+                    const tdId = document.createElement('td');
+                    if (isLive) {
+                        tdId.innerHTML = `<span class="run-id-cell" onclick="copyRunId('${run.run_id}')" title="Click to copy">${run.run_id}</span>
+                            <span class="badge bg-success ms-1">live</span>`;
+                    } else {
+                        tdId.innerHTML = `<span class="run-id-cell" onclick="copyRunId('${run.run_id}')" title="Click to copy">${run.run_id}</span>`;
+                    }
+                    tr.appendChild(tdId);
+
+                    // Scenario
+                    const tdScen = document.createElement('td');
+                    tdScen.textContent = run.scenario || '-';
+                    tr.appendChild(tdScen);
+
+                    // Date
+                    const tdDate = document.createElement('td');
+                    tdDate.textContent = formatDate(date);
+                    tdDate.classList.add('small');
+                    tr.appendChild(tdDate);
+
+                    // Duration
+                    const tdDur = document.createElement('td');
+                    tdDur.textContent = run.sim_duration_hrs != null ? run.sim_duration_hrs + 'h' : '-';
+                    tr.appendChild(tdDur);
+
+                    // Parts
+                    const tdParts = document.createElement('td');
+                    tdParts.textContent = analyzed && run.total_parts != null
+                        ? run.total_parts.toLocaleString() : '-';
+                    tr.appendChild(tdParts);
+
+                    // OEE
+                    const tdOee = document.createElement('td');
+                    if (analyzed && oee != null) {
+                        tdOee.innerHTML = (oee * 100).toFixed(1) + '%'
+                            + (isBest ? ' <span class="badge bg-success">Best</span>' : '');
+                    } else {
+                        tdOee.textContent = '-';
+                    }
+                    tr.appendChild(tdOee);
+
+                    // Scrap
+                    const tdScrap = document.createElement('td');
+                    tdScrap.textContent = analyzed && run.total_scrap_events != null
+                        ? run.total_scrap_events : '-';
+                    tr.appendChild(tdScrap);
+
+                    // Anomalies
+                    const tdAnom = document.createElement('td');
+                    if (analyzed && run.anomaly_count != null) {
+                        const cls = run.anomaly_count > 0 ? 'badge-anomaly-bad' : 'badge-anomaly-ok';
+                        tdAnom.innerHTML = `<span class="badge ${cls}">${run.anomaly_count}</span>`;
+                    } else {
+                        tdAnom.textContent = '-';
+                    }
+                    tr.appendChild(tdAnom);
+
+                    // Actions
+                    const tdAct = document.createElement('td');
+                    let actions = '';
+                    if (!analyzed && run.csv_file) {
+                        actions += `<button class="btn btn-outline-primary btn-sm me-1"
+                            onclick="analyzeRun('${run.csv_file}', this)">Analyze</button>`;
+                    }
+                    if (run.csv_file) {
+                        actions += `<a href="/api/historian/download/${run.csv_file}"
+                            class="btn btn-outline-secondary btn-sm" title="Download CSV">CSV</a>`;
+                    }
+                    tdAct.innerHTML = actions;
+                    tr.appendChild(tdAct);
+
+                    tbody.appendChild(tr);
+                }
+            } catch (e) {
+                document.getElementById('runs-loading').textContent =
+                    'Failed to load runs: ' + e.message;
+            }
+        }
+
+        // --- Init ---
+        loadCurrentRun();
+        loadRuns();
+        setInterval(loadCurrentRun, 5000);
+    </script>
+</body>
+</html>

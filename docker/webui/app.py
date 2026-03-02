@@ -1021,6 +1021,86 @@ def _analyze_csv(filename):
 # ---------------------------------------------------------------------------
 # Report routes
 # ---------------------------------------------------------------------------
+@app.route("/runs")
+def runs_page():
+    """Run history page."""
+    return render_template("runs.html")
+
+
+@app.route("/api/runs")
+def api_runs():
+    """Merged run listing: run_index.json + CSV files + current live run.
+
+    Returns {"runs": [...], "current_run_id": "..."} sorted newest first.
+    """
+    import json as _json
+    hist_dir = _get_historian_dir()
+    runs_by_id = {}  # run_id -> entry dict
+
+    # 1. Load run_index.json entries (analyzed runs)
+    index_path = hist_dir / "run_index.json"
+    if index_path.exists():
+        try:
+            with open(index_path) as f:
+                for entry in _json.load(f):
+                    rid = entry.get("run_id", "")
+                    if rid:
+                        entry["analyzed"] = True
+                        runs_by_id[rid] = entry
+        except (ValueError, IOError):
+            pass
+
+    # 2. List CSV historian files, extract run_id from filename
+    if hist_dir.exists():
+        for csv_file in hist_dir.glob("*_events*.csv"):
+            name = csv_file.stem
+            # Pattern: {run_id}_events.csv or {run_id}_events_suffix.csv
+            run_id = name.rsplit("_events", 1)[0] if "_events" in name else name
+            if run_id not in runs_by_id:
+                # Extract scenario from run_id
+                scenario = run_id
+                import re as _re
+                date_match = _re.search(r'_\d{8}_\d{6}$', run_id)
+                if date_match:
+                    scenario = run_id[:date_match.start()]
+                runs_by_id[run_id] = {
+                    "run_id": run_id,
+                    "scenario": scenario,
+                    "csv_file": csv_file.name,
+                    "analyzed": False,
+                }
+            elif "csv_file" not in runs_by_id[run_id]:
+                runs_by_id[run_id]["csv_file"] = csv_file.name
+
+    # 3. Include current live run
+    current_run_id = sim_run_id
+    if current_run_id and current_run_id not in runs_by_id:
+        scenario = sim_scenario or sim_recipe or ""
+        runs_by_id[current_run_id] = {
+            "run_id": current_run_id,
+            "scenario": scenario,
+            "analyzed": False,
+            "status": "running",
+        }
+    elif current_run_id and current_run_id in runs_by_id:
+        running = sim_process is not None and sim_process.poll() is None
+        if running:
+            runs_by_id[current_run_id]["status"] = "running"
+
+    # 4. Sort by date descending (parse YYYYMMDD_HHMMSS from run_id)
+    def _sort_key(entry):
+        import re as _re
+        m = _re.search(r'(\d{8}_\d{6})', entry.get("run_id", ""))
+        return m.group(1) if m else "00000000_000000"
+
+    runs_list = sorted(runs_by_id.values(), key=_sort_key, reverse=True)
+
+    return jsonify({
+        "runs": runs_list,
+        "current_run_id": current_run_id,
+    })
+
+
 @app.route("/reports")
 def reports_page():
     """Production run analysis page with charts."""
