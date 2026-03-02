@@ -20,7 +20,12 @@
   "panels": [
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
       "id": 100,
       "title": "Maintenance Summary",
       "type": "row"
@@ -32,19 +37,33 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null }
+              {
+                "color": "green",
+                "value": null
+              }
             ]
           },
           "unit": "short"
         }
       },
-      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 1 },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 1
+      },
       "id": 1,
       "options": {
         "colorMode": "value",
         "graphMode": "none",
         "orientation": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto"
       },
       "targets": [
@@ -62,21 +81,41 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 1 },
-              { "color": "red", "value": 3 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 3
+              }
             ]
           },
           "unit": "short"
         }
       },
-      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 1 },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 1
+      },
       "id": 2,
       "options": {
         "colorMode": "value",
         "graphMode": "none",
         "orientation": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto"
       },
       "targets": [
@@ -94,24 +133,57 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "red", "value": 1 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
             ]
           },
           "mappings": [
-            { "options": { "0": { "text": "No", "color": "green" } }, "type": "value" },
-            { "options": { "1": { "text": "Yes", "color": "red" } }, "type": "value" }
+            {
+              "options": {
+                "0": {
+                  "text": "No",
+                  "color": "green"
+                }
+              },
+              "type": "value"
+            },
+            {
+              "options": {
+                "1": {
+                  "text": "Yes",
+                  "color": "red"
+                }
+              },
+              "type": "value"
+            }
           ],
           "unit": "none"
         }
       },
-      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 1 },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 1
+      },
       "id": 3,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
         "orientation": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto"
       },
       "targets": [
@@ -130,20 +202,40 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 60 },
-              { "color": "red", "value": 300 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 60
+              },
+              {
+                "color": "red",
+                "value": 300
+              }
             ]
           },
           "unit": "s"
         }
       },
-      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 1 },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      },
       "id": 4,
       "options": {
         "displayMode": "gradient",
         "orientation": "horizontal",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "showUnfilled": true
       },
       "targets": [
@@ -156,7 +248,12 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 6 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 6
+      },
       "id": 101,
       "title": "Time-in-State Breakdown",
       "type": "row"
@@ -166,15 +263,27 @@
       "description": "Full time breakdown per machine: processing, blocked, starved, down, idle",
       "fieldConfig": {
         "defaults": {
-          "custom": { "filterable": true },
+          "custom": {
+            "filterable": true
+          },
           "unit": "s"
         }
       },
-      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 7 },
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 7
+      },
       "id": 5,
       "options": {
         "showHeader": true,
-        "sortBy": [{ "desc": false, "displayName": "_field" }]
+        "sortBy": [
+          {
+            "desc": false,
+            "displayName": "_field"
+          }
+        ]
       },
       "targets": [
         {
@@ -199,7 +308,12 @@
           "unit": "s"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 14
+      },
       "id": 6,
       "targets": [
         {
@@ -211,7 +325,7 @@
     },
     {
       "datasource": "InfluxDB",
-      "description": "Blocked and starved time — identifies line balance issues",
+      "description": "Blocked and starved time \u00e2\u20ac\u201d identifies line balance issues",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -224,7 +338,12 @@
           "unit": "s"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 14
+      },
       "id": 7,
       "targets": [
         {
@@ -236,9 +355,14 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 22 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 22
+      },
       "id": 102,
-      "title": "Failure Mode Analysis — ${machine}",
+      "title": "Failure Mode Analysis \u00e2\u20ac\u201d ${machine}",
       "type": "row"
     },
     {
@@ -249,20 +373,40 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 300 },
-              { "color": "green", "value": 600 }
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 300
+              },
+              {
+                "color": "green",
+                "value": 600
+              }
             ]
           },
           "unit": "s"
         }
       },
-      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 23 },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 23
+      },
       "id": 8,
       "options": {
         "displayMode": "gradient",
         "orientation": "horizontal",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "showUnfilled": true
       },
       "targets": [
@@ -275,26 +419,46 @@
     },
     {
       "datasource": "InfluxDB",
-      "description": "MTTR per failure mode for selected machine — lower is better",
+      "description": "MTTR per failure mode for selected machine \u00e2\u20ac\u201d lower is better",
       "fieldConfig": {
         "defaults": {
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 30 },
-              { "color": "red", "value": 120 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 30
+              },
+              {
+                "color": "red",
+                "value": 120
+              }
             ]
           },
           "unit": "s"
         }
       },
-      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 23 },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 23
+      },
       "id": 9,
       "options": {
         "displayMode": "gradient",
         "orientation": "horizontal",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "showUnfilled": true
       },
       "targets": [
@@ -313,20 +477,40 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 3 },
-              { "color": "red", "value": 10 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 3
+              },
+              {
+                "color": "red",
+                "value": 10
+              }
             ]
           },
           "unit": "short"
         }
       },
-      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 30 },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 30
+      },
       "id": 10,
       "options": {
         "displayMode": "gradient",
         "orientation": "horizontal",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "showUnfilled": false
       },
       "targets": [
@@ -345,20 +529,40 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 60 },
-              { "color": "red", "value": 300 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 60
+              },
+              {
+                "color": "red",
+                "value": 300
+              }
             ]
           },
           "unit": "s"
         }
       },
-      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 30 },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 30
+      },
       "id": 11,
       "options": {
         "displayMode": "gradient",
         "orientation": "horizontal",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "showUnfilled": true
       },
       "targets": [
@@ -371,9 +575,14 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 37 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 37
+      },
       "id": 103,
-      "title": "Reliability Trends — All Machines",
+      "title": "Reliability Trends \u00e2\u20ac\u201d All Machines",
       "type": "row"
     },
     {
@@ -391,7 +600,12 @@
           "unit": "s"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 38 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 38
+      },
       "id": 12,
       "targets": [
         {
@@ -416,7 +630,12 @@
           "unit": "s"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 38 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 38
+      },
       "id": 13,
       "targets": [
         {
@@ -428,7 +647,12 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 46 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 46
+      },
       "id": 104,
       "title": "Maintenance Tracking",
       "type": "row"
@@ -438,14 +662,26 @@
       "description": "Corrective vs preventive maintenance counts per machine",
       "fieldConfig": {
         "defaults": {
-          "custom": { "filterable": true }
+          "custom": {
+            "filterable": true
+          }
         }
       },
-      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 47 },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 47
+      },
       "id": 14,
       "options": {
         "showHeader": true,
-        "sortBy": [{ "desc": false, "displayName": "_field" }]
+        "sortBy": [
+          {
+            "desc": false,
+            "displayName": "_field"
+          }
+        ]
       },
       "targets": [
         {
@@ -471,23 +707,55 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "Sys_QueueLength" },
+            "matcher": {
+              "id": "byName",
+              "options": "Sys_QueueLength"
+            },
             "properties": [
-              { "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } },
-              { "id": "displayName", "value": "Queue Length" }
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "displayName",
+                "value": "Queue Length"
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "Sys_TotalRepairs" },
+            "matcher": {
+              "id": "byName",
+              "options": "Sys_TotalRepairs"
+            },
             "properties": [
-              { "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } },
-              { "id": "displayName", "value": "Total Repairs" },
-              { "id": "custom.axisPlacement", "value": "right" }
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "displayName",
+                "value": "Total Repairs"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              }
             ]
           }
         ]
       },
-      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 47 },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 47
+      },
       "id": 15,
       "targets": [
         {
@@ -499,7 +767,12 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 54 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 54
+      },
       "id": 105,
       "title": "Failure Events (Historian)",
       "type": "row"
@@ -508,14 +781,26 @@
       "datasource": "InfluxDB",
       "fieldConfig": {
         "defaults": {
-          "custom": { "filterable": true }
+          "custom": {
+            "filterable": true
+          }
         }
       },
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 55 },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 55
+      },
       "id": 16,
       "options": {
         "showHeader": true,
-        "sortBy": [{ "desc": true, "displayName": "Time" }]
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "Time"
+          }
+        ]
       },
       "targets": [
         {
@@ -528,38 +813,88 @@
   ],
   "schemaVersion": 36,
   "style": "dark",
-  "tags": ["manufacturing", "simantha", "downtime", "reliability", "mttr"],
+  "tags": [
+    "manufacturing",
+    "simantha",
+    "downtime",
+    "reliability",
+    "mttr"
+  ],
   "templating": {
     "list": [
       {
-        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
         "datasource": "InfluxDB",
         "definition": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"manufacturing\", tag: \"run_id\")",
         "includeAll": true,
         "name": "run_id",
         "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"manufacturing\", tag: \"run_id\")",
         "refresh": 2,
-        "type": "query"
+        "type": "query",
+        "allValue": ".*"
       },
       {
-        "current": { "selected": false, "text": "M1", "value": "M1" },
+        "current": {
+          "selected": false,
+          "text": "M1",
+          "value": "M1"
+        },
         "name": "machine",
         "options": [
-          { "selected": true, "text": "M1", "value": "M1" },
-          { "selected": false, "text": "M2", "value": "M2" },
-          { "selected": false, "text": "M3", "value": "M3" },
-          { "selected": false, "text": "M4", "value": "M4" },
-          { "selected": false, "text": "M5", "value": "M5" },
-          { "selected": false, "text": "M6", "value": "M6" },
-          { "selected": false, "text": "M7", "value": "M7" },
-          { "selected": false, "text": "M8", "value": "M8" }
+          {
+            "selected": true,
+            "text": "M1",
+            "value": "M1"
+          },
+          {
+            "selected": false,
+            "text": "M2",
+            "value": "M2"
+          },
+          {
+            "selected": false,
+            "text": "M3",
+            "value": "M3"
+          },
+          {
+            "selected": false,
+            "text": "M4",
+            "value": "M4"
+          },
+          {
+            "selected": false,
+            "text": "M5",
+            "value": "M5"
+          },
+          {
+            "selected": false,
+            "text": "M6",
+            "value": "M6"
+          },
+          {
+            "selected": false,
+            "text": "M7",
+            "value": "M7"
+          },
+          {
+            "selected": false,
+            "text": "M8",
+            "value": "M8"
+          }
         ],
         "query": "M1,M2,M3,M4,M5,M6,M7,M8",
         "type": "custom"
       }
     ]
   },
-  "time": { "from": "now-1h", "to": "now" },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
   "timepicker": {},
   "timezone": "browser",
   "title": "Downtime & Reliability",

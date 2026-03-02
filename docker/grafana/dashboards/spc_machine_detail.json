@@ -20,22 +20,36 @@
   "panels": [
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
       "id": 100,
-      "title": "All Machines — SPC Overview",
+      "title": "All Machines \u00e2\u20ac\u201d SPC Overview",
       "type": "row"
     },
     {
       "datasource": "InfluxDB",
-      "description": "Cpk across all machines — below 1.0 is incapable, below 1.33 is marginal",
+      "description": "Cpk across all machines \u00e2\u20ac\u201d below 1.0 is incapable, below 1.33 is marginal",
       "fieldConfig": {
         "defaults": {
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 1.0 },
-              { "color": "green", "value": 1.33 }
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1.0
+              },
+              {
+                "color": "green",
+                "value": 1.33
+              }
             ]
           },
           "min": 0,
@@ -44,12 +58,23 @@
           "unit": "none"
         }
       },
-      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 1 },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 1
+      },
       "id": 1,
       "options": {
         "displayMode": "gradient",
         "orientation": "horizontal",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "showUnfilled": true
       },
       "targets": [
@@ -62,15 +87,24 @@
     },
     {
       "datasource": "InfluxDB",
-      "description": "Cp across all machines — process potential without centering",
+      "description": "Cp across all machines \u00e2\u20ac\u201d process potential without centering",
       "fieldConfig": {
         "defaults": {
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 1.0 },
-              { "color": "green", "value": 1.33 }
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1.0
+              },
+              {
+                "color": "green",
+                "value": 1.33
+              }
             ]
           },
           "min": 0,
@@ -79,12 +113,23 @@
           "unit": "none"
         }
       },
-      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 1 },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 1
+      },
       "id": 2,
       "options": {
         "displayMode": "gradient",
         "orientation": "horizontal",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "showUnfilled": true
       },
       "targets": [
@@ -100,14 +145,26 @@
       "description": "Complete SPC status for all machines at a glance",
       "fieldConfig": {
         "defaults": {
-          "custom": { "filterable": true }
+          "custom": {
+            "filterable": true
+          }
         }
       },
-      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 7 },
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 7
+      },
       "id": 3,
       "options": {
         "showHeader": true,
-        "sortBy": [{ "desc": false, "displayName": "_field" }]
+        "sortBy": [
+          {
+            "desc": false,
+            "displayName": "_field"
+          }
+        ]
       },
       "targets": [
         {
@@ -119,9 +176,14 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      },
       "id": 101,
-      "title": "Machine Detail — ${machine}",
+      "title": "Machine Detail \u00e2\u20ac\u201d ${machine}",
       "type": "row"
     },
     {
@@ -131,22 +193,42 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 1.0 },
-              { "color": "green", "value": 1.33 }
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1.0
+              },
+              {
+                "color": "green",
+                "value": 1.33
+              }
             ]
           },
           "decimals": 3,
           "unit": "none"
         }
       },
-      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 15 },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 15
+      },
       "id": 4,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
         "orientation": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "value_and_name"
       },
       "targets": [
@@ -164,22 +246,42 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 1.0 },
-              { "color": "green", "value": 1.33 }
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1.0
+              },
+              {
+                "color": "green",
+                "value": 1.33
+              }
             ]
           },
           "decimals": 3,
           "unit": "none"
         }
       },
-      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 15 },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 15
+      },
       "id": 5,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
         "orientation": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "value_and_name"
       },
       "targets": [
@@ -197,22 +299,42 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 1.0 },
-              { "color": "green", "value": 1.33 }
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1.0
+              },
+              {
+                "color": "green",
+                "value": 1.33
+              }
             ]
           },
           "decimals": 3,
           "unit": "none"
         }
       },
-      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 15 },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 15
+      },
       "id": 6,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
         "orientation": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "value_and_name"
       },
       "targets": [
@@ -230,22 +352,42 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 3 },
-              { "color": "green", "value": 4 }
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 3
+              },
+              {
+                "color": "green",
+                "value": 4
+              }
             ]
           },
           "decimals": 2,
           "unit": "none"
         }
       },
-      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 15 },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 15
+      },
       "id": 7,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
         "orientation": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "value_and_name"
       },
       "targets": [
@@ -263,24 +405,57 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "green", "value": 1 }
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
             ]
           },
           "mappings": [
-            { "options": { "0": { "text": "OUT OF CONTROL", "color": "red" } }, "type": "value" },
-            { "options": { "1": { "text": "IN CONTROL", "color": "green" } }, "type": "value" }
+            {
+              "options": {
+                "0": {
+                  "text": "OUT OF CONTROL",
+                  "color": "red"
+                }
+              },
+              "type": "value"
+            },
+            {
+              "options": {
+                "1": {
+                  "text": "IN CONTROL",
+                  "color": "green"
+                }
+              },
+              "type": "value"
+            }
           ],
           "unit": "none"
         }
       },
-      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 15 },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 15
+      },
       "id": 8,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
         "orientation": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto"
       },
       "targets": [
@@ -298,19 +473,33 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "blue", "value": null }
+              {
+                "color": "blue",
+                "value": null
+              }
             ]
           },
           "unit": "short"
         }
       },
-      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 15 },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 15
+      },
       "id": 9,
       "options": {
         "colorMode": "value",
         "graphMode": "none",
         "orientation": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "value_and_name"
       },
       "targets": [
@@ -323,9 +512,14 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 19 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 19
+      },
       "id": 102,
-      "title": "X-bar Control Chart — ${machine}",
+      "title": "X-bar Control Chart \u00e2\u20ac\u201d ${machine}",
       "type": "row"
     },
     {
@@ -345,46 +539,147 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "${machine}_SPC_XBar" },
+            "matcher": {
+              "id": "byName",
+              "options": "${machine}_SPC_XBar"
+            },
             "properties": [
-              { "id": "color", "value": { "fixedColor": "#73BF69", "mode": "fixed" } },
-              { "id": "displayName", "value": "X-bar" },
-              { "id": "custom.showPoints", "value": "always" }
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#73BF69",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "displayName",
+                "value": "X-bar"
+              },
+              {
+                "id": "custom.showPoints",
+                "value": "always"
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "${machine}_SPC_XBar_UCL" },
+            "matcher": {
+              "id": "byName",
+              "options": "${machine}_SPC_XBar_UCL"
+            },
             "properties": [
-              { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 5] } },
-              { "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } },
-              { "id": "custom.lineWidth", "value": 1 },
-              { "id": "custom.showPoints", "value": "never" },
-              { "id": "displayName", "value": "UCL" }
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    5
+                  ]
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 1
+              },
+              {
+                "id": "custom.showPoints",
+                "value": "never"
+              },
+              {
+                "id": "displayName",
+                "value": "UCL"
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "${machine}_SPC_XBar_CL" },
+            "matcher": {
+              "id": "byName",
+              "options": "${machine}_SPC_XBar_CL"
+            },
             "properties": [
-              { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [5, 5] } },
-              { "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } },
-              { "id": "custom.lineWidth", "value": 1 },
-              { "id": "custom.showPoints", "value": "never" },
-              { "id": "displayName", "value": "CL" }
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    5,
+                    5
+                  ]
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 1
+              },
+              {
+                "id": "custom.showPoints",
+                "value": "never"
+              },
+              {
+                "id": "displayName",
+                "value": "CL"
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "${machine}_SPC_XBar_LCL" },
+            "matcher": {
+              "id": "byName",
+              "options": "${machine}_SPC_XBar_LCL"
+            },
             "properties": [
-              { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 5] } },
-              { "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } },
-              { "id": "custom.lineWidth", "value": 1 },
-              { "id": "custom.showPoints", "value": "never" },
-              { "id": "displayName", "value": "LCL" }
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    5
+                  ]
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 1
+              },
+              {
+                "id": "custom.showPoints",
+                "value": "never"
+              },
+              {
+                "id": "displayName",
+                "value": "LCL"
+              }
             ]
           }
         ]
       },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 20 },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 20
+      },
       "id": 10,
       "targets": [
         {
@@ -396,9 +691,14 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 30 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 30
+      },
       "id": 103,
-      "title": "R Control Chart — ${machine}",
+      "title": "R Control Chart \u00e2\u20ac\u201d ${machine}",
       "type": "row"
     },
     {
@@ -418,46 +718,147 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "${machine}_SPC_Range" },
+            "matcher": {
+              "id": "byName",
+              "options": "${machine}_SPC_Range"
+            },
             "properties": [
-              { "id": "color", "value": { "fixedColor": "#73BF69", "mode": "fixed" } },
-              { "id": "displayName", "value": "Range" },
-              { "id": "custom.showPoints", "value": "always" }
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#73BF69",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "displayName",
+                "value": "Range"
+              },
+              {
+                "id": "custom.showPoints",
+                "value": "always"
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "${machine}_SPC_R_UCL" },
+            "matcher": {
+              "id": "byName",
+              "options": "${machine}_SPC_R_UCL"
+            },
             "properties": [
-              { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 5] } },
-              { "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } },
-              { "id": "custom.lineWidth", "value": 1 },
-              { "id": "custom.showPoints", "value": "never" },
-              { "id": "displayName", "value": "UCL" }
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    5
+                  ]
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 1
+              },
+              {
+                "id": "custom.showPoints",
+                "value": "never"
+              },
+              {
+                "id": "displayName",
+                "value": "UCL"
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "${machine}_SPC_R_CL" },
+            "matcher": {
+              "id": "byName",
+              "options": "${machine}_SPC_R_CL"
+            },
             "properties": [
-              { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [5, 5] } },
-              { "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } },
-              { "id": "custom.lineWidth", "value": 1 },
-              { "id": "custom.showPoints", "value": "never" },
-              { "id": "displayName", "value": "CL" }
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    5,
+                    5
+                  ]
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 1
+              },
+              {
+                "id": "custom.showPoints",
+                "value": "never"
+              },
+              {
+                "id": "displayName",
+                "value": "CL"
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "${machine}_SPC_R_LCL" },
+            "matcher": {
+              "id": "byName",
+              "options": "${machine}_SPC_R_LCL"
+            },
             "properties": [
-              { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 5] } },
-              { "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } },
-              { "id": "custom.lineWidth", "value": 1 },
-              { "id": "custom.showPoints", "value": "never" },
-              { "id": "displayName", "value": "LCL" }
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    5
+                  ]
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 1
+              },
+              {
+                "id": "custom.showPoints",
+                "value": "never"
+              },
+              {
+                "id": "displayName",
+                "value": "LCL"
+              }
             ]
           }
         ]
       },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 31 },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 31
+      },
       "id": 11,
       "targets": [
         {
@@ -469,14 +870,19 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 41 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 41
+      },
       "id": 104,
-      "title": "Capability Analysis — ${machine}",
+      "title": "Capability Analysis \u00e2\u20ac\u201d ${machine}",
       "type": "row"
     },
     {
       "datasource": "InfluxDB",
-      "description": "Cp vs Cpk trend — gap shows process centering offset",
+      "description": "Cp vs Cpk trend \u00e2\u20ac\u201d gap shows process centering offset",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -491,36 +897,89 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "${machine}_SPC_Cp" },
+            "matcher": {
+              "id": "byName",
+              "options": "${machine}_SPC_Cp"
+            },
             "properties": [
-              { "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } },
-              { "id": "displayName", "value": "Cp (potential)" }
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "displayName",
+                "value": "Cp (potential)"
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "${machine}_SPC_Cpk" },
+            "matcher": {
+              "id": "byName",
+              "options": "${machine}_SPC_Cpk"
+            },
             "properties": [
-              { "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } },
-              { "id": "displayName", "value": "Cpk (actual)" }
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "displayName",
+                "value": "Cpk (actual)"
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "${machine}_SPC_Pp" },
+            "matcher": {
+              "id": "byName",
+              "options": "${machine}_SPC_Pp"
+            },
             "properties": [
-              { "id": "color", "value": { "fixedColor": "#8F3BB8", "mode": "fixed" } },
-              { "id": "displayName", "value": "Pp (long-term potential)" }
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#8F3BB8",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "displayName",
+                "value": "Pp (long-term potential)"
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "${machine}_SPC_Ppk" },
+            "matcher": {
+              "id": "byName",
+              "options": "${machine}_SPC_Ppk"
+            },
             "properties": [
-              { "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } },
-              { "id": "displayName", "value": "Ppk (long-term actual)" }
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "displayName",
+                "value": "Ppk (long-term actual)"
+              }
             ]
           }
         ]
       },
-      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 42 },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 42
+      },
       "id": 12,
       "targets": [
         {
@@ -532,7 +991,7 @@
     },
     {
       "datasource": "InfluxDB",
-      "description": "Sigma level trend — 6 sigma = 3.4 DPMO",
+      "description": "Sigma level trend \u00e2\u20ac\u201d 6 sigma = 3.4 DPMO",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -547,14 +1006,28 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 3 },
-              { "color": "green", "value": 4 }
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 3
+              },
+              {
+                "color": "green",
+                "value": 4
+              }
             ]
           }
         }
       },
-      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 42 },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 42
+      },
       "id": 13,
       "targets": [
         {
@@ -566,14 +1039,19 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 51 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 51
+      },
       "id": 105,
       "title": "Cross-Machine Capability Trends",
       "type": "row"
     },
     {
       "datasource": "InfluxDB",
-      "description": "Cpk trend across all machines — identifies quality drift",
+      "description": "Cpk trend across all machines \u00e2\u20ac\u201d identifies quality drift",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -587,14 +1065,19 @@
           "decimals": 3
         }
       },
-      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 52 },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 52
+      },
       "id": 14,
       "targets": [
         {
           "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_SPC_Cpk$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)"
         }
       ],
-      "title": "Cpk Trend — All Machines",
+      "title": "Cpk Trend \u00e2\u20ac\u201d All Machines",
       "type": "timeseries"
     },
     {
@@ -613,19 +1096,29 @@
           "decimals": 2
         }
       },
-      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 52 },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 52
+      },
       "id": 15,
       "targets": [
         {
           "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_SPC_SigmaLevel$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)"
         }
       ],
-      "title": "Sigma Level Trend — All Machines",
+      "title": "Sigma Level Trend \u00e2\u20ac\u201d All Machines",
       "type": "timeseries"
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 61 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 61
+      },
       "id": 106,
       "title": "SPC Violation Events",
       "type": "row"
@@ -634,14 +1127,26 @@
       "datasource": "InfluxDB",
       "fieldConfig": {
         "defaults": {
-          "custom": { "filterable": true }
+          "custom": {
+            "filterable": true
+          }
         }
       },
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 62 },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 62
+      },
       "id": 16,
       "options": {
         "showHeader": true,
-        "sortBy": [{ "desc": true, "displayName": "Time" }]
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "Time"
+          }
+        ]
       },
       "targets": [
         {
@@ -654,38 +1159,87 @@
   ],
   "schemaVersion": 36,
   "style": "dark",
-  "tags": ["manufacturing", "simantha", "spc", "quality"],
+  "tags": [
+    "manufacturing",
+    "simantha",
+    "spc",
+    "quality"
+  ],
   "templating": {
     "list": [
       {
-        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
         "datasource": "InfluxDB",
         "definition": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"manufacturing\", tag: \"run_id\")",
         "includeAll": true,
         "name": "run_id",
         "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"manufacturing\", tag: \"run_id\")",
         "refresh": 2,
-        "type": "query"
+        "type": "query",
+        "allValue": ".*"
       },
       {
-        "current": { "selected": false, "text": "M1", "value": "M1" },
+        "current": {
+          "selected": false,
+          "text": "M1",
+          "value": "M1"
+        },
         "name": "machine",
         "options": [
-          { "selected": true, "text": "M1", "value": "M1" },
-          { "selected": false, "text": "M2", "value": "M2" },
-          { "selected": false, "text": "M3", "value": "M3" },
-          { "selected": false, "text": "M4", "value": "M4" },
-          { "selected": false, "text": "M5", "value": "M5" },
-          { "selected": false, "text": "M6", "value": "M6" },
-          { "selected": false, "text": "M7", "value": "M7" },
-          { "selected": false, "text": "M8", "value": "M8" }
+          {
+            "selected": true,
+            "text": "M1",
+            "value": "M1"
+          },
+          {
+            "selected": false,
+            "text": "M2",
+            "value": "M2"
+          },
+          {
+            "selected": false,
+            "text": "M3",
+            "value": "M3"
+          },
+          {
+            "selected": false,
+            "text": "M4",
+            "value": "M4"
+          },
+          {
+            "selected": false,
+            "text": "M5",
+            "value": "M5"
+          },
+          {
+            "selected": false,
+            "text": "M6",
+            "value": "M6"
+          },
+          {
+            "selected": false,
+            "text": "M7",
+            "value": "M7"
+          },
+          {
+            "selected": false,
+            "text": "M8",
+            "value": "M8"
+          }
         ],
         "query": "M1,M2,M3,M4,M5,M6,M7,M8",
         "type": "custom"
       }
     ]
   },
-  "time": { "from": "now-1h", "to": "now" },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
   "timepicker": {},
   "timezone": "browser",
   "title": "SPC Machine Detail",

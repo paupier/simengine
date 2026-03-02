@@ -20,7 +20,12 @@
   "panels": [
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
       "id": 100,
       "title": "Line OEE Breakdown",
       "type": "row"
@@ -32,10 +37,22 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "orange", "value": 40 },
-              { "color": "yellow", "value": 60 },
-              { "color": "green", "value": 80 }
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 40
+              },
+              {
+                "color": "yellow",
+                "value": 60
+              },
+              {
+                "color": "green",
+                "value": 80
+              }
             ]
           },
           "min": 0,
@@ -43,13 +60,24 @@
           "unit": "percent"
         }
       },
-      "gridPos": { "h": 7, "w": 6, "x": 0, "y": 1 },
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 0,
+        "y": 1
+      },
       "id": 1,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
         "orientation": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "value_and_name"
       },
       "targets": [
@@ -67,9 +95,18 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 70 },
-              { "color": "green", "value": 90 }
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 70
+              },
+              {
+                "color": "green",
+                "value": 90
+              }
             ]
           },
           "min": 0,
@@ -77,13 +114,24 @@
           "unit": "percent"
         }
       },
-      "gridPos": { "h": 7, "w": 6, "x": 6, "y": 1 },
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 6,
+        "y": 1
+      },
       "id": 2,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
         "orientation": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "value_and_name"
       },
       "targets": [
@@ -101,9 +149,18 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 70 },
-              { "color": "green", "value": 90 }
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 70
+              },
+              {
+                "color": "green",
+                "value": 90
+              }
             ]
           },
           "min": 0,
@@ -111,13 +168,24 @@
           "unit": "percent"
         }
       },
-      "gridPos": { "h": 7, "w": 6, "x": 12, "y": 1 },
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 12,
+        "y": 1
+      },
       "id": 3,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
         "orientation": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "value_and_name"
       },
       "targets": [
@@ -135,9 +203,18 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 70 },
-              { "color": "green", "value": 90 }
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 70
+              },
+              {
+                "color": "green",
+                "value": 90
+              }
             ]
           },
           "min": 0,
@@ -145,13 +222,24 @@
           "unit": "percent"
         }
       },
-      "gridPos": { "h": 7, "w": 6, "x": 18, "y": 1 },
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      },
       "id": 4,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
         "orientation": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "value_and_name"
       },
       "targets": [
@@ -164,7 +252,12 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 8 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
       "id": 101,
       "title": "OEE Components Trend",
       "type": "row"
@@ -185,37 +278,93 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "LineOEE" },
+            "matcher": {
+              "id": "byName",
+              "options": "LineOEE"
+            },
             "properties": [
-              { "id": "color", "value": { "fixedColor": "white", "mode": "fixed" } },
-              { "id": "custom.lineWidth", "value": 3 },
-              { "id": "displayName", "value": "OEE" }
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "white",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 3
+              },
+              {
+                "id": "displayName",
+                "value": "OEE"
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "LineAvailability" },
+            "matcher": {
+              "id": "byName",
+              "options": "LineAvailability"
+            },
             "properties": [
-              { "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } },
-              { "id": "displayName", "value": "Availability" }
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "displayName",
+                "value": "Availability"
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "LinePerformance" },
+            "matcher": {
+              "id": "byName",
+              "options": "LinePerformance"
+            },
             "properties": [
-              { "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } },
-              { "id": "displayName", "value": "Performance" }
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "displayName",
+                "value": "Performance"
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "LineQuality" },
+            "matcher": {
+              "id": "byName",
+              "options": "LineQuality"
+            },
             "properties": [
-              { "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } },
-              { "id": "displayName", "value": "Quality" }
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "displayName",
+                "value": "Quality"
+              }
             ]
           }
         ]
       },
-      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 9 },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 9
+      },
       "id": 5,
       "targets": [
         {
@@ -227,7 +376,12 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 18
+      },
       "id": 102,
       "title": "Per-Machine OEE Comparison",
       "type": "row"
@@ -239,10 +393,22 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "orange", "value": 40 },
-              { "color": "yellow", "value": 60 },
-              { "color": "green", "value": 80 }
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 40
+              },
+              {
+                "color": "yellow",
+                "value": 60
+              },
+              {
+                "color": "green",
+                "value": 80
+              }
             ]
           },
           "min": 0,
@@ -250,12 +416,23 @@
           "unit": "percent"
         }
       },
-      "gridPos": { "h": 7, "w": 6, "x": 0, "y": 19 },
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 0,
+        "y": 19
+      },
       "id": 6,
       "options": {
         "displayMode": "gradient",
         "orientation": "horizontal",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "showUnfilled": true
       },
       "targets": [
@@ -273,9 +450,18 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 70 },
-              { "color": "green", "value": 90 }
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 70
+              },
+              {
+                "color": "green",
+                "value": 90
+              }
             ]
           },
           "min": 0,
@@ -283,12 +469,23 @@
           "unit": "percent"
         }
       },
-      "gridPos": { "h": 7, "w": 6, "x": 6, "y": 19 },
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 6,
+        "y": 19
+      },
       "id": 7,
       "options": {
         "displayMode": "gradient",
         "orientation": "horizontal",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "showUnfilled": true
       },
       "targets": [
@@ -306,9 +503,18 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 70 },
-              { "color": "green", "value": 90 }
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 70
+              },
+              {
+                "color": "green",
+                "value": 90
+              }
             ]
           },
           "min": 0,
@@ -316,12 +522,23 @@
           "unit": "percent"
         }
       },
-      "gridPos": { "h": 7, "w": 6, "x": 12, "y": 19 },
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 12,
+        "y": 19
+      },
       "id": 8,
       "options": {
         "displayMode": "gradient",
         "orientation": "horizontal",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "showUnfilled": true
       },
       "targets": [
@@ -339,9 +556,18 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 70 },
-              { "color": "green", "value": 90 }
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 70
+              },
+              {
+                "color": "green",
+                "value": 90
+              }
             ]
           },
           "min": 0,
@@ -349,12 +575,23 @@
           "unit": "percent"
         }
       },
-      "gridPos": { "h": 7, "w": 6, "x": 18, "y": 19 },
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 18,
+        "y": 19
+      },
       "id": 9,
       "options": {
         "displayMode": "gradient",
         "orientation": "horizontal",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "showUnfilled": true
       },
       "targets": [
@@ -367,7 +604,12 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 26 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 26
+      },
       "id": 103,
       "title": "Per-Machine OEE Trends",
       "type": "row"
@@ -387,7 +629,12 @@
           "unit": "percent"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 27 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 27
+      },
       "id": 10,
       "targets": [
         {
@@ -399,7 +646,7 @@
     },
     {
       "datasource": "InfluxDB",
-      "description": "Availability trend for each machine — identifies downtime-constrained stations",
+      "description": "Availability trend for each machine \u00e2\u20ac\u201d identifies downtime-constrained stations",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -412,7 +659,12 @@
           "unit": "percent"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 27 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 27
+      },
       "id": 11,
       "targets": [
         {
@@ -424,7 +676,12 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 35 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 35
+      },
       "id": 104,
       "title": "Production Quality & Output",
       "type": "row"
@@ -437,18 +694,32 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null }
+              {
+                "color": "green",
+                "value": null
+              }
             ]
           },
           "unit": "short"
         }
       },
-      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 36 },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 36
+      },
       "id": 12,
       "options": {
         "displayMode": "gradient",
         "orientation": "horizontal",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "showUnfilled": false
       },
       "targets": [
@@ -461,26 +732,46 @@
     },
     {
       "datasource": "InfluxDB",
-      "description": "Defective parts per machine — highlights quality problems",
+      "description": "Defective parts per machine \u00e2\u20ac\u201d highlights quality problems",
       "fieldConfig": {
         "defaults": {
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 5 },
-              { "color": "red", "value": 20 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5
+              },
+              {
+                "color": "red",
+                "value": 20
+              }
             ]
           },
           "unit": "short"
         }
       },
-      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 36 },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 36
+      },
       "id": 13,
       "options": {
         "displayMode": "gradient",
         "orientation": "horizontal",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "showUnfilled": false
       },
       "targets": [
@@ -493,17 +784,29 @@
     },
     {
       "datasource": "InfluxDB",
-      "description": "Target vs actual PPM — shows speed losses",
+      "description": "Target vs actual PPM \u00e2\u20ac\u201d shows speed losses",
       "fieldConfig": {
         "defaults": {
-          "custom": { "filterable": true }
+          "custom": {
+            "filterable": true
+          }
         }
       },
-      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 36 },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 36
+      },
       "id": 14,
       "options": {
         "showHeader": true,
-        "sortBy": [{ "desc": false, "displayName": "_field" }]
+        "sortBy": [
+          {
+            "desc": false,
+            "displayName": "_field"
+          }
+        ]
       },
       "targets": [
         {
@@ -515,14 +818,19 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 43 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 43
+      },
       "id": 105,
       "title": "Performance & Quality Trends",
       "type": "row"
     },
     {
       "datasource": "InfluxDB",
-      "description": "Performance ratio trend — identifies speed loss patterns",
+      "description": "Performance ratio trend \u00e2\u20ac\u201d identifies speed loss patterns",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -535,7 +843,12 @@
           "unit": "percent"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 44 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 44
+      },
       "id": 15,
       "targets": [
         {
@@ -547,7 +860,7 @@
     },
     {
       "datasource": "InfluxDB",
-      "description": "Quality ratio trend — identifies defect rate patterns",
+      "description": "Quality ratio trend \u00e2\u20ac\u201d identifies defect rate patterns",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -560,7 +873,12 @@
           "unit": "percent"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 44 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 44
+      },
       "id": 16,
       "targets": [
         {
@@ -573,22 +891,34 @@
   ],
   "schemaVersion": 36,
   "style": "dark",
-  "tags": ["manufacturing", "simantha", "oee"],
+  "tags": [
+    "manufacturing",
+    "simantha",
+    "oee"
+  ],
   "templating": {
     "list": [
       {
-        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
         "datasource": "InfluxDB",
         "definition": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"manufacturing\", tag: \"run_id\")",
         "includeAll": true,
         "name": "run_id",
         "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"manufacturing\", tag: \"run_id\")",
         "refresh": 2,
-        "type": "query"
+        "type": "query",
+        "allValue": ".*"
       }
     ]
   },
-  "time": { "from": "now-1h", "to": "now" },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
   "timepicker": {},
   "timezone": "browser",
   "title": "OEE Detail",
