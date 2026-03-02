@@ -338,7 +338,7 @@ If running Grafana standalone:
    - **Default Bucket:** `manufacturing`
    - **Data source name:** `InfluxDB` (dashboards reference this name)
 
-2. Import each `.json` file from `grafana/dashboards/` via **Dashboards > Import > Upload JSON file**.
+2. Import each `.json` file from `docker/grafana/dashboards/` via **Dashboards > Import > Upload JSON file**.
 
 ### Telegraf Configuration
 

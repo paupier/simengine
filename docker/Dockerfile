@@ -27,7 +27,7 @@ COPY docker/telegraf/generate_telegraf_conf.py /app/docker/telegraf/generate_tel
 COPY tools/ /app/tools/
 
 # Copy Grafana dashboards (for volume mount reference)
-COPY grafana/dashboards/ /app/grafana/dashboards/
+COPY docker/grafana/dashboards/ /app/grafana/dashboards/
 
 # Copy entrypoint
 COPY docker/entrypoint.sh /app/docker/entrypoint.sh
