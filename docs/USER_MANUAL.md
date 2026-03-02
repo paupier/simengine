@@ -600,6 +600,17 @@ scenario_name:
     capacity: 1              # Number of repair technicians
 ```
 
+### Machine Count Limits
+
+| Constraint | Value | Notes |
+|-----------|-------|-------|
+| **Minimum** | 2 machines | Enforced by `validate_serial_topology()` in `config_loader.py` |
+| **Maximum** | No hard limit | Simantha, OPC UA address space, Telegraf generator, and topology validation all use dynamic loops |
+| **Tested** | Up to 8 machines | `full_feature_8_machine_line` scenario; `test_add_machines_up_to_8` in test suite |
+| **Web UI soft limit** | 19 machines | The dashboard OPC UA reader scans `M1` through `M19` and stops on the first miss. Lines with 20+ machines work via OPC UA clients and CLI but won't display all machines on the dashboard. |
+
+The serial topology requires exactly N-1 buffers for N machines (e.g., 8 machines need 7 buffers). Each buffer connects consecutive machines via `upstream` and `downstream` fields.
+
 ### Machine Configuration Options
 
 **Basic Machine:**
