@@ -2120,6 +2120,11 @@ def run_segment(
             np.random.seed(sim_seed)
             system.simulate(warm_up_time=warm_up_time, simulation_time=sim_time,
                             verbose=False, collect_data=False, trace=trace)
+            # Track last completed sim_time so we can restore state on Ctrl+C.
+            # KeyboardInterrupt during simulate() leaves Simantha objects in a
+            # partial state (counters reset then only partially re-run).
+            system._last_completed_sim_time = sim_time
+            system._last_warm_up_time = warm_up_time
 
         # Part counter
         delta_parts, total_parts_produced, prev_sink_level = update_part_counter(
@@ -2320,6 +2325,24 @@ def main(argv=None):
 
     except KeyboardInterrupt:
         print("\n\nSimulation stopped by user")
+
+        # Restore Simantha state before analysis.
+        # KeyboardInterrupt during system.simulate() leaves sink.level,
+        # machine counters, and scrap sinks in a partial state because
+        # simulate() reinitializes everything and re-runs from time 0.
+        # Re-running the last completed sim_time restores correct values.
+        import numpy as np
+        last_sim = getattr(system, '_last_completed_sim_time', 0.0)
+        last_wu = getattr(system, '_last_warm_up_time', 0)
+        if last_sim > 0:
+            try:
+                random.seed(sim_seed)
+                np.random.seed(sim_seed)
+                system.simulate(warm_up_time=last_wu,
+                                simulation_time=last_sim,
+                                verbose=False, collect_data=False, trace=False)
+            except Exception:
+                pass  # Best effort; analysis will use whatever state exists
 
         # Print part quality analysis
         quality_analysis = analyze_part_quality(sink, machines, scrap_sinks)

@@ -133,9 +133,10 @@ The web UI runs both locally and in Docker via environment variable defaults:
 | `SIMANTHA_OPCUA_ENDPOINT` | `opc.tcp://localhost:4840/simantha/` | (same) |
 
 Routes:
-- `/` — Main dashboard with live KPIs, per-machine OEE/PPM/SPC, shift progress
+- `/` — Main dashboard with live KPIs, per-machine OEE/PPM/SPC, shift progress, current run_id
 - `/config` — Visual scenario editor with CRUD and YAML preview
 - `/reports` — Post-run analysis (OEE charts, throughput, anomaly detection, run comparison)
+- `/runs` — Run history with click-to-copy run_id (for Grafana filtering), analyze, CSV download
 - `/validation` — Data pipeline health check (OPC UA → Telegraf → InfluxDB)
 - `/api/scenarios` — List scenarios
 - `/api/scenario/<name>` — GET/PUT single scenario config
@@ -143,6 +144,7 @@ Routes:
 - `/api/start`, `/api/stop`, `/api/control` — Simulation lifecycle
 - `/api/status` — Live status with OPC UA values (OEE, PPM, SPC, shifts, scrap)
 - `/api/logs` — Recent simulation log lines
+- `/api/runs` — Merged run listing (run_index.json + CSV files + live run), sorted newest first
 - `/api/reports/analyze`, `/api/reports/runs` — Report generation and run history
 - `/api/validation/run`, `/api/validation/influxdb/status` — Pipeline validation
 - `/api/historian/files`, `/api/historian/download` — CSV historian file access
