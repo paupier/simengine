@@ -329,7 +329,13 @@ def analyze_machine_oee(df):
 # ---------------------------------------------------------------------------
 
 def analyze_failures(df):
-    """Section 5: MTTF, MTTR, failure/repair counts + timeline."""
+    """Section 5: MTTF, MTTR, failure/repair counts + timeline.
+
+    Tracks hard failures (FAILED/UNDER_REPAIR), degradation events
+    (transition into DEGRADED), and maintenance events (ALARM with
+    maintenance started/completed messages). This ensures CBM scenarios
+    where machines are repaired before reaching FAILED are still captured.
+    """
     _require_pandas()
     failures = df[
         (df["event_type"] == "STATE_CHANGE") &
@@ -341,6 +347,24 @@ def analyze_failures(df):
         (~df["new_state"].isin(["FAILED", "UNDER_REPAIR"]))
     ]
 
+    # Degradation events (transition INTO DEGRADED state)
+    degradations = df[
+        (df["event_type"] == "STATE_CHANGE") &
+        (df["source_type"] == "machine") &
+        (df["new_state"] == "DEGRADED") &
+        (df["old_state"] != "DEGRADED")
+    ]
+
+    # Maintenance events from ALARM
+    maint_starts = df[
+        (df["event_type"] == "ALARM") &
+        (df["message"].str.contains("Maintenance started", na=False))
+    ]
+    maint_ends = df[
+        (df["event_type"] == "ALARM") &
+        (df["message"].str.contains("Maintenance completed", na=False))
+    ]
+
     machine_events = df[
         (df["source_type"] == "machine") & (df["event_type"] == "STATE_CHANGE")
     ]
@@ -348,16 +372,24 @@ def analyze_failures(df):
     result = {
         "total_failures": len(failures),
         "total_repairs": len(repairs),
+        "total_degradations": len(degradations),
+        "total_maintenance_events": len(maint_starts),
         "machines": {},
     }
 
     for m in machines_list:
         m_failures = failures[failures["source"] == m]
         m_repairs = repairs[repairs["source"] == m]
+        m_degradations = degradations[degradations["source"] == m]
+        m_maint_starts = maint_starts[maint_starts["source"] == m]
         m_data = {
             "failure_count": len(m_failures),
             "repair_count": len(m_repairs),
+            "degradation_count": len(m_degradations),
+            "maintenance_count": len(m_maint_starts),
             "failure_timeline": [],
+            "degradation_timeline": [],
+            "maintenance_timeline": [],
         }
 
         if len(m_failures) > 1:
@@ -386,6 +418,18 @@ def analyze_failures(df):
             fail_ts = m_failures["timestamp"].tolist()
             fail_vals = [1.0] * len(fail_ts)  # y=1 for failure events
             m_data["failure_timeline"] = _to_timeseries(fail_ts, fail_vals)
+
+        # Degradation timeline for scatter chart
+        if len(m_degradations) > 0:
+            deg_ts = m_degradations["timestamp"].tolist()
+            deg_vals = [0.5] * len(deg_ts)  # y=0.5 for degradation events
+            m_data["degradation_timeline"] = _to_timeseries(deg_ts, deg_vals)
+
+        # Maintenance timeline for scatter chart
+        if len(m_maint_starts) > 0:
+            maint_ts = m_maint_starts["timestamp"].tolist()
+            maint_vals = [0.75] * len(maint_ts)  # y=0.75 for maintenance events
+            m_data["maintenance_timeline"] = _to_timeseries(maint_ts, maint_vals)
 
         result["machines"][m] = m_data
 

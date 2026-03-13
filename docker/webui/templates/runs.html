@@ -3,8 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Simantha - Run History</title>
+    <title>Simantha - Run Reports</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <style>
         body { background: #f8f9fa; }
         .run-id-cell {
@@ -20,6 +21,21 @@
         .current-run-banner { border-left: 4px solid #198754; }
         .current-run-banner.stopped { border-left-color: #6c757d; }
         .best-oee { background-color: rgba(25, 135, 84, 0.08); }
+        .detail-row td { padding: 0 !important; border-top: none !important; }
+        .detail-panel { padding: 16px; background: #fff; border: 1px solid #dee2e6; border-top: none; }
+        .kpi-card { text-align: center; padding: 12px; }
+        .kpi-value { font-size: 1.4rem; font-weight: bold; color: #0d6efd; }
+        .kpi-label { font-size: 0.75rem; color: #6c757d; }
+        .chart-container { position: relative; height: 260px; }
+        .section-card { margin-bottom: 12px; }
+        .badge-pass { background: #198754; }
+        .badge-fail { background: #dc3545; }
+        .badge-warn { background: #fd7e14; }
+        .badge-skip { background: #6c757d; }
+        .stat-row { display: flex; justify-content: space-between; padding: 3px 0; border-bottom: 1px solid #f0f0f0; font-size: 0.8rem; }
+        .stat-label { color: #6c757d; }
+        .stat-value { font-weight: 600; }
+        .influx-badge { font-size: 0.75rem; }
     </style>
 </head>
 <body>
@@ -28,9 +44,7 @@
             <a href="/" class="navbar-brand mb-0 h1">Simantha Digital Twin</a>
             <div>
                 <a href="/" class="btn btn-sm btn-outline-light me-2">Dashboard</a>
-                <a href="/reports" class="btn btn-sm btn-outline-info me-2">Reports</a>
-                <a href="/runs" class="btn btn-sm btn-light me-2">Runs</a>
-                <a href="/validation" class="btn btn-sm btn-outline-warning me-2">Validation</a>
+                <a href="/runs" class="btn btn-sm btn-light me-2">Run Reports</a>
                 <a href="/config" class="btn btn-sm btn-outline-light me-2">Config</a>
                 <a href="/recipes" class="btn btn-sm btn-outline-light me-2">Recipes</a>
             </div>
@@ -48,26 +62,45 @@
     </div>
 
     <div class="container-fluid mt-3">
-        <!-- Current Run Banner -->
-        <div class="card mb-3 current-run-banner" id="current-run-card">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <h6 class="mb-1">Current Run</h6>
-                        <div id="current-run-info">
-                            <span class="text-muted">Loading...</span>
+        <!-- InfluxDB Status + Current Run Banner row -->
+        <div class="row mb-3">
+            <div class="col-md-9">
+                <div class="card current-run-banner" id="current-run-card">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="mb-1">Current Run</h6>
+                                <div id="current-run-info">
+                                    <span class="text-muted">Loading...</span>
+                                </div>
+                            </div>
+                            <div id="current-run-status"></div>
                         </div>
                     </div>
-                    <div id="current-run-status"></div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card h-100">
+                    <div class="card-body d-flex align-items-center justify-content-between">
+                        <div>
+                            <small class="text-muted">InfluxDB</small><br>
+                            <span id="influx-status-badge" class="badge bg-secondary influx-badge">Checking...</span>
+                        </div>
+                        <div id="influx-status-url" class="text-muted small"></div>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- Run History Table -->
+        <!-- Run Reports Table -->
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
-                <strong>Run History</strong>
-                <button class="btn btn-outline-primary btn-sm" onclick="loadRuns()">Refresh</button>
+                <strong>Run Reports</strong>
+                <div>
+                    <button class="btn btn-outline-danger btn-sm me-2" id="btn-delete-selected" disabled
+                        onclick="deleteSelected()">Delete Selected</button>
+                    <button class="btn btn-outline-primary btn-sm" onclick="loadRuns()">Refresh</button>
+                </div>
             </div>
             <div class="card-body">
                 <div id="runs-loading" class="text-muted">Loading run history...</div>
@@ -78,6 +111,7 @@
                     <table class="table table-sm table-hover" id="runs-table">
                         <thead>
                             <tr>
+                                <th style="width:30px;"><input type="checkbox" id="select-all" onchange="toggleSelectAll(this)"></th>
                                 <th>Run ID</th>
                                 <th>Scenario</th>
                                 <th>Date</th>
@@ -98,13 +132,17 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        // Chart instances per run_id (for cleanup on collapse)
+        const runCharts = {};
+        // Track which detail panels are open
+        const openPanels = {};
+
         // --- Copy run_id to clipboard ---
         function copyRunId(runId) {
             navigator.clipboard.writeText(runId).then(() => {
                 const toast = new bootstrap.Toast(document.getElementById('copy-toast'));
                 toast.show();
             }).catch(() => {
-                // Fallback for older browsers
                 const ta = document.createElement('textarea');
                 ta.value = runId;
                 document.body.appendChild(ta);
@@ -128,6 +166,86 @@
             if (!date) return '-';
             const opts = { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' };
             return date.toLocaleDateString(undefined, opts);
+        }
+
+        // --- Format duration: "10.7" -> "10h 42m" ---
+        function formatDuration(hrs) {
+            if (hrs == null) return '-';
+            const h = Math.floor(hrs);
+            const m = Math.round((hrs - h) * 60);
+            if (h === 0) return m + 'm';
+            if (m === 0) return h + 'h';
+            return h + 'h ' + m + 'm';
+        }
+
+        // --- Safe ID for DOM elements ---
+        function safeId(runId) {
+            return runId.replace(/[^a-zA-Z0-9_]/g, '_');
+        }
+
+        // --- Select all / checkbox handling ---
+        function toggleSelectAll(checkbox) {
+            document.querySelectorAll('.run-checkbox').forEach(cb => { cb.checked = checkbox.checked; });
+            updateDeleteButton();
+        }
+
+        function updateDeleteButton() {
+            const checked = document.querySelectorAll('.run-checkbox:checked');
+            document.getElementById('btn-delete-selected').disabled = checked.length === 0;
+        }
+
+        // --- Delete selected runs ---
+        async function deleteSelected() {
+            const checked = document.querySelectorAll('.run-checkbox:checked');
+            if (checked.length === 0) return;
+
+            const runIds = Array.from(checked).map(cb => cb.dataset.runId);
+            const msg = `This will permanently delete ${runIds.length} run(s) and their CSV files.\n\nRun IDs:\n${runIds.join('\n')}\n\nContinue?`;
+            if (!confirm(msg)) return;
+
+            try {
+                const resp = await fetch('/api/runs', {
+                    method: 'DELETE',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({run_ids: runIds, delete_csv: true})
+                });
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    alert('Delete failed: ' + (err.error || 'Unknown error'));
+                    return;
+                }
+                // Clean up chart instances for deleted runs
+                for (const rid of runIds) {
+                    destroyRunCharts(rid);
+                    delete openPanels[rid];
+                }
+                document.getElementById('select-all').checked = false;
+                await loadRuns();
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        // --- Load InfluxDB status ---
+        async function loadInfluxStatus() {
+            try {
+                const resp = await fetch('/api/validation/influxdb/status');
+                const data = await resp.json();
+                const badge = document.getElementById('influx-status-badge');
+                const url = document.getElementById('influx-status-url');
+                if (data.connected) {
+                    badge.className = 'badge bg-success influx-badge';
+                    badge.textContent = 'Connected';
+                } else {
+                    badge.className = 'badge bg-danger influx-badge';
+                    badge.textContent = 'Disconnected';
+                }
+                url.textContent = data.url || '';
+            } catch (e) {
+                const badge = document.getElementById('influx-status-badge');
+                badge.className = 'badge bg-secondary influx-badge';
+                badge.textContent = 'Unknown';
+            }
         }
 
         // --- Load current run status ---
@@ -179,12 +297,524 @@
                     btn.textContent = 'Analyze';
                     return;
                 }
-                // Reload runs to show updated data
                 await loadRuns();
             } catch (e) {
                 alert('Error: ' + e.message);
                 btn.disabled = false;
                 btn.textContent = 'Analyze';
+            }
+        }
+
+        // --- Toggle report detail panel ---
+        async function toggleReport(runId, csvFile) {
+            const sid = safeId(runId);
+            const existingRow = document.getElementById('detail-' + sid);
+
+            if (existingRow) {
+                destroyRunCharts(runId);
+                existingRow.remove();
+                delete openPanels[runId];
+                return;
+            }
+
+            // Fetch analysis
+            const btn = document.getElementById('btn-report-' + sid);
+            if (btn) { btn.disabled = true; btn.textContent = 'Loading...'; }
+
+            try {
+                const resp = await fetch('/api/reports/analyze', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({filename: csvFile})
+                });
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    alert('Report failed: ' + (err.error || 'Unknown error'));
+                    return;
+                }
+                const analysis = await resp.json();
+                openPanels[runId] = true;
+                renderDetailPanel(runId, analysis);
+            } catch (e) {
+                alert('Error: ' + e.message);
+            } finally {
+                if (btn) { btn.disabled = false; btn.textContent = 'View Report'; }
+            }
+        }
+
+        // --- Toggle validation panel ---
+        async function toggleValidation(runId, csvFile) {
+            const sid = safeId(runId);
+            const existingRow = document.getElementById('validation-' + sid);
+
+            if (existingRow) {
+                existingRow.remove();
+                return;
+            }
+
+            const btn = document.getElementById('btn-validate-' + sid);
+            if (btn) { btn.disabled = true; btn.textContent = 'Validating...'; }
+
+            try {
+                const resp = await fetch('/api/validation/run', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({filename: csvFile})
+                });
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    renderValidationPanel(runId, null, err.error || 'Validation failed');
+                    return;
+                }
+                const result = await resp.json();
+                renderValidationPanel(runId, result, null);
+            } catch (e) {
+                renderValidationPanel(runId, null, e.message);
+            } finally {
+                if (btn) { btn.disabled = false; btn.textContent = 'Validate'; }
+            }
+        }
+
+        // --- Render validation inline panel ---
+        function renderValidationPanel(runId, result, error) {
+            const sid = safeId(runId);
+            const parentRow = document.getElementById('row-' + sid);
+            if (!parentRow) return;
+
+            // Remove existing panel if any
+            const existing = document.getElementById('validation-' + sid);
+            if (existing) existing.remove();
+
+            const tr = document.createElement('tr');
+            tr.id = 'validation-' + sid;
+            tr.classList.add('detail-row');
+            const td = document.createElement('td');
+            td.colSpan = 10;
+
+            if (error) {
+                td.innerHTML = `<div class="detail-panel">
+                    <div class="alert alert-warning mb-0">
+                        <strong>Validation unavailable:</strong> ${error}
+                    </div>
+                </div>`;
+            } else {
+                const verdictClass = result.verdict === 'PASS' ? 'alert-success' : 'alert-danger';
+                const verdictText = result.verdict === 'PASS' ? 'ALL CHECKS PASSED' : 'SOME CHECKS FAILED';
+
+                let checksHtml = '<table class="table table-sm small mb-0"><thead><tr><th>Check</th><th>CSV Value</th><th>Telegraf Value</th><th>Result</th></tr></thead><tbody>';
+                for (const check of (result.checks || [])) {
+                    const badgeClass = check.status === 'PASS' ? 'badge-pass' : (check.status === 'FAIL' ? 'badge-fail' : 'badge-skip');
+                    checksHtml += `<tr><td>${check.name}</td><td>${check.csv_value}</td><td>${check.telegraf_value}</td><td><span class="badge ${badgeClass}">${check.status}</span></td></tr>`;
+                }
+                checksHtml += '</tbody></table>';
+
+                td.innerHTML = `<div class="detail-panel">
+                    <div class="alert ${verdictClass} mb-2 py-1 text-center"><strong>${verdictText}</strong> (${result.passed}/${result.total} passed)</div>
+                    ${checksHtml}
+                </div>`;
+            }
+
+            tr.appendChild(td);
+            parentRow.after(tr);
+        }
+
+        // --- Destroy chart instances for a run ---
+        function destroyRunCharts(runId) {
+            if (runCharts[runId]) {
+                for (const key in runCharts[runId]) {
+                    if (runCharts[runId][key]) runCharts[runId][key].destroy();
+                }
+                delete runCharts[runId];
+            }
+        }
+
+        // --- Render detail panel with full report charts ---
+        function renderDetailPanel(runId, a) {
+            const sid = safeId(runId);
+            const parentRow = document.getElementById('row-' + sid);
+            if (!parentRow) return;
+
+            // Remove existing panels
+            const existing = document.getElementById('detail-' + sid);
+            if (existing) { destroyRunCharts(runId); existing.remove(); }
+
+            runCharts[runId] = {};
+
+            const tr = document.createElement('tr');
+            tr.id = 'detail-' + sid;
+            tr.classList.add('detail-row');
+            const td = document.createElement('td');
+            td.colSpan = 10;
+
+            td.innerHTML = `<div class="detail-panel">
+                <!-- KPI cards -->
+                <div class="row mb-3">
+                    <div class="col"><div class="card kpi-card"><div class="kpi-value" id="${sid}-ov-parts">-</div><div class="kpi-label">Total Parts</div></div></div>
+                    <div class="col"><div class="card kpi-card"><div class="kpi-value" id="${sid}-ov-oee">-</div><div class="kpi-label">Line OEE (avg)</div></div></div>
+                    <div class="col"><div class="card kpi-card"><div class="kpi-value" id="${sid}-ov-ppm">-</div><div class="kpi-label">Actual PPM</div></div></div>
+                    <div class="col"><div class="card kpi-card"><div class="kpi-value" id="${sid}-ov-efficiency">-</div><div class="kpi-label">Efficiency</div></div></div>
+                    <div class="col"><div class="card kpi-card"><div class="kpi-value" id="${sid}-ov-duration">-</div><div class="kpi-label">Duration</div></div></div>
+                    <div class="col"><div class="card kpi-card"><div class="kpi-value" id="${sid}-ov-events">-</div><div class="kpi-label">Total Events</div></div></div>
+                </div>
+
+                <!-- Event types -->
+                <div class="card section-card">
+                    <div class="card-header"><strong>Event Type Distribution</strong></div>
+                    <div class="card-body"><div class="chart-container"><canvas id="${sid}-chart-event-types"></canvas></div></div>
+                </div>
+
+                <!-- Time in State -->
+                <div class="card section-card">
+                    <div class="card-header"><strong>Time in State (per Machine)</strong></div>
+                    <div class="card-body"><div class="chart-container" style="height:320px;"><canvas id="${sid}-chart-time-in-state"></canvas></div></div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="card section-card">
+                            <div class="card-header"><strong>Line OEE Over Time</strong></div>
+                            <div class="card-body">
+                                <div class="chart-container"><canvas id="${sid}-chart-line-oee"></canvas></div>
+                                <div class="mt-2" id="${sid}-oee-stats"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card section-card">
+                            <div class="card-header"><strong>Per-Machine OEE</strong></div>
+                            <div class="card-body">
+                                <div class="chart-container"><canvas id="${sid}-chart-machine-oee"></canvas></div>
+                                <div class="mt-2" id="${sid}-machine-oee-stats"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="card section-card">
+                            <div class="card-header"><strong>Cumulative Throughput</strong></div>
+                            <div class="card-body">
+                                <div class="chart-container"><canvas id="${sid}-chart-throughput"></canvas></div>
+                                <div class="mt-2" id="${sid}-throughput-stats"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card section-card">
+                            <div class="card-header"><strong>Buffer Levels Over Time</strong></div>
+                            <div class="card-body">
+                                <div class="chart-container"><canvas id="${sid}-chart-buffers"></canvas></div>
+                                <div class="mt-2" id="${sid}-buffer-stats"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="card section-card">
+                            <div class="card-header"><strong>Failure &amp; Maintenance Timeline</strong></div>
+                            <div class="card-body">
+                                <div class="chart-container"><canvas id="${sid}-chart-failures"></canvas></div>
+                                <div class="mt-2" id="${sid}-failure-stats"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card section-card">
+                            <div class="card-header"><strong>Scrap / Rework per Machine</strong></div>
+                            <div class="card-body">
+                                <div class="chart-container"><canvas id="${sid}-chart-quality"></canvas></div>
+                                <div class="mt-2" id="${sid}-quality-stats"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Shifts -->
+                <div class="card section-card" id="${sid}-shift-section" style="display:none;">
+                    <div class="card-header"><strong>Shift Analysis</strong></div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6"><div class="chart-container"><canvas id="${sid}-chart-shifts"></canvas></div></div>
+                            <div class="col-md-6" id="${sid}-shift-table"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Anomaly Check -->
+                <div class="card section-card">
+                    <div class="card-header"><strong>Anomaly Check</strong></div>
+                    <div class="card-body">
+                        <table class="table table-sm" id="${sid}-anomaly-table">
+                            <thead><tr><th>Check</th><th>Result</th><th>Details</th></tr></thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>`;
+
+            tr.appendChild(td);
+            parentRow.after(tr);
+
+            // Now render all chart sections
+            renderReportData(sid, runId, a);
+        }
+
+        // --- Render report data into detail panel ---
+        function renderReportData(sid, runId, a) {
+            // Overview KPIs
+            const el = id => document.getElementById(sid + '-' + id);
+            el('ov-events').textContent = (a.overview.total_events || 0).toLocaleString();
+            el('ov-duration').textContent = formatDuration(a.overview.sim_duration_hrs);
+            el('ov-parts').textContent = a.throughput.total_parts ? a.throughput.total_parts.toLocaleString() : '-';
+            el('ov-oee').textContent = a.oee.mean ? (a.oee.mean * 100).toFixed(1) + '%' : '-';
+            el('ov-ppm').textContent = a.throughput.ppm ? a.throughput.ppm.toFixed(1) : '-';
+            const effEl = el('ov-efficiency');
+            if (a.throughput.efficiency_pct) {
+                effEl.textContent = a.throughput.efficiency_pct.toFixed(1) + '%';
+                effEl.style.color = a.throughput.efficiency_pct >= 85 ? '#198754' : a.throughput.efficiency_pct >= 60 ? '#fd7e14' : '#dc3545';
+            }
+
+            renderEventTypesFor(sid, runId, a.overview);
+            if (a.time_in_state) renderTimeInStateFor(sid, runId, a.time_in_state);
+            renderLineOeeFor(sid, runId, a.oee);
+            renderMachineOeeFor(sid, runId, a.machine_oee);
+            renderThroughputFor(sid, runId, a.throughput);
+            renderBuffersFor(sid, runId, a.buffer_dynamics);
+            renderFailuresFor(sid, runId, a.failures);
+            renderQualityFor(sid, runId, a.quality_routing);
+            renderShiftsFor(sid, runId, a.shifts);
+            renderAnomaliesFor(sid, runId, a.anomalies);
+        }
+
+        // --- Chart rendering functions (prefixed versions for inline panels) ---
+
+        const CHART_COLORS = ['#0d6efd','#dc3545','#198754','#fd7e14','#6f42c1','#20c997','#ffc107','#6c757d'];
+
+        function renderEventTypesFor(sid, runId, ov) {
+            const labels = Object.keys(ov.event_type_distribution);
+            const values = labels.map(k => ov.event_type_distribution[k].count);
+            runCharts[runId].eventTypes = new Chart(document.getElementById(sid + '-chart-event-types'), {
+                type: 'bar',
+                data: { labels, datasets: [{label: 'Count', data: values, backgroundColor: CHART_COLORS.slice(0, labels.length)}] },
+                options: {indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: {legend: {display: false}}}
+            });
+        }
+
+        function renderTimeInStateFor(sid, runId, tis) {
+            const machines = Object.keys(tis.machines || {});
+            const states = tis.states || [];
+            if (machines.length === 0 || states.length === 0) return;
+            const stateColors = {'PROCESSING':'#198754','BLOCKED':'#fd7e14','STARVED':'#ffc107','FAILED':'#dc3545','UNDER_REPAIR':'#6f42c1','DEGRADED':'#20c997','IDLE':'#6c757d','PAUSED':'#adb5bd'};
+            const fallback = ['#0d6efd','#e83e8c','#795548','#607d8b'];
+            const datasets = states.map((state, si) => ({
+                label: state, data: machines.map(m => (tis.machines[m] || {})[state] || 0),
+                backgroundColor: stateColors[state] || fallback[si % fallback.length]
+            }));
+            runCharts[runId].timeInState = new Chart(document.getElementById(sid + '-chart-time-in-state'), {
+                type: 'bar', data: {labels: machines, datasets},
+                options: {indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+                    scales: {x: {stacked: true, title: {display: true, text: 'Time (minutes)'}}, y: {stacked: true}},
+                    plugins: {legend: {position: 'bottom', labels: {boxWidth: 12}}}}
+            });
+        }
+
+        function renderLineOeeFor(sid, runId, oee) {
+            if (!oee.timeseries || oee.timeseries.length === 0) return;
+            const labels = oee.timeseries.map(p => (p.t / 3600).toFixed(2));
+            const values = oee.timeseries.map(p => p.v);
+            runCharts[runId].lineOee = new Chart(document.getElementById(sid + '-chart-line-oee'), {
+                type: 'line',
+                data: {labels, datasets: [{label: 'Line OEE', data: values, borderColor: '#0d6efd', borderWidth: 1.5, pointRadius: 0, fill: false}]},
+                options: {responsive: true, maintainAspectRatio: false, scales: {y: {min: 0, max: 1.05}}, plugins: {legend: {display: false}}}
+            });
+            let html = '';
+            if (oee.mean != null) html += `<div class="stat-row"><span class="stat-label">Mean</span><span class="stat-value">${(oee.mean*100).toFixed(1)}%</span></div>`;
+            if (oee.std != null) html += `<div class="stat-row"><span class="stat-label">Std</span><span class="stat-value">${(oee.std*100).toFixed(1)}%</span></div>`;
+            document.getElementById(sid + '-oee-stats').innerHTML = html;
+        }
+
+        function renderMachineOeeFor(sid, runId, moee) {
+            const machineNames = Object.keys(moee.machines);
+            if (machineNames.length === 0) return;
+            const colors = ['#0d6efd','#dc3545','#198754','#fd7e14','#6f42c1','#20c997'];
+            const firstTs = moee.machines[machineNames[0]].timeseries || [];
+            const labels = firstTs.map(p => (p.t / 3600).toFixed(2));
+            const datasets = machineNames.map((m, i) => ({
+                label: m, data: (moee.machines[m].timeseries || []).map(p => p.v),
+                borderColor: colors[i % colors.length], borderWidth: 1, pointRadius: 0, fill: false
+            }));
+            runCharts[runId].machineOee = new Chart(document.getElementById(sid + '-chart-machine-oee'), {
+                type: 'line', data: {labels, datasets},
+                options: {responsive: true, maintainAspectRatio: false, scales: {y: {min: 0, max: 1.05}}, plugins: {legend: {position: 'bottom', labels: {boxWidth: 12}}}}
+            });
+            let html = '<table class="table table-sm small"><thead><tr><th>Machine</th><th>OEE</th><th>Util</th><th>Parts</th><th>Good</th><th>Defects</th></tr></thead><tbody>';
+            for (const m of machineNames) {
+                const d = moee.machines[m];
+                html += `<tr><td>${m}</td><td>${d.oee_mean ? (d.oee_mean*100).toFixed(1)+'%' : '-'}</td><td>${d.utilisation_mean ? (d.utilisation_mean*100).toFixed(1)+'%' : '-'}</td><td>${d.last_partcount ?? '-'}</td><td>${d.last_good_parts ?? '-'}</td><td>${d.last_defective_parts ?? '-'}</td></tr>`;
+            }
+            html += '</tbody></table>';
+            document.getElementById(sid + '-machine-oee-stats').innerHTML = html;
+        }
+
+        function renderThroughputFor(sid, runId, tp) {
+            if (!tp.timeseries || tp.timeseries.length === 0) return;
+            const labels = tp.timeseries.map(p => (p.t / 3600).toFixed(2));
+            const values = tp.timeseries.map(p => p.v);
+            const designRate = 60;
+            const firstParts = values[0] || 0;
+            const firstTime = tp.timeseries[0].t;
+            const designLine = tp.timeseries.map(p => firstParts + (p.t - firstTime) / 60 * designRate);
+            runCharts[runId].throughput = new Chart(document.getElementById(sid + '-chart-throughput'), {
+                type: 'line',
+                data: {labels, datasets: [
+                    {label: 'Actual', data: values, borderColor: '#198754', borderWidth: 1.5, pointRadius: 0, fill: true, backgroundColor: 'rgba(25,135,84,0.1)'},
+                    {label: 'Design (60 PPM)', data: designLine, borderColor: '#6c757d', borderWidth: 1, borderDash: [5, 5], pointRadius: 0, fill: false}
+                ]},
+                options: {responsive: true, maintainAspectRatio: false, scales: {x: {title: {display: true, text: 'Sim Time (hrs)'}}, y: {title: {display: true, text: 'Parts'}}}, plugins: {legend: {position: 'bottom', labels: {boxWidth: 12}}}}
+            });
+            let html = '';
+            if (tp.ppm) html += `<div class="stat-row"><span class="stat-label">Actual PPM</span><span class="stat-value">${tp.ppm.toFixed(2)}</span></div>`;
+            if (tp.efficiency_pct) html += `<div class="stat-row"><span class="stat-label">Efficiency</span><span class="stat-value">${tp.efficiency_pct.toFixed(1)}%</span></div>`;
+            if (tp.elapsed_hrs) html += `<div class="stat-row"><span class="stat-label">Run Time</span><span class="stat-value">${formatDuration(tp.elapsed_hrs)}</span></div>`;
+            document.getElementById(sid + '-throughput-stats').innerHTML = html;
+        }
+
+        function renderBuffersFor(sid, runId, buf) {
+            const bufNames = Object.keys(buf.buffers);
+            if (bufNames.length === 0) return;
+            const colors = ['#6f42c1','#20c997','#fd7e14','#0d6efd'];
+            const firstTs = buf.buffers[bufNames[0]].timeseries || [];
+            const labels = firstTs.map(p => (p.t / 3600).toFixed(2));
+            const datasets = bufNames.map((b, i) => ({
+                label: b, data: (buf.buffers[b].timeseries || []).map(p => p.v),
+                borderColor: colors[i % colors.length], borderWidth: 1, pointRadius: 0, fill: false
+            }));
+            runCharts[runId].buffers = new Chart(document.getElementById(sid + '-chart-buffers'), {
+                type: 'line', data: {labels, datasets},
+                options: {responsive: true, maintainAspectRatio: false, scales: {y: {min: 0}}, plugins: {legend: {position: 'bottom', labels: {boxWidth: 12}}}}
+            });
+            let html = '<table class="table table-sm small"><thead><tr><th>Buffer</th><th>Mean</th><th>Full%</th><th>Empty%</th></tr></thead><tbody>';
+            for (const b of bufNames) {
+                const d = buf.buffers[b];
+                html += `<tr><td>${b}</td><td>${d.level_mean ?? '-'}</td><td>${d.full_pct ?? '-'}%</td><td>${d.empty_pct ?? '-'}%</td></tr>`;
+            }
+            html += '</tbody></table>';
+            document.getElementById(sid + '-buffer-stats').innerHTML = html;
+        }
+
+        function renderFailuresFor(sid, runId, fail) {
+            const machineNames = Object.keys(fail.machines);
+            const failColors = ['#dc3545','#e83e8c','#ab003c','#b71c1c'];
+            const degColors = ['#fd7e14','#ff9800','#e65100','#bf360c'];
+            const maintColors = ['#0d6efd','#2196f3','#0288d1','#01579b'];
+
+            const datasets = [];
+            let machineIdx = 0;
+            machineNames.forEach((m, i) => {
+                const failTimeline = fail.machines[m].failure_timeline || [];
+                const degTimeline = fail.machines[m].degradation_timeline || [];
+                const maintTimeline = fail.machines[m].maintenance_timeline || [];
+
+                if (failTimeline.length > 0) {
+                    datasets.push({
+                        label: m + ' Failure', data: failTimeline.map(p => ({x: (p.t / 3600).toFixed(2), y: i + 1})),
+                        backgroundColor: failColors[i % failColors.length], pointRadius: 5, pointStyle: 'crossRot',
+                    });
+                }
+                if (degTimeline.length > 0) {
+                    datasets.push({
+                        label: m + ' Degraded', data: degTimeline.map(p => ({x: (p.t / 3600).toFixed(2), y: i + 1})),
+                        backgroundColor: degColors[i % degColors.length], pointRadius: 4, pointStyle: 'triangle',
+                    });
+                }
+                if (maintTimeline.length > 0) {
+                    datasets.push({
+                        label: m + ' Maintenance', data: maintTimeline.map(p => ({x: (p.t / 3600).toFixed(2), y: i + 1})),
+                        backgroundColor: maintColors[i % maintColors.length], pointRadius: 4, pointStyle: 'rect',
+                    });
+                }
+            });
+
+            const chartEl = document.getElementById(sid + '-chart-failures');
+            if (datasets.length > 0) {
+                runCharts[runId].failures = new Chart(chartEl, {
+                    type: 'scatter', data: {datasets},
+                    options: {responsive: true, maintainAspectRatio: false,
+                        scales: {x: {title: {display: true, text: 'Sim Time (hrs)'}}, y: {display: false}},
+                        plugins: {legend: {position: 'bottom', labels: {boxWidth: 12}}}}
+                });
+            } else {
+                chartEl.parentElement.innerHTML = '<p class="text-muted text-center small py-4">No failure or maintenance events recorded during this run</p>';
+            }
+
+            let html = '<table class="table table-sm small"><thead><tr><th>Machine</th><th>Failures</th><th>Repairs</th><th>Degradations</th><th>Maintenance</th><th>MTTF</th><th>MTTR</th></tr></thead><tbody>';
+            for (const m of machineNames) {
+                const d = fail.machines[m];
+                html += `<tr><td>${m}</td><td>${d.failure_count}</td><td>${d.repair_count}</td>`;
+                html += `<td>${d.degradation_count ?? 0}</td><td>${d.maintenance_count ?? 0}</td>`;
+                html += `<td>${d.mttf_mean ? d.mttf_mean+'s' : '-'}</td>`;
+                html += `<td>${d.mttr_mean ? d.mttr_mean+'s' : '-'}</td></tr>`;
+            }
+            html += '</tbody></table>';
+            document.getElementById(sid + '-failure-stats').innerHTML = html;
+        }
+
+        function renderQualityFor(sid, runId, qr) {
+            const machineNames = Object.keys(qr.machines);
+            if (machineNames.length === 0) {
+                document.getElementById(sid + '-quality-stats').innerHTML = '<p class="text-muted small">No scrap/rework data</p>';
+                return;
+            }
+            const scrapData = machineNames.map(m => qr.machines[m].scrap_events || 0);
+            const reworkData = machineNames.map(m => qr.machines[m].rework_events || 0);
+            runCharts[runId].quality = new Chart(document.getElementById(sid + '-chart-quality'), {
+                type: 'bar',
+                data: { labels: machineNames, datasets: [
+                    {label: 'Scrap', data: scrapData, backgroundColor: '#dc3545'},
+                    {label: 'Rework', data: reworkData, backgroundColor: '#fd7e14'}
+                ]},
+                options: {responsive: true, maintainAspectRatio: false, plugins: {legend: {position: 'bottom', labels: {boxWidth: 12}}}}
+            });
+            let html = `<div class="stat-row"><span class="stat-label">Total Scrap Events</span><span class="stat-value">${qr.total_scrap_events}</span></div>`;
+            html += `<div class="stat-row"><span class="stat-label">Total Rework Events</span><span class="stat-value">${qr.total_rework_events}</span></div>`;
+            document.getElementById(sid + '-quality-stats').innerHTML = html;
+        }
+
+        function renderShiftsFor(sid, runId, sh) {
+            const section = document.getElementById(sid + '-shift-section');
+            if (!sh || sh.shift_change_count === 0) { section.style.display = 'none'; return; }
+            section.style.display = '';
+            const labels = sh.shifts.map(s => s.prev_shift_name || `Shift ${s.shift_number}`);
+            const parts = sh.shifts.map(s => s.prev_shift_parts || 0);
+            const oees = sh.shifts.map(s => s.prev_shift_oee || 0);
+            runCharts[runId].shifts = new Chart(document.getElementById(sid + '-chart-shifts'), {
+                type: 'bar',
+                data: { labels, datasets: [
+                    {label: 'Parts', data: parts, backgroundColor: '#0d6efd', yAxisID: 'y'},
+                    {label: 'OEE', data: oees, backgroundColor: '#198754', yAxisID: 'y1'}
+                ]},
+                options: { responsive: true, maintainAspectRatio: false,
+                    scales: { y: {position: 'left', title: {display: true, text: 'Parts'}},
+                        y1: {position: 'right', min: 0, max: 1, title: {display: true, text: 'OEE'}, grid: {drawOnChartArea: false}}},
+                    plugins: {legend: {position: 'bottom', labels: {boxWidth: 12}}}}
+            });
+            let html = '<table class="table table-sm small"><thead><tr><th>Time</th><th>Shift</th><th>Parts</th><th>OEE</th></tr></thead><tbody>';
+            for (const s of sh.shifts) {
+                html += `<tr><td>${(s.timestamp / 3600).toFixed(1)}h</td><td>${s.prev_shift_name || '-'}</td><td>${s.prev_shift_parts ?? '-'}</td><td>${s.prev_shift_oee != null ? (s.prev_shift_oee * 100).toFixed(1) + '%' : '-'}</td></tr>`;
+            }
+            html += '</tbody></table>';
+            document.getElementById(sid + '-shift-table').innerHTML = html;
+        }
+
+        function renderAnomaliesFor(sid, runId, anom) {
+            const tbody = document.querySelector('#' + sid + '-anomaly-table tbody');
+            tbody.innerHTML = '';
+            for (const check of anom.checks) {
+                const badgeClass = check.status === 'PASS' ? 'badge-pass' : (check.status === 'FAIL' ? 'badge-fail' : 'badge-warn');
+                tbody.innerHTML += `<tr><td>${check.name}</td><td><span class="badge ${badgeClass}">${check.status}</span></td><td class="small">${check.message}</td></tr>`;
             }
         }
 
@@ -214,6 +844,7 @@
                 tbody.innerHTML = '';
 
                 for (const run of runs) {
+                    const sid = safeId(run.run_id);
                     const date = parseDateFromRunId(run.run_id);
                     const oee = run.line_oee_mean;
                     const isBest = bestOee != null && oee === bestOee;
@@ -221,7 +852,13 @@
                     const isLive = run.status === 'running';
 
                     const tr = document.createElement('tr');
+                    tr.id = 'row-' + sid;
                     if (isBest) tr.classList.add('best-oee');
+
+                    // Checkbox
+                    const tdCheck = document.createElement('td');
+                    tdCheck.innerHTML = `<input type="checkbox" class="run-checkbox" data-run-id="${run.run_id}" data-csv-file="${run.csv_file || ''}" onchange="updateDeleteButton()">`;
+                    tr.appendChild(tdCheck);
 
                     // Run ID
                     const tdId = document.createElement('td');
@@ -246,7 +883,7 @@
 
                     // Duration
                     const tdDur = document.createElement('td');
-                    tdDur.textContent = run.sim_duration_hrs != null ? run.sim_duration_hrs + 'h' : '-';
+                    tdDur.textContent = formatDuration(run.sim_duration_hrs);
                     tr.appendChild(tdDur);
 
                     // Parts
@@ -288,7 +925,13 @@
                         actions += `<button class="btn btn-outline-primary btn-sm me-1"
                             onclick="analyzeRun('${run.csv_file}', this)">Analyze</button>`;
                     }
+                    if (analyzed && run.csv_file) {
+                        actions += `<button class="btn btn-outline-info btn-sm me-1" id="btn-report-${sid}"
+                            onclick="toggleReport('${run.run_id}', '${run.csv_file}')">View Report</button>`;
+                    }
                     if (run.csv_file) {
+                        actions += `<button class="btn btn-outline-warning btn-sm me-1" id="btn-validate-${sid}"
+                            onclick="toggleValidation('${run.run_id}', '${run.csv_file}')">Validate</button>`;
                         actions += `<a href="/api/historian/download/${run.csv_file}"
                             class="btn btn-outline-secondary btn-sm" title="Download CSV">CSV</a>`;
                     }
@@ -304,6 +947,7 @@
         }
 
         // --- Init ---
+        loadInfluxStatus();
         loadCurrentRun();
         loadRuns();
         setInterval(loadCurrentRun, 5000);

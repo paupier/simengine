@@ -1101,6 +1101,43 @@ def api_runs():
     })
 
 
+@app.route("/api/runs", methods=["DELETE"])
+def api_delete_runs():
+    """Delete runs from run_index.json and optionally CSV files."""
+    import json as _json
+    data = request.get_json(force=True)
+    run_ids = data.get("run_ids", [])
+    delete_csv = data.get("delete_csv", False)
+
+    if not run_ids:
+        return jsonify({"error": "No run_ids provided"}), 400
+
+    hist_dir = _get_historian_dir()
+
+    # 1. Remove from run_index.json
+    index_path = hist_dir / "run_index.json"
+    if index_path.exists():
+        try:
+            with open(index_path) as f:
+                index = _json.load(f)
+            original_len = len(index)
+            index = [e for e in index if e.get("run_id") not in run_ids]
+            with open(index_path, "w") as f:
+                _json.dump(index, f, indent=2)
+        except (ValueError, IOError):
+            pass
+
+    # 2. Optionally delete CSV files
+    deleted_csvs = []
+    if delete_csv and hist_dir.exists():
+        for rid in run_ids:
+            for csv_file in hist_dir.glob(f"{rid}_events*.csv"):
+                csv_file.unlink()
+                deleted_csvs.append(csv_file.name)
+
+    return jsonify({"deleted": run_ids, "deleted_csvs": deleted_csvs})
+
+
 @app.route("/reports")
 def reports_page():
     """Production run analysis page with charts."""
