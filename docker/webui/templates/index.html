@@ -6,234 +6,647 @@
     <title>Simantha Digital Twin</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        body { background: #f8f9fa; }
-        .status-running { color: #198754; font-weight: bold; }
-        .status-stopped { color: #dc3545; font-weight: bold; }
-        .status-paused { color: #fd7e14; font-weight: bold; }
-        #log-viewer {
-            height: 250px;
-            overflow-y: auto;
-            font-family: 'Courier New', monospace;
-            font-size: 0.85rem;
-            background: #1e1e1e;
-            color: #d4d4d4;
-            padding: 10px;
-            border-radius: 6px;
+        /* ── FactoryTalk Optix Design System ── */
+        :root {
+            --bg-shell:      #060b14;
+            --bg-header:     #080d18;
+            --bg-sidebar:    #0a1020;
+            --bg-card:       #0e1828;
+            --bg-card-hover: #101d30;
+            --bg-kpi:        #0a1423;
+            --border-dim:    #1a2840;
+            --border-bright: #1e3555;
+
+            --cyan:          #00c8e6;
+            --cyan-dim:      rgba(0,200,230,0.12);
+            --cyan-glow:     rgba(0,200,230,0.25);
+
+            --text-primary:  #dde4f0;
+            --text-secondary:#7a8ba8;
+            --text-dim:      #3d4e66;
+            --text-label:    #4a6080;
+
+            --state-processing: #00c8e6;
+            --state-idle:       #3d5a7a;
+            --state-blocked:    #f77f00;
+            --state-starved:    #f4c03b;
+            --state-failed:     #e63946;
+            --state-repair:     #9b59b6;
+            --state-degraded:   #f4a261;
+            --state-paused:     #f4c03b;
+
+            --good: #2ecc71;
+            --warn: #f4a261;
+            --bad:  #e63946;
+
+            --header-h:  52px;
+            --kpi-h:     88px;
+            --ticker-h:  42px;
+            --sidebar-w: 240px;
         }
-        .kpi-card { text-align: center; }
-        .kpi-value { font-size: 1.8rem; font-weight: bold; color: #0d6efd; }
-        .kpi-label { font-size: 0.85rem; color: #6c757d; }
-        .machine-badge { font-size: 0.8rem; margin: 2px; }
-        .machine-detail { border: 1px solid #dee2e6; border-radius: 6px; padding: 10px; margin-bottom: 8px; }
-        .oee-bar { height: 6px; border-radius: 3px; }
-        .cpk-good { color: #198754; font-weight: bold; }
-        .cpk-warn { color: #fd7e14; font-weight: bold; }
-        .cpk-bad { color: #dc3545; font-weight: bold; }
-        .shift-bar { background: #e9ecef; border-radius: 4px; height: 20px; position: relative; overflow: hidden; }
-        .shift-bar-fill { background: #0d6efd; height: 100%; transition: width 0.3s; }
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background: var(--bg-shell);
+            color: var(--text-primary);
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            font-size: 13px;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* ── Header ── */
+        .hmi-header {
+            height: var(--header-h);
+            background: var(--bg-header);
+            border-bottom: 1px solid var(--border-dim);
+            display: flex;
+            align-items: center;
+            padding: 0 16px;
+            gap: 0;
+            flex-shrink: 0;
+            z-index: 100;
+        }
+        .hmi-logo {
+            width: 34px; height: 34px;
+            background: var(--bad);
+            color: #fff;
+            font-weight: 900;
+            font-size: 17px;
+            display: flex; align-items: center; justify-content: center;
+            border-radius: 3px;
+            margin-right: 12px;
+            flex-shrink: 0;
+        }
+        .hmi-title {
+            font-size: 14px; font-weight: 600;
+            letter-spacing: 0.08em; text-transform: uppercase;
+            color: var(--text-primary); flex-shrink: 0;
+        }
+        .hmi-subtitle {
+            color: var(--text-secondary);
+            margin-left: 10px; font-size: 12px; letter-spacing: 0.04em;
+            flex-shrink: 0;
+        }
+        .hmi-vdiv {
+            width: 1px; height: 28px;
+            background: var(--border-dim);
+            margin: 0 16px; flex-shrink: 0;
+        }
+        .hmi-nav { display: flex; gap: 2px; flex-shrink: 0; }
+        .hmi-nav a {
+            color: var(--text-secondary); text-decoration: none;
+            font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase;
+            padding: 6px 14px; border-radius: 3px;
+            border-bottom: 2px solid transparent;
+            transition: color 0.15s, background 0.15s;
+        }
+        .hmi-nav a:hover { color: var(--text-primary); background: var(--bg-card); }
+        .hmi-nav a.active { color: var(--cyan); border-bottom-color: var(--cyan); }
+
+        .hmi-header-right {
+            margin-left: auto;
+            display: flex; align-items: center; gap: 14px; flex-shrink: 0;
+        }
+        .hdr-status-group { display: flex; align-items: center; gap: 8px; }
+        .hmi-dot {
+            width: 8px; height: 8px; border-radius: 50%;
+            background: var(--bad); box-shadow: 0 0 6px var(--bad);
+            flex-shrink: 0;
+        }
+        .hmi-dot.running { background: var(--good); box-shadow: 0 0 6px var(--good); }
+        .hmi-dot.paused  { background: var(--warn); box-shadow: 0 0 6px var(--warn); }
+        .hdr-status-lbl {
+            font-size: 11px; letter-spacing: 0.08em;
+            text-transform: uppercase; color: var(--text-secondary);
+        }
+        .hdr-scenario {
+            font-size: 11px; color: var(--text-secondary);
+            max-width: 150px; overflow: hidden;
+            text-overflow: ellipsis; white-space: nowrap;
+        }
+        .hdr-uptime { font-size: 11px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+        .hdr-run-id {
+            font-family: 'Courier New', monospace; font-size: 10px;
+            color: var(--text-dim); cursor: pointer; display: none;
+        }
+        .hdr-run-id:hover { color: var(--cyan); }
+
+        /* ── KPI Strip ── */
+        .kpi-strip {
+            height: var(--kpi-h);
+            background: var(--bg-kpi);
+            border-bottom: 1px solid var(--border-dim);
+            display: flex; flex-shrink: 0;
+        }
+        .kpi-panel {
+            flex: 1;
+            display: flex; flex-direction: column; justify-content: center;
+            padding: 0 24px;
+            border-right: 1px solid var(--border-dim);
+            position: relative;
+        }
+        .kpi-panel:last-child { border-right: none; }
+        .kpi-corner-lbl {
+            position: absolute; top: 9px; right: 12px;
+            font-size: 10px; letter-spacing: 0.1em;
+            text-transform: uppercase; color: var(--text-label);
+        }
+        .kpi-big {
+            font-size: 2rem; font-weight: 300; line-height: 1;
+            margin-bottom: 5px; font-variant-numeric: tabular-nums;
+        }
+        .kpi-sub {
+            font-size: 11px; color: var(--text-secondary);
+            display: flex; align-items: center; gap: 8px;
+        }
+
+        /* ── Shift / Recipe progress bars ── */
+        .prog-strip {
+            background: var(--bg-header);
+            border-bottom: 1px solid var(--border-dim);
+            padding: 0 16px;
+            display: none; align-items: center; gap: 14px;
+            height: 36px; flex-shrink: 0;
+            font-size: 11px; color: var(--text-secondary);
+        }
+        .prog-strip.visible { display: flex; }
+        .prog-lbl {
+            font-size: 10px; letter-spacing: 0.08em;
+            text-transform: uppercase; color: var(--text-label);
+            min-width: 100px;
+        }
+        .prog-track {
+            flex: 1; height: 4px;
+            background: var(--border-bright); border-radius: 2px;
+        }
+        .prog-fill {
+            height: 100%; border-radius: 2px;
+            background: var(--cyan); transition: width 0.3s;
+        }
+        .prog-val { min-width: 120px; text-align: right; color: var(--text-primary); }
+        .co-badge {
+            background: var(--warn); color: #000;
+            font-size: 10px; font-weight: 700;
+            padding: 2px 8px; border-radius: 2px;
+            letter-spacing: 0.08em; text-transform: uppercase;
+            display: none;
+        }
+
+        /* ── Main body ── */
+        .hmi-body {
+            flex: 1; display: flex;
+            overflow: hidden; min-height: 0;
+        }
+
+        /* ── Sidebar ── */
+        .hmi-sidebar {
+            width: var(--sidebar-w);
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border-dim);
+            display: flex; flex-direction: column;
+            flex-shrink: 0; overflow-y: auto;
+        }
+        .sb-section {
+            padding: 12px;
+            border-bottom: 1px solid var(--border-dim);
+        }
+        .sb-title {
+            font-size: 10px; letter-spacing: 0.1em;
+            text-transform: uppercase; color: var(--text-label);
+            margin-bottom: 8px;
+        }
+
+        /* Machine nav */
+        .mnav-item {
+            display: flex; align-items: center;
+            justify-content: space-between;
+            padding: 5px 8px; border-radius: 3px;
+            cursor: pointer; color: var(--text-secondary);
+            font-size: 12px; margin-bottom: 1px;
+            transition: background 0.1s, color 0.1s;
+        }
+        .mnav-item:hover { background: var(--bg-card); color: var(--text-primary); }
+        .mnav-dot {
+            width: 7px; height: 7px; border-radius: 50%;
+            background: var(--state-idle); flex-shrink: 0;
+        }
+
+        /* Mode pills */
+        .mode-pills {
+            display: flex; border: 1px solid var(--border-bright);
+            border-radius: 3px; overflow: hidden; margin-bottom: 10px;
+        }
+        .mode-pills input[type="radio"] { display: none; }
+        .mode-pills label {
+            flex: 1; text-align: center; padding: 5px;
+            font-size: 11px; font-weight: 600;
+            letter-spacing: 0.06em; text-transform: uppercase;
+            cursor: pointer; color: var(--text-secondary);
+            transition: background 0.1s, color 0.1s;
+        }
+        .mode-pills input:checked + label { background: var(--cyan); color: #000; }
+
+        /* Sidebar form overrides */
+        .hmi-sidebar .form-select,
+        .hmi-sidebar .form-control {
+            background: var(--bg-card); border-color: var(--border-bright);
+            color: var(--text-primary); font-size: 12px;
+        }
+        .hmi-sidebar .form-select:focus,
+        .hmi-sidebar .form-control:focus {
+            background: var(--bg-card-hover);
+            border-color: var(--cyan); color: var(--text-primary);
+            box-shadow: 0 0 0 2px var(--cyan-dim);
+        }
+        .hmi-sidebar select option { background: #0e1828; }
+        .hmi-sidebar .form-label { color: var(--text-secondary); font-size: 11px; }
+        .hmi-sidebar .form-text  { color: var(--text-dim) !important; font-size: 10px; }
+        .hmi-sidebar .form-range::-webkit-slider-thumb  { background: var(--cyan); }
+        .hmi-sidebar .form-range::-webkit-slider-runnable-track { background: var(--border-bright); }
+
+        /* Sidebar buttons */
+        .btn-hmi {
+            width: 100%; padding: 7px; border: none; border-radius: 2px;
+            font-size: 12px; font-weight: 700; letter-spacing: 0.1em;
+            text-transform: uppercase; cursor: pointer;
+            margin-bottom: 6px; transition: opacity 0.15s;
+        }
+        .btn-hmi:disabled { opacity: 0.3; cursor: not-allowed; }
+        .btn-hmi-start { background: var(--good); color: #000; }
+        .btn-hmi-stop  { background: var(--bad);  color: #fff; }
+        .btn-hmi-pause {
+            background: transparent; color: var(--warn);
+            border: 1px solid var(--warn); width: 100%;
+            padding: 5px; font-size: 11px; font-weight: 600;
+            letter-spacing: 0.08em; text-transform: uppercase;
+            border-radius: 2px; cursor: pointer; margin-bottom: 0;
+            transition: background 0.15s;
+        }
+        .btn-hmi-pause:disabled { opacity: 0.3; cursor: not-allowed; }
+        .btn-hmi-pause:not(:disabled):hover { background: rgba(244,162,97,0.1); }
+        .btn-ext-link {
+            display: block; color: var(--cyan);
+            border: 1px solid var(--border-bright);
+            padding: 5px 10px; font-size: 11px;
+            text-decoration: none; border-radius: 2px;
+            margin-bottom: 4px; letter-spacing: 0.04em;
+            transition: background 0.1s;
+        }
+        .btn-ext-link:hover { background: var(--cyan-dim); color: var(--cyan); }
+        .ia-val { color: var(--cyan); font-weight: 700; }
+
+        /* ── Main content ── */
+        .hmi-content {
+            flex: 1; overflow-y: auto;
+            padding: 12px;
+            display: flex; flex-direction: column; gap: 10px;
+            min-width: 0;
+        }
+
+        /* ── Machine grid ── */
+        .machine-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 10px;
+        }
+        .mc-placeholder {
+            grid-column: 1 / -1;
+            color: var(--text-dim); font-size: 12px;
+            text-align: center; padding: 48px 0;
+            letter-spacing: 0.06em;
+        }
+
+        /* ── Machine card ── */
+        .mc-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-dim);
+            border-radius: 3px;
+            padding: 12px;
+            position: relative; overflow: hidden;
+            transition: border-color 0.2s;
+        }
+        .mc-card::before {
+            content: ''; position: absolute;
+            top: 0; left: 0; right: 0; height: 2px;
+            background: var(--state-idle);
+        }
+        .mc-card[data-state="PROCESSING"]::before  { background: var(--state-processing); }
+        .mc-card[data-state="FAILED"]::before       { background: var(--state-failed); }
+        .mc-card[data-state="UNDER_REPAIR"]::before { background: var(--state-repair); }
+        .mc-card[data-state="DEGRADED"]::before     { background: var(--state-degraded); }
+        .mc-card[data-state="BLOCKED"]::before      { background: var(--state-blocked); }
+        .mc-card[data-state="STARVED"]::before      { background: var(--state-starved); }
+        .mc-card[data-state="PAUSED"]::before       { background: var(--state-paused); }
+
+        .mc-card[data-state="PROCESSING"]  { border-color: rgba(0,200,230,0.2); }
+        .mc-card[data-state="FAILED"]      { border-color: rgba(230,57,70,0.3); }
+        .mc-card[data-state="UNDER_REPAIR"]{ border-color: rgba(155,89,182,0.3); }
+        .mc-card[data-state="DEGRADED"]    { border-color: rgba(244,162,97,0.25); }
+
+        .mc-header {
+            display: flex; align-items: center;
+            justify-content: space-between; margin-bottom: 10px;
+        }
+        .mc-name { font-size: 14px; font-weight: 700; letter-spacing: 0.05em; }
+        .mc-badge {
+            font-size: 10px; font-weight: 700;
+            letter-spacing: 0.07em; text-transform: uppercase;
+            padding: 2px 8px; border-radius: 2px;
+        }
+        .mc-badge-processing  { background: rgba(0,200,230,0.12);  color: var(--state-processing); border: 1px solid rgba(0,200,230,0.3); }
+        .mc-badge-idle        { background: rgba(61,90,122,0.2);   color: var(--state-idle);       border: 1px solid var(--border-dim); }
+        .mc-badge-blocked     { background: rgba(247,127,0,0.12);  color: var(--state-blocked);    border: 1px solid rgba(247,127,0,0.3); }
+        .mc-badge-starved     { background: rgba(244,192,59,0.1);  color: var(--state-starved);    border: 1px solid rgba(244,192,59,0.25); }
+        .mc-badge-failed      { background: rgba(230,57,70,0.12);  color: var(--state-failed);     border: 1px solid rgba(230,57,70,0.35); }
+        .mc-badge-under-repair{ background: rgba(155,89,182,0.12); color: var(--state-repair);     border: 1px solid rgba(155,89,182,0.3); }
+        .mc-badge-degraded    { background: rgba(244,162,97,0.12); color: var(--state-degraded);   border: 1px solid rgba(244,162,97,0.3); }
+        .mc-badge-paused      { background: rgba(244,192,59,0.1);  color: var(--state-paused);     border: 1px solid rgba(244,192,59,0.25); }
+
+        .mc-oee-row {
+            display: flex; align-items: center;
+            gap: 8px; margin-bottom: 8px;
+        }
+        .mc-oee-lbl {
+            font-size: 10px; color: var(--text-label);
+            letter-spacing: 0.07em; text-transform: uppercase;
+            min-width: 28px;
+        }
+        .mc-bar-track {
+            flex: 1; height: 5px;
+            background: var(--border-bright); border-radius: 2px; overflow: hidden;
+        }
+        .mc-bar-fill { height: 100%; border-radius: 2px; transition: width 0.4s; }
+        .mc-oee-num {
+            font-size: 12px; font-weight: 700;
+            font-variant-numeric: tabular-nums;
+            min-width: 42px; text-align: right;
+        }
+
+        .mc-metrics-row {
+            display: flex; gap: 4px; margin-bottom: 8px;
+        }
+        .mc-metric {
+            flex: 1;
+            background: var(--bg-shell);
+            border: 1px solid var(--border-dim);
+            border-radius: 2px; padding: 5px 6px; text-align: center;
+        }
+        .mc-metric-val {
+            font-size: 13px; font-weight: 600;
+            font-variant-numeric: tabular-nums;
+            color: var(--text-primary); line-height: 1.2;
+        }
+        .mc-metric-lbl {
+            font-size: 9px; color: var(--text-label);
+            letter-spacing: 0.08em; text-transform: uppercase;
+            margin-top: 2px;
+        }
+
+        .mc-sparkline { height: 48px; }
+        .mc-sparkline svg { display: block; }
+
+        .mc-footer {
+            display: flex; justify-content: space-between;
+            font-size: 10px; color: var(--text-dim);
+            margin-top: 5px;
+        }
+        .mc-fault { color: var(--state-failed); font-weight: 600; letter-spacing: 0.04em; }
+
+        /* ── Log panel ── */
+        .log-panel {
+            background: var(--bg-card);
+            border: 1px solid var(--border-dim);
+            border-radius: 3px; flex-shrink: 0;
+        }
+        .log-header {
+            display: flex; align-items: center;
+            justify-content: space-between;
+            padding: 7px 12px;
+            border-bottom: 1px solid var(--border-dim);
+            font-size: 10px; letter-spacing: 0.08em;
+            text-transform: uppercase; color: var(--text-label);
+            cursor: pointer; user-select: none;
+        }
+        .log-header:hover { color: var(--text-secondary); }
+        .log-panel.collapsed #log-viewer { display: none; }
+        #log-viewer {
+            height: 160px; overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 11px; background: var(--bg-shell);
+            color: #6a94be; padding: 10px 12px;
+        }
+
+        /* ── Alarm ticker ── */
+        .alarm-ticker {
+            height: var(--ticker-h);
+            background: #06090f;
+            border-top: 1px solid var(--border-dim);
+            display: flex; align-items: center;
+            padding: 0 16px; gap: 14px;
+            flex-shrink: 0; overflow: hidden;
+        }
+        .alarm-ticker-lbl {
+            font-size: 10px; letter-spacing: 0.1em;
+            text-transform: uppercase; color: var(--text-label);
+            flex-shrink: 0;
+            border-right: 1px solid var(--border-dim);
+            padding-right: 14px; min-width: 96px;
+        }
+        .alarm-item {
+            display: flex; align-items: center; gap: 8px;
+            flex-shrink: 0; padding: 4px 10px; border-radius: 2px;
+            font-size: 11px;
+        }
+        .alarm-crit { background: rgba(230,57,70,0.1);  border-left: 2px solid var(--bad); }
+        .alarm-warn { background: rgba(244,162,97,0.08); border-left: 2px solid var(--warn); }
+        .alarm-info { background: rgba(0,200,230,0.07); border-left: 2px solid var(--cyan); }
+        .alarm-sev { font-size: 9px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
+        .alarm-sev-crit { color: var(--bad); }
+        .alarm-sev-warn { color: var(--warn); }
+        .alarm-sev-info { color: var(--cyan); }
+        .alarm-msg { color: var(--text-secondary); }
+        .alarm-none { color: var(--text-dim); font-size: 11px; letter-spacing: 0.04em; }
+
+        /* ── Scrollbars ── */
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: var(--bg-shell); }
+        ::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 2px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
     </style>
 </head>
 <body>
-    <nav class="navbar navbar-dark bg-dark">
-        <div class="container-fluid">
-            <span class="navbar-brand mb-0 h1">Simantha Digital Twin</span>
-            <div>
-                <a href="/reports" class="btn btn-sm btn-outline-info me-2">Reports</a>
-                <a href="/runs" class="btn btn-sm btn-outline-light me-2">Runs</a>
-                <a href="/validation" class="btn btn-sm btn-outline-warning me-2">Validation</a>
-                <a href="/config" class="btn btn-sm btn-outline-light me-2">Config</a>
-                <a href="/recipes" class="btn btn-sm btn-outline-light me-2">Recipes</a>
-                <a href="/api/historian/download" class="btn btn-sm btn-outline-secondary me-2">CSV</a>
+
+    <!-- ── Header ── -->
+    <header class="hmi-header">
+        <div class="hmi-logo">S</div>
+        <span class="hmi-title">Simantha Digital Twin</span>
+        <span class="hmi-subtitle">| Plant Overview</span>
+        <div class="hmi-vdiv"></div>
+        <nav class="hmi-nav">
+            <a href="/" class="active">Dashboard</a>
+            <a href="/runs">Run Reports</a>
+            <a href="/config">Config</a>
+            <a href="/recipes">Recipes</a>
+        </nav>
+        <div class="hmi-header-right">
+            <div class="hdr-status-group">
+                <div class="hmi-dot" id="hdr-status-dot"></div>
+                <span class="hdr-status-lbl" id="hdr-status-label">STOPPED</span>
             </div>
+            <span class="hdr-scenario" id="hdr-scenario">—</span>
+            <span class="hdr-uptime" id="hdr-uptime"></span>
+            <span class="hdr-run-id" id="hdr-run-id" title="Click to copy run ID"></span>
         </div>
-    </nav>
+    </header>
 
-    <div class="container-fluid mt-3">
-        <div class="row">
-            <!-- Left column: Controls -->
-            <div class="col-md-3">
-                <!-- Run Mode Selection -->
-                <div class="card mb-3">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <strong>Run Mode</strong>
-                        <div class="btn-group btn-group-sm">
-                            <input type="radio" class="btn-check" name="run-mode" id="mode-scenario" checked>
-                            <label class="btn btn-outline-primary" for="mode-scenario">Scenario</label>
-                            <input type="radio" class="btn-check" name="run-mode" id="mode-recipe">
-                            <label class="btn btn-outline-primary" for="mode-recipe">Recipe</label>
-                        </div>
-                    </div>
-                    <div class="card-body">
-                        <!-- Scenario panel -->
-                        <div id="scenario-panel">
-                            <div class="mb-3">
-                                <label for="scenario-select" class="form-label">Scenario</label>
-                                <select id="scenario-select" class="form-select"></select>
-                                <small id="scenario-info" class="form-text text-muted"></small>
-                            </div>
-                        </div>
-                        <!-- Recipe panel -->
-                        <div id="recipe-panel" style="display:none;">
-                            <div class="mb-3">
-                                <label for="recipe-select" class="form-label">Recipe</label>
-                                <select id="recipe-select" class="form-select"></select>
-                                <small id="recipe-info" class="form-text text-muted"></small>
-                            </div>
-                        </div>
-                        <!-- Shared controls -->
-                        <div class="mb-3">
-                            <label for="seed-input" class="form-label">Random Seed (optional)</label>
-                            <input type="number" id="seed-input" class="form-control" placeholder="e.g. 42">
-                        </div>
-                        <div class="d-grid gap-2">
-                            <button id="btn-start" class="btn btn-success" onclick="startSim()">Start Simulation</button>
-                            <button id="btn-stop" class="btn btn-danger" onclick="stopSim()" disabled>Stop Simulation</button>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Runtime Controls -->
-                <div class="card mb-3">
-                    <div class="card-header"><strong>Runtime Controls</strong></div>
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-center mb-3">
-                            <span>Pause Line</span>
-                            <button id="btn-pause" class="btn btn-sm btn-outline-warning" onclick="togglePause()" disabled>
-                                Pause
-                            </button>
-                        </div>
-                        <div class="mb-2">
-                            <label for="interarrival-range" class="form-label">
-                                Interarrival Time: <span id="interarrival-value">0.0</span>s
-                            </label>
-                            <input type="range" id="interarrival-range" class="form-range" min="0" max="5" step="0.1" value="0"
-                                   oninput="updateInterarrival(this.value)" disabled>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Quick Links -->
-                <div class="card mb-3">
-                    <div class="card-header"><strong>Quick Links</strong></div>
-                    <div class="card-body d-grid gap-2">
-                        <a id="link-grafana" href="//:3000" target="_blank" class="btn btn-outline-primary btn-sm">
-                            Grafana Dashboards (:3000)
-                        </a>
-                        <a id="link-influxdb" href="//:8086" target="_blank" class="btn btn-outline-info btn-sm">
-                            InfluxDB Explorer (:8086)
-                        </a>
-                        <div class="text-muted small mt-1">
-                            OPC UA: <code>opc.tcp://&lt;host&gt;:4840/simantha/</code>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Right column: Status + KPIs + Machines + Logs -->
-            <div class="col-md-9">
-                <!-- Status -->
-                <div class="card mb-3">
-                    <div class="card-header d-flex justify-content-between">
-                        <strong>Simulation Status</strong>
-                        <span id="status-indicator" class="status-stopped">STOPPED</span>
-                    </div>
-                    <div class="card-body">
-                        <div class="row mb-2">
-                            <div class="col text-muted">Scenario: <strong id="status-scenario">-</strong></div>
-                            <div class="col text-muted">Uptime: <strong id="status-uptime">-</strong></div>
-                            <div class="col text-muted">PID: <strong id="status-pid">-</strong></div>
-                        </div>
-                        <div id="status-run-id" class="small text-muted" style="display:none;">
-                            Run ID: <code id="status-run-id-value" style="cursor:pointer;" title="Click to copy">-</code>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Line-Level KPIs -->
-                <div class="card mb-3">
-                    <div class="card-header"><strong>Line KPIs</strong></div>
-                    <div class="card-body">
-                        <div class="row">
-                            <div class="col kpi-card">
-                                <div class="kpi-value" id="kpi-simtime">-</div>
-                                <div class="kpi-label">Sim Time (s)</div>
-                            </div>
-                            <div class="col kpi-card">
-                                <div class="kpi-value" id="kpi-throughput">-</div>
-                                <div class="kpi-label">Parts Produced</div>
-                            </div>
-                            <div class="col kpi-card">
-                                <div class="kpi-value" id="kpi-paused">-</div>
-                                <div class="kpi-label">Line Status</div>
-                            </div>
-                            <div class="col kpi-card">
-                                <div class="kpi-value" id="kpi-line-oee">-</div>
-                                <div class="kpi-label">Line OEE</div>
-                            </div>
-                            <div class="col kpi-card">
-                                <div class="kpi-value" id="kpi-scrap">-</div>
-                                <div class="kpi-label">Scrap</div>
-                            </div>
-                        </div>
-
-                        <!-- Shift info bar -->
-                        <div id="shift-info" class="mt-3" style="display:none;">
-                            <div class="d-flex justify-content-between small text-muted mb-1">
-                                <span>Shift: <strong id="shift-name">-</strong></span>
-                                <span id="shift-time">-</span>
-                            </div>
-                            <div class="shift-bar">
-                                <div class="shift-bar-fill" id="shift-progress" style="width:0%"></div>
-                            </div>
-                        </div>
-
-                        <!-- Recipe progress -->
-                        <div id="recipe-progress" class="mt-3" style="display:none;">
-                            <div class="d-flex justify-content-between small text-muted mb-1">
-                                <span>Recipe: <strong id="rp-name">-</strong></span>
-                                <span>Segment <strong id="rp-seg-idx">-</strong>/<strong id="rp-seg-total">-</strong>
-                                    <span id="rp-changeover" class="badge bg-warning ms-2" style="display:none;">CHANGEOVER</span>
-                                </span>
-                            </div>
-                            <div class="small text-muted mb-1">Current: <strong id="rp-seg-name">-</strong></div>
-                            <div class="progress" style="height:6px;">
-                                <div class="progress-bar bg-info" id="rp-seg-bar" style="width:0%"></div>
-                            </div>
-                            <div class="small text-muted" id="rp-seg-detail">-</div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Per-Machine Details -->
-                <div class="card mb-3">
-                    <div class="card-header"><strong>Machine Overview</strong></div>
-                    <div class="card-body" id="machine-details">
-                        <span class="text-muted">Start a simulation to see machine details</span>
-                    </div>
-                </div>
-
-                <!-- Log Viewer -->
-                <div class="card">
-                    <div class="card-header d-flex justify-content-between">
-                        <strong>Simulation Log</strong>
-                        <button class="btn btn-sm btn-outline-secondary" onclick="clearLog()">Clear</button>
-                    </div>
-                    <div id="log-viewer"></div>
-                </div>
-            </div>
+    <!-- ── KPI Strip ── -->
+    <div class="kpi-strip">
+        <div class="kpi-panel">
+            <span class="kpi-corner-lbl">Line OEE</span>
+            <div class="kpi-big" id="kpi-line-oee" style="color:var(--text-dim)">—</div>
+            <div class="kpi-sub" id="kpi-oee-sub"></div>
+        </div>
+        <div class="kpi-panel">
+            <span class="kpi-corner-lbl">Parts Produced</span>
+            <div class="kpi-big" id="kpi-throughput" style="color:var(--cyan)">—</div>
+            <div class="kpi-sub" id="kpi-throughput-sub"></div>
+        </div>
+        <div class="kpi-panel">
+            <span class="kpi-corner-lbl">Sim Time</span>
+            <div class="kpi-big" id="kpi-simtime" style="color:var(--text-secondary)">—</div>
+            <div class="kpi-sub" id="kpi-simtime-sub"></div>
+        </div>
+        <div class="kpi-panel">
+            <span class="kpi-corner-lbl">Scrap Rate</span>
+            <div class="kpi-big" id="kpi-scrap" style="color:var(--text-dim)">—</div>
+            <div class="kpi-sub" id="kpi-scrap-sub"></div>
         </div>
     </div>
+
+    <!-- ── Shift progress bar ── -->
+    <div class="prog-strip" id="shift-bar">
+        <span class="prog-lbl" id="shift-bar-label">Shift</span>
+        <div class="prog-track"><div class="prog-fill" id="shift-bar-fill" style="width:0%"></div></div>
+        <span class="prog-val" id="shift-bar-val">—</span>
+    </div>
+
+    <!-- ── Recipe progress bar ── -->
+    <div class="prog-strip" id="recipe-bar">
+        <span class="prog-lbl">Recipe</span>
+        <div class="prog-track"><div class="prog-fill" id="recipe-bar-fill" style="width:0%;background:#9b59b6"></div></div>
+        <span class="prog-val" id="recipe-bar-val">—</span>
+        <span class="co-badge" id="recipe-changeover-badge">Changeover</span>
+    </div>
+
+    <!-- ── Main body ── -->
+    <div class="hmi-body">
+
+        <!-- ── Sidebar ── -->
+        <aside class="hmi-sidebar">
+
+            <!-- Machine nav -->
+            <div class="sb-section">
+                <div class="sb-title">Machines</div>
+                <div id="machine-nav-links">
+                    <div style="color:var(--text-dim);font-size:11px;">No simulation running</div>
+                </div>
+            </div>
+
+            <!-- Run mode -->
+            <div class="sb-section">
+                <div class="sb-title">Run Mode</div>
+                <div class="mode-pills">
+                    <input type="radio" name="run-mode" id="mode-scenario" checked>
+                    <label for="mode-scenario">Scenario</label>
+                    <input type="radio" name="run-mode" id="mode-recipe">
+                    <label for="mode-recipe">Recipe</label>
+                </div>
+                <div id="scenario-panel">
+                    <div class="mb-2">
+                        <label class="form-label" for="scenario-select">Scenario</label>
+                        <select id="scenario-select" class="form-select form-select-sm"></select>
+                        <small id="scenario-info" class="form-text"></small>
+                    </div>
+                </div>
+                <div id="recipe-panel" style="display:none;">
+                    <div class="mb-2">
+                        <label class="form-label" for="recipe-select">Recipe</label>
+                        <select id="recipe-select" class="form-select form-select-sm"></select>
+                        <small id="recipe-info" class="form-text"></small>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="seed-input">Seed (optional)</label>
+                    <input type="number" id="seed-input" class="form-control form-control-sm" placeholder="e.g. 42">
+                </div>
+                <button id="btn-start" class="btn-hmi btn-hmi-start" onclick="startSim()">▶  Start</button>
+                <button id="btn-stop"  class="btn-hmi btn-hmi-stop"  onclick="stopSim()" disabled>■  Stop</button>
+            </div>
+
+            <!-- Runtime controls -->
+            <div class="sb-section">
+                <div class="sb-title">Runtime Controls</div>
+                <button id="btn-pause" class="btn-hmi-pause" onclick="togglePause()" disabled>⏸ Pause Line</button>
+                <div class="mt-3">
+                    <label class="form-label" style="color:var(--text-secondary);font-size:11px;">
+                        Interarrival: <span class="ia-val" id="interarrival-value">0.0</span>s
+                    </label>
+                    <input type="range" id="interarrival-range" class="form-range"
+                           min="0" max="5" step="0.1" value="0"
+                           oninput="updateInterarrival(this.value)" disabled>
+                </div>
+            </div>
+
+            <!-- External links -->
+            <div class="sb-section">
+                <div class="sb-title">External Links</div>
+                <a id="link-grafana" href="#" target="_blank" class="btn-ext-link">Grafana  :3000</a>
+                <a id="link-influxdb" href="#" target="_blank" class="btn-ext-link">InfluxDB  :8086</a>
+                <div style="color:var(--text-dim);font-size:10px;margin-top:8px;word-break:break-all;line-height:1.5;">
+                    opc.tcp://&lt;host&gt;:4840/simantha/
+                </div>
+            </div>
+
+        </aside>
+
+        <!-- ── Main content ── -->
+        <main class="hmi-content">
+            <div class="machine-grid" id="machine-details">
+                <div class="mc-placeholder">Start a simulation to see machine status</div>
+            </div>
+            <div class="log-panel" id="log-panel">
+                <div class="log-header" onclick="toggleLog()">
+                    <span>Simulation Log</span>
+                    <span id="log-toggle-icon">▼</span>
+                </div>
+                <div id="log-viewer"></div>
+            </div>
+        </main>
+
+    </div>
+
+    <!-- ── Alarm ticker ── -->
+    <footer class="alarm-ticker" id="alarm-ticker">
+        <span class="alarm-ticker-lbl">Active Alarms</span>
+        <span class="alarm-none" id="alarm-none">No active alarms</span>
+    </footer>
 
     <script>
         let isPaused = false;
         let isRunning = false;
+        const machineHistory = {};
+        const HISTORY_LEN = 40;
 
-        // --- Quick link URL fix (use same hostname as current page) ---
+        // --- External links ---
         const host = window.location.hostname;
-        document.getElementById('link-grafana').href = `http://${host}:3000`;
+        document.getElementById('link-grafana').href  = `http://${host}:3000`;
         document.getElementById('link-influxdb').href = `http://${host}:8086`;
 
-        // --- Mode toggle (Scenario vs Recipe) ---
+        // --- Mode toggle ---
         document.getElementById('mode-scenario').addEventListener('change', () => {
             document.getElementById('scenario-panel').style.display = '';
             document.getElementById('recipe-panel').style.display = 'none';
@@ -251,9 +664,8 @@
                 const resp = await fetch('/api/scenarios');
                 if (!resp.ok) throw new Error('HTTP ' + resp.status);
                 const scenarios = await resp.json();
-                if (!scenarios || typeof scenarios !== 'object' || Object.keys(scenarios).length === 0) {
+                if (!scenarios || typeof scenarios !== 'object' || Object.keys(scenarios).length === 0)
                     throw new Error('Empty scenario list');
-                }
                 _scenarioCache = scenarios;
                 const select = document.getElementById('scenario-select');
                 select.innerHTML = '';
@@ -263,30 +675,21 @@
                     opt.textContent = `${name} (${info.machines}M)`;
                     select.appendChild(opt);
                 }
-                // Only add the listener once (first successful load)
                 if (!select.dataset.listenerAdded) {
                     select.addEventListener('change', () => {
                         const info = _scenarioCache[select.value];
                         if (!info) return;
-                        const features = info.features && info.features.length > 0
-                            ? info.features.join(', ') : 'basic';
                         document.getElementById('scenario-info').textContent =
-                            `${info.machines} machines, ${info.buffers} buffers | ${features}`;
-                        if (info.description) {
-                            document.getElementById('scenario-info').textContent = info.description;
-                        }
+                            info.description || `${info.machines} machines, ${info.buffers} buffers`;
                     });
                     select.dataset.listenerAdded = 'true';
                 }
                 select.dispatchEvent(new Event('change'));
             } catch (e) {
                 console.error('loadScenarios failed:', e);
-                if (retries > 0) {
-                    setTimeout(() => loadScenarios(retries - 1), 2000);
-                } else {
-                    const select = document.getElementById('scenario-select');
-                    select.innerHTML = '<option value="">Failed to load scenarios</option>';
-                }
+                if (retries > 0) setTimeout(() => loadScenarios(retries - 1), 2000);
+                else document.getElementById('scenario-select').innerHTML =
+                    '<option value="">Failed to load scenarios</option>';
             }
         }
 
@@ -299,8 +702,7 @@
                 select.innerHTML = '';
                 for (const name of recipes) {
                     const opt = document.createElement('option');
-                    opt.value = name;
-                    opt.textContent = name;
+                    opt.value = name; opt.textContent = name;
                     select.appendChild(opt);
                 }
                 select.addEventListener('change', async () => {
@@ -309,11 +711,9 @@
                     try {
                         const r = await fetch('/api/recipe/' + select.value);
                         const data = await r.json();
-                        const desc = data.description || '';
-                        const base = data.base_scenario || '?';
                         const segs = (data.segments || []).length;
-                        info.textContent = desc ? `${desc} (${base}, ${segs} segments)` :
-                            `Base: ${base}, ${segs} segment${segs !== 1 ? 's' : ''}`;
+                        info.textContent = data.description ||
+                            `${data.base_scenario}, ${segs} segment${segs !== 1 ? 's' : ''}`;
                     } catch (e) { info.textContent = ''; }
                 });
                 select.dispatchEvent(new Event('change'));
@@ -324,14 +724,12 @@
         async function startSim() {
             const isRecipeMode = document.getElementById('mode-recipe').checked;
             const seedVal = document.getElementById('seed-input').value;
-
             if (isRecipeMode) {
                 const recipe = document.getElementById('recipe-select').value;
                 const body = { recipe };
                 if (seedVal) body.seed = parseInt(seedVal);
                 await fetch('/api/start-recipe', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(body)
                 });
             } else {
@@ -339,8 +737,7 @@
                 const body = { scenario };
                 if (seedVal) body.seed = parseInt(seedVal);
                 await fetch('/api/start', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(body)
                 });
             }
@@ -350,112 +747,246 @@
             await fetch('/api/stop', { method: 'POST' });
         }
 
-        // --- Pause toggle ---
+        // --- Pause ---
         async function togglePause() {
             isPaused = !isPaused;
             await fetch('/api/control', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ pause_line: isPaused })
             });
         }
 
-        // --- Interarrival time ---
+        // --- Interarrival ---
         let interarrivalTimeout = null;
         function updateInterarrival(val) {
             document.getElementById('interarrival-value').textContent = parseFloat(val).toFixed(1);
             clearTimeout(interarrivalTimeout);
             interarrivalTimeout = setTimeout(async () => {
                 await fetch('/api/control', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ interarrival_time: parseFloat(val) })
                 });
             }, 200);
         }
 
-        // --- Helper: PPM color based on actual vs target ---
-        function ppmColor(actual, target) {
-            if (target <= 0) return '#6c757d';
-            const ratio = actual / target;
-            if (ratio >= 0.95) return '#198754';
-            if (ratio >= 0.80) return '#fd7e14';
-            return '#dc3545';
+        // --- Log toggle ---
+        function toggleLog() {
+            const panel = document.getElementById('log-panel');
+            const icon  = document.getElementById('log-toggle-icon');
+            panel.classList.toggle('collapsed');
+            icon.textContent = panel.classList.contains('collapsed') ? '▶' : '▼';
         }
 
-        // --- Helper: OEE bar color ---
+        // --- Colour helpers ---
         function oeeColor(val) {
-            if (val >= 0.85) return '#198754';
-            if (val >= 0.65) return '#fd7e14';
-            return '#dc3545';
+            if (val >= 0.85) return 'var(--good)';
+            if (val >= 0.65) return 'var(--warn)';
+            return 'var(--bad)';
+        }
+        function oeeColorHex(val) {
+            if (val >= 0.85) return '#2ecc71';
+            if (val >= 0.65) return '#f4a261';
+            return '#e63946';
+        }
+        function ppmColor(actual, target) {
+            if (target <= 0) return 'var(--text-secondary)';
+            const r = actual / target;
+            if (r >= 0.95) return 'var(--good)';
+            if (r >= 0.80) return 'var(--warn)';
+            return 'var(--bad)';
+        }
+        function cpkStyle(val) {
+            if (val >= 1.33) return 'color:var(--good)';
+            if (val >= 1.0)  return 'color:var(--warn)';
+            return 'color:var(--bad)';
+        }
+        function stateBadgeClass(state) {
+            const map = {
+                'PROCESSING':  'mc-badge-processing',
+                'IDLE':        'mc-badge-idle',
+                'BLOCKED':     'mc-badge-blocked',
+                'STARVED':     'mc-badge-starved',
+                'FAILED':      'mc-badge-failed',
+                'UNDER_REPAIR':'mc-badge-under-repair',
+                'DEGRADED':    'mc-badge-degraded',
+                'PAUSED':      'mc-badge-paused',
+            };
+            return map[state] || 'mc-badge-idle';
         }
 
-        // --- Helper: Cpk class ---
-        function cpkClass(val) {
-            if (val >= 1.33) return 'cpk-good';
-            if (val >= 1.0) return 'cpk-warn';
-            return 'cpk-bad';
-        }
-
-        // --- Build per-machine card HTML ---
-        function buildMachineCards(machines) {
-            let html = '<div class="row">';
-            for (const [name, m] of Object.entries(machines)) {
-                const color = stateColor(m.state);
-                html += `<div class="col-md-6 col-lg-4"><div class="machine-detail">`;
-                html += `<div class="d-flex justify-content-between align-items-center mb-2">`;
-                html += `<strong>${name}</strong>`;
-                html += `<span class="badge bg-${color}">${m.state}</span>`;
-                html += `</div>`;
-                html += `<div class="small text-muted mb-1">Parts: ${m.partcount}</div>`;
-
-                // PPM with color-coding and progress bar
-                if (m.target_ppm > 0 || m.actual_ppm > 0) {
-                    const color = ppmColor(m.actual_ppm, m.target_ppm);
-                    const pct = m.target_ppm > 0 ? Math.min(100, (m.actual_ppm / m.target_ppm * 100)).toFixed(0) : 0;
-                    html += `<div class="small mb-1">PPM: <strong style="color:${color}">${m.actual_ppm.toFixed(1)}</strong>`;
-                    if (m.target_ppm > 0) {
-                        html += ` / ${m.target_ppm.toFixed(0)} target (${pct}%)`;
-                    }
-                    html += `</div>`;
-                    if (m.target_ppm > 0) {
-                        html += `<div class="progress mb-1" style="height:6px;">`;
-                        html += `<div class="progress-bar" style="width:${pct}%;background:${color}"></div>`;
-                        html += `</div>`;
-                        html += `<div style="font-size:0.65rem;color:#6c757d;">${pct}% of target`;
-                        const cycleTime = m.target_ppm > 0 ? (60.0 / m.target_ppm).toFixed(1) : '?';
-                        html += ` | cycle = ${cycleTime}s</div>`;
-                    }
-                }
-
-                // OEE bars
-                if (m.oee !== undefined) {
-                    html += `<div class="small text-muted">OEE: ${(m.oee * 100).toFixed(1)}%</div>`;
-                    html += `<div class="progress mb-1" style="height:6px;">`;
-                    html += `<div class="progress-bar" style="width:${(m.oee * 100).toFixed(0)}%;background:${oeeColor(m.oee)}"></div>`;
-                    html += `</div>`;
-                    html += `<div class="d-flex justify-content-between" style="font-size:0.7rem;color:#6c757d;">`;
-                    html += `<span>A: ${(m.availability * 100).toFixed(0)}%</span>`;
-                    html += `<span>P: ${(m.performance * 100).toFixed(0)}%</span>`;
-                    html += `<span>Q: ${(m.quality * 100).toFixed(0)}%</span>`;
-                    html += `</div>`;
-                }
-
-                // SPC Capability
-                if (m.cp !== undefined) {
-                    html += `<div class="small mt-1">Cp: <span class="${cpkClass(m.cp)}">${m.cp.toFixed(2)}</span>`;
-                    html += ` Cpk: <span class="${cpkClass(m.cpk)}">${m.cpk.toFixed(2)}</span></div>`;
-                }
-
-                // Active failure mode
-                if (m.active_failure && m.active_failure !== 'none') {
-                    html += `<div class="small mt-1 text-danger">Failure: ${m.active_failure}</div>`;
-                }
-
-                html += `</div></div>`;
+        // --- SVG sparkline ---
+        function buildSparkSvg(values, hexColor, safeId) {
+            if (!values || values.length < 2) {
+                return `<svg viewBox="0 0 200 48" preserveAspectRatio="none"
+                    style="width:100%;height:48px;">
+                    <line x1="0" y1="24" x2="200" y2="24"
+                        stroke="var(--border-bright)" stroke-width="1" stroke-dasharray="4 3"/>
+                </svg>`;
             }
-            html += '</div>';
+            const W = 200, H = 48, pad = 3;
+            const pts = values.map((v, i) => {
+                const x = (i / (values.length - 1)) * W;
+                const y = H - pad - (v * (H - pad * 2));
+                return `${x.toFixed(1)},${y.toFixed(1)}`;
+            });
+            const last = pts[pts.length - 1].split(',');
+            const polyFill = `0,${H} ${pts.join(' ')} ${W},${H}`;
+            const gid = `sg_${safeId}`;
+            return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"
+                style="width:100%;height:48px;">
+                <defs>
+                    <linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stop-color="${hexColor}" stop-opacity="0.3"/>
+                        <stop offset="100%" stop-color="${hexColor}" stop-opacity="0"/>
+                    </linearGradient>
+                </defs>
+                <polygon points="${polyFill}" fill="url(#${gid})"/>
+                <polyline points="${pts.join(' ')}" fill="none" stroke="${hexColor}"
+                    stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+                <circle cx="${last[0]}" cy="${last[1]}" r="3" fill="${hexColor}"/>
+            </svg>`;
+        }
+
+        // --- Build machine cards ---
+        function buildMachineCards(machines) {
+            let html = '';
+            for (const [name, m] of Object.entries(machines)) {
+                // Rolling history
+                if (!machineHistory[name]) machineHistory[name] = [];
+                if (m.oee !== undefined) {
+                    machineHistory[name].push(m.oee);
+                    if (machineHistory[name].length > HISTORY_LEN) machineHistory[name].shift();
+                }
+
+                const state    = m.state || 'IDLE';
+                const oeeVal   = m.oee !== undefined ? m.oee : null;
+                const oeePct   = oeeVal !== null ? (oeeVal * 100).toFixed(1) + '%' : '—';
+                const oeeC     = oeeVal !== null ? oeeColor(oeeVal) : 'var(--text-dim)';
+                const oeeWidth = oeeVal !== null ? (oeeVal * 100).toFixed(0) : 0;
+                const oeeHex   = oeeVal !== null ? oeeColorHex(oeeVal) : '#3d5a7a';
+
+                const ppm  = m.actual_ppm !== undefined ? m.actual_ppm.toFixed(1) : '—';
+                const ppmC = m.actual_ppm !== undefined
+                    ? ppmColor(m.actual_ppm, m.target_ppm) : 'var(--text-secondary)';
+
+                const avail  = m.availability !== undefined
+                    ? (m.availability * 100).toFixed(0) + '%' : '—';
+                const qualit = m.quality !== undefined
+                    ? (m.quality * 100).toFixed(0) + '%' : '—';
+                const qualC  = m.quality !== undefined
+                    ? (m.quality >= 0.97 ? 'var(--good)' : m.quality >= 0.90 ? 'var(--warn)' : 'var(--bad)')
+                    : 'var(--text-secondary)';
+
+                const safeId  = name.replace(/[^a-zA-Z0-9]/g, '_');
+                const sparkSvg = buildSparkSvg(machineHistory[name], oeeHex, safeId);
+
+                let footer = '';
+                if (m.active_failure && m.active_failure !== 'none') {
+                    footer += `<span class="mc-fault">⚠ ${m.active_failure.toUpperCase()}</span>`;
+                }
+                if (m.cp !== undefined) {
+                    footer += `<span style="color:var(--text-dim)">
+                        Cp <span style="${cpkStyle(m.cp)}">${m.cp.toFixed(2)}</span>
+                        &nbsp;Cpk <span style="${cpkStyle(m.cpk)}">${m.cpk.toFixed(2)}</span>
+                    </span>`;
+                }
+
+                html += `
+                <div class="mc-card" data-state="${state}" id="mc-${safeId}">
+                    <div class="mc-header">
+                        <span class="mc-name">${name}</span>
+                        <span class="mc-badge ${stateBadgeClass(state)}">${state.replace('_', '\u00A0')}</span>
+                    </div>
+                    <div class="mc-oee-row">
+                        <span class="mc-oee-lbl">OEE</span>
+                        <div class="mc-bar-track">
+                            <div class="mc-bar-fill" style="width:${oeeWidth}%;background:${oeeC}"></div>
+                        </div>
+                        <span class="mc-oee-num" style="color:${oeeC}">${oeePct}</span>
+                    </div>
+                    <div class="mc-metrics-row">
+                        <div class="mc-metric">
+                            <div class="mc-metric-val" style="color:${ppmC}">${ppm}</div>
+                            <div class="mc-metric-lbl">PPM</div>
+                        </div>
+                        <div class="mc-metric">
+                            <div class="mc-metric-val">${avail}</div>
+                            <div class="mc-metric-lbl">AVAIL</div>
+                        </div>
+                        <div class="mc-metric">
+                            <div class="mc-metric-val" style="color:${qualC}">${qualit}</div>
+                            <div class="mc-metric-lbl">QUALITY</div>
+                        </div>
+                    </div>
+                    <div class="mc-sparkline">${sparkSvg}</div>
+                    ${footer ? `<div class="mc-footer">${footer}</div>` : ''}
+                </div>`;
+            }
             return html;
+        }
+
+        // --- Update machine nav ---
+        function updateMachineNav(machines) {
+            const nav = document.getElementById('machine-nav-links');
+            if (!machines || Object.keys(machines).length === 0) {
+                nav.innerHTML = '<div style="color:var(--text-dim);font-size:11px;">No simulation running</div>';
+                return;
+            }
+            const stateColour = {
+                'PROCESSING':  'var(--state-processing)',
+                'FAILED':      'var(--state-failed)',
+                'UNDER_REPAIR':'var(--state-repair)',
+                'DEGRADED':    'var(--state-degraded)',
+                'BLOCKED':     'var(--state-blocked)',
+                'STARVED':     'var(--state-starved)',
+                'PAUSED':      'var(--state-paused)',
+                'IDLE':        'var(--state-idle)',
+            };
+            nav.innerHTML = Object.entries(machines).map(([name, m]) => {
+                const c   = stateColour[m.state] || 'var(--state-idle)';
+                const sid = name.replace(/[^a-zA-Z0-9]/g, '_');
+                return `<div class="mnav-item"
+                    onclick="document.getElementById('mc-${sid}')?.scrollIntoView({behavior:'smooth',block:'nearest'})">
+                    <span>${name}</span>
+                    <div class="mnav-dot" style="background:${c};box-shadow:0 0 4px ${c}"></div>
+                </div>`;
+            }).join('');
+        }
+
+        // --- Update alarm ticker ---
+        function updateAlarmTicker(machines) {
+            const ticker  = document.getElementById('alarm-ticker');
+            const noneEl  = document.getElementById('alarm-none');
+            ticker.querySelectorAll('.alarm-item').forEach(el => el.remove());
+
+            const alarms = [];
+            if (machines) {
+                for (const [name, m] of Object.entries(machines)) {
+                    if (m.state === 'FAILED')
+                        alarms.push({ sev: 'crit', msg: `${name} — Machine failure` });
+                    else if (m.state === 'UNDER_REPAIR')
+                        alarms.push({ sev: 'warn', msg: `${name} — Under repair` });
+                    else if (m.state === 'DEGRADED')
+                        alarms.push({ sev: 'warn', msg: `${name} — Health degraded` });
+                    if (m.active_failure && m.active_failure !== 'none')
+                        alarms.push({ sev: 'crit', msg: `${name} — ${m.active_failure} fault` });
+                    if (m.cpk !== undefined && m.cpk < 1.0)
+                        alarms.push({ sev: 'info', msg: `${name} — Cpk ${m.cpk.toFixed(2)} below 1.0` });
+                }
+            }
+
+            if (alarms.length === 0) {
+                noneEl.style.display = '';
+            } else {
+                noneEl.style.display = 'none';
+                for (const a of alarms.slice(0, 5)) {
+                    const div = document.createElement('div');
+                    div.className = `alarm-item alarm-${a.sev}`;
+                    div.innerHTML = `<span class="alarm-sev alarm-sev-${a.sev}">${a.sev.toUpperCase()}</span>
+                        <span class="alarm-msg">${a.msg}</span>`;
+                    ticker.appendChild(div);
+                }
+            }
         }
 
         // --- Status polling ---
@@ -465,124 +996,133 @@
                 const data = await resp.json();
                 isRunning = data.running;
 
-                // Update indicator
-                const indicator = document.getElementById('status-indicator');
+                // Header status
+                const dot = document.getElementById('hdr-status-dot');
+                const lbl = document.getElementById('hdr-status-label');
                 if (data.running) {
                     const paused = data.opcua && data.opcua.pause_line;
-                    indicator.textContent = paused ? 'PAUSED' : 'RUNNING';
-                    indicator.className = paused ? 'status-paused' : 'status-running';
+                    dot.className = 'hmi-dot ' + (paused ? 'paused' : 'running');
+                    lbl.textContent = paused ? 'PAUSED' : 'RUNNING';
                     isPaused = !!paused;
                 } else {
-                    indicator.textContent = 'STOPPED';
-                    indicator.className = 'status-stopped';
+                    dot.className = 'hmi-dot';
+                    lbl.textContent = 'STOPPED';
                 }
-
-                // Update info
-                document.getElementById('status-scenario').textContent =
-                    data.recipe ? `Recipe: ${data.recipe}` : (data.scenario || '-');
-                document.getElementById('status-uptime').textContent =
-                    data.uptime_seconds ? `${Math.floor(data.uptime_seconds)}s` : '-';
-                document.getElementById('status-pid').textContent = data.pid || '-';
+                document.getElementById('hdr-scenario').textContent =
+                    data.recipe ? `Recipe: ${data.recipe}` : (data.scenario || '—');
+                document.getElementById('hdr-uptime').textContent =
+                    data.uptime_seconds ? `${Math.floor(data.uptime_seconds)}s` : '';
 
                 // Run ID
-                const runIdDiv = document.getElementById('status-run-id');
-                const runIdVal = document.getElementById('status-run-id-value');
+                const runIdEl = document.getElementById('hdr-run-id');
                 if (data.run_id && data.running) {
-                    runIdDiv.style.display = '';
-                    runIdVal.textContent = data.run_id;
-                    runIdVal.onclick = () => {
+                    runIdEl.style.display = '';
+                    runIdEl.textContent = data.run_id;
+                    runIdEl.onclick = () => {
                         navigator.clipboard.writeText(data.run_id).catch(() => {});
-                        runIdVal.title = 'Copied!';
-                        setTimeout(() => { runIdVal.title = 'Click to copy'; }, 1500);
+                        runIdEl.title = 'Copied!';
+                        setTimeout(() => { runIdEl.title = 'Click to copy run ID'; }, 1500);
                     };
                 } else {
-                    runIdDiv.style.display = 'none';
+                    runIdEl.style.display = 'none';
                 }
 
-                // Update buttons
+                // Buttons
                 document.getElementById('btn-start').disabled = data.running;
-                document.getElementById('btn-stop').disabled = !data.running;
+                document.getElementById('btn-stop').disabled  = !data.running;
                 document.getElementById('btn-pause').disabled = !data.running;
-                document.getElementById('btn-pause').textContent = isPaused ? 'Resume' : 'Pause';
+                document.getElementById('btn-pause').textContent =
+                    isPaused ? '▶ Resume Line' : '⏸ Pause Line';
                 document.getElementById('interarrival-range').disabled = !data.running;
 
-                // Update KPIs
                 if (data.opcua) {
-                    document.getElementById('kpi-simtime').textContent =
-                        Math.floor(data.opcua.sim_time);
+                    // KPI: Line OEE
+                    const loee = data.opcua.line_oee;
+                    if (loee && loee.oee !== undefined) {
+                        const oel = document.getElementById('kpi-line-oee');
+                        oel.textContent = (loee.oee * 100).toFixed(1) + '%';
+                        oel.style.color = oeeColor(loee.oee);
+                        document.getElementById('kpi-oee-sub').innerHTML =
+                            `<span>A&nbsp;${(loee.availability * 100).toFixed(0)}%</span>` +
+                            `<span>P&nbsp;${(loee.performance  * 100).toFixed(0)}%</span>` +
+                            `<span>Q&nbsp;${(loee.quality      * 100).toFixed(0)}%</span>`;
+                    } else {
+                        document.getElementById('kpi-line-oee').textContent = '—';
+                        document.getElementById('kpi-line-oee').style.color = 'var(--text-dim)';
+                        document.getElementById('kpi-oee-sub').textContent = '';
+                    }
+
+                    // KPI: Parts
+                    const tp = data.opcua.throughput;
                     document.getElementById('kpi-throughput').textContent =
-                        data.opcua.throughput;
-                    document.getElementById('kpi-paused').textContent =
-                        data.opcua.pause_line ? 'PAUSED' : 'RUNNING';
-                    document.getElementById('kpi-paused').style.color =
-                        data.opcua.pause_line ? '#fd7e14' : '#198754';
+                        tp !== undefined ? tp.toLocaleString() : '—';
+                    document.getElementById('kpi-throughput-sub').textContent =
+                        tp !== undefined ? 'parts produced' : '';
 
-                    // Line OEE
-                    if (data.opcua.line_oee && data.opcua.line_oee.oee !== undefined) {
-                        const loee = data.opcua.line_oee;
-                        document.getElementById('kpi-line-oee').textContent =
-                            `${(loee.oee * 100).toFixed(1)}%`;
-                        document.getElementById('kpi-line-oee').style.color = oeeColor(loee.oee);
+                    // KPI: Sim time
+                    const st = Math.floor(data.opcua.sim_time || 0);
+                    document.getElementById('kpi-simtime').textContent =
+                        st > 0 ? st.toLocaleString() + 's' : '—';
+                    document.getElementById('kpi-simtime-sub').textContent =
+                        st > 0 ? `${(st / 3600).toFixed(1)} hrs sim` : '';
+
+                    // KPI: Scrap
+                    const kpis = data.opcua.line_kpis;
+                    if (kpis && kpis.scrap_rate !== undefined) {
+                        const scl = document.getElementById('kpi-scrap');
+                        scl.textContent = (kpis.scrap_rate * 100).toFixed(1) + '%';
+                        scl.style.color = kpis.scrap_rate > 0.05 ? 'var(--bad)'
+                            : kpis.scrap_rate > 0.02 ? 'var(--warn)' : 'var(--good)';
+                        document.getElementById('kpi-scrap-sub').textContent =
+                            `${kpis.total_scrap} total scrapped`;
                     } else {
-                        document.getElementById('kpi-line-oee').textContent = '-';
-                        document.getElementById('kpi-line-oee').style.color = '';
+                        document.getElementById('kpi-scrap').textContent = '—';
+                        document.getElementById('kpi-scrap').style.color = 'var(--text-dim)';
+                        document.getElementById('kpi-scrap-sub').textContent = '';
                     }
 
-                    // Scrap
-                    if (data.opcua.line_kpis && data.opcua.line_kpis.total_scrap !== undefined) {
-                        const kpis = data.opcua.line_kpis;
-                        document.getElementById('kpi-scrap').textContent =
-                            `${kpis.total_scrap} (${(kpis.scrap_rate * 100).toFixed(1)}%)`;
-                    } else {
-                        document.getElementById('kpi-scrap').textContent = '-';
-                    }
-
-                    // Shift info
-                    const shiftDiv = document.getElementById('shift-info');
+                    // Shift bar
+                    const shiftBar = document.getElementById('shift-bar');
                     if (data.opcua.shift && data.opcua.shift.name) {
-                        shiftDiv.style.display = '';
-                        document.getElementById('shift-name').textContent = data.opcua.shift.name;
-                        const elapsed = data.opcua.shift.elapsed || 0;
+                        shiftBar.classList.add('visible');
+                        document.getElementById('shift-bar-label').textContent =
+                            data.opcua.shift.name;
+                        const elapsed  = data.opcua.shift.elapsed  || 0;
                         const duration = data.opcua.shift.duration || 1;
                         const pct = Math.min(100, (elapsed / duration * 100)).toFixed(0);
-                        document.getElementById('shift-time').textContent =
-                            `${Math.floor(elapsed)}s / ${Math.floor(duration)}s`;
-                        document.getElementById('shift-progress').style.width = `${pct}%`;
+                        document.getElementById('shift-bar-fill').style.width = pct + '%';
+                        document.getElementById('shift-bar-val').textContent =
+                            `${Math.floor(elapsed)}s / ${Math.floor(duration)}s (${pct}%)`;
                     } else {
-                        shiftDiv.style.display = 'none';
+                        shiftBar.classList.remove('visible');
                     }
 
-                    // Recipe progress
-                    const rpDiv = document.getElementById('recipe-progress');
+                    // Recipe bar
+                    const recipeBar = document.getElementById('recipe-bar');
                     if (data.opcua && data.opcua.recipe) {
+                        recipeBar.classList.add('visible');
                         const rp = data.opcua.recipe;
-                        rpDiv.style.display = '';
-                        document.getElementById('rp-name').textContent = rp.recipe_name;
-                        document.getElementById('rp-seg-name').textContent = rp.segment_name;
-                        document.getElementById('rp-seg-idx').textContent = rp.segment_index;
-                        document.getElementById('rp-seg-total').textContent = rp.total_segments;
-
-                        const coBadge = document.getElementById('rp-changeover');
-                        coBadge.style.display = rp.changeover_state ? '' : 'none';
-
-                        const target = rp.segment_quantity_target;
+                        document.getElementById('recipe-changeover-badge').style.display =
+                            rp.changeover_state ? '' : 'none';
+                        const target   = rp.segment_quantity_target;
                         const produced = rp.segment_quantity_produced;
                         if (target > 0) {
                             const pct = Math.min(100, (produced / target * 100)).toFixed(0);
-                            document.getElementById('rp-seg-bar').style.width = pct + '%';
-                            document.getElementById('rp-seg-detail').textContent =
-                                `${produced} / ${target} parts (${pct}%)`;
+                            document.getElementById('recipe-bar-fill').style.width = pct + '%';
+                            document.getElementById('recipe-bar-val').textContent =
+                                `${rp.recipe_name} — Seg ${rp.segment_index}/${rp.total_segments}: ` +
+                                `${rp.segment_name} (${produced}/${target} parts)`;
                         } else {
                             const remaining = rp.segment_time_remaining || 0;
-                            document.getElementById('rp-seg-bar').style.width = '0%';
-                            document.getElementById('rp-seg-detail').textContent =
-                                `Time remaining: ${Math.floor(remaining)}s`;
+                            document.getElementById('recipe-bar-fill').style.width = '0%';
+                            document.getElementById('recipe-bar-val').textContent =
+                                `${rp.recipe_name} — ${rp.segment_name} (${Math.floor(remaining)}s remaining)`;
                         }
                     } else {
-                        rpDiv.style.display = 'none';
+                        recipeBar.classList.remove('visible');
                     }
 
-                    // Update interarrival slider to match server value
+                    // Interarrival slider sync
                     const slider = document.getElementById('interarrival-range');
                     if (document.activeElement !== slider) {
                         slider.value = data.opcua.interarrival_time;
@@ -590,40 +1130,30 @@
                             parseFloat(data.opcua.interarrival_time).toFixed(1);
                     }
 
-                    // Machine details
-                    const detailsDiv = document.getElementById('machine-details');
+                    // Machine cards + nav + alarms
                     if (data.opcua.machines && Object.keys(data.opcua.machines).length > 0) {
-                        detailsDiv.innerHTML = buildMachineCards(data.opcua.machines);
+                        document.getElementById('machine-details').innerHTML =
+                            buildMachineCards(data.opcua.machines);
+                        updateMachineNav(data.opcua.machines);
+                        updateAlarmTicker(data.opcua.machines);
                     }
-                } else if (!data.running) {
-                    document.getElementById('kpi-simtime').textContent = '-';
-                    document.getElementById('kpi-throughput').textContent = '-';
-                    document.getElementById('kpi-paused').textContent = '-';
-                    document.getElementById('kpi-paused').style.color = '';
-                    document.getElementById('kpi-line-oee').textContent = '-';
-                    document.getElementById('kpi-line-oee').style.color = '';
-                    document.getElementById('kpi-scrap').textContent = '-';
-                    document.getElementById('shift-info').style.display = 'none';
-                    document.getElementById('recipe-progress').style.display = 'none';
-                    document.getElementById('machine-details').innerHTML =
-                        '<span class="text-muted">Start a simulation to see machine details</span>';
-                }
-            } catch (e) {
-                // Server not reachable
-            }
-        }
 
-        function stateColor(state) {
-            const colors = {
-                'PROCESSING': 'success',
-                'IDLE': 'secondary',
-                'BLOCKED': 'warning',
-                'STARVED': 'info',
-                'FAILED': 'danger',
-                'UNDER_REPAIR': 'danger',
-                'PAUSED': 'warning',
-            };
-            return colors[state] || 'secondary';
+                } else if (!data.running) {
+                    const kpiIds = ['kpi-line-oee', 'kpi-throughput', 'kpi-simtime', 'kpi-scrap'];
+                    kpiIds.forEach(id => {
+                        const el = document.getElementById(id);
+                        el.textContent = '—'; el.style.color = 'var(--text-dim)';
+                    });
+                    ['kpi-oee-sub','kpi-throughput-sub','kpi-simtime-sub','kpi-scrap-sub']
+                        .forEach(id => { document.getElementById(id).textContent = ''; });
+                    document.getElementById('shift-bar').classList.remove('visible');
+                    document.getElementById('recipe-bar').classList.remove('visible');
+                    document.getElementById('machine-details').innerHTML =
+                        '<div class="mc-placeholder">Start a simulation to see machine status</div>';
+                    updateMachineNav(null);
+                    updateAlarmTicker(null);
+                }
+            } catch (e) { /* server unreachable */ }
         }
 
         // --- Log polling ---
