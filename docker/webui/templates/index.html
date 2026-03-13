@@ -215,7 +215,7 @@
             border-bottom: 1px solid var(--border-dim);
         }
         .sb-title {
-            font-size: 10px; letter-spacing: 0.1em;
+            font-size: 11px; letter-spacing: 0.08em;
             text-transform: uppercase; color: #8aaac8;
             margin-bottom: 8px;
         }
@@ -226,7 +226,7 @@
             justify-content: space-between;
             padding: 5px 8px; border-radius: 3px;
             cursor: pointer; color: #a8bdd4;
-            font-size: 12px; margin-bottom: 1px;
+            font-size: 13px; margin-bottom: 1px;
             transition: background 0.1s, color 0.1s;
         }
         .mnav-item:hover { background: var(--bg-card); color: var(--text-primary); }
@@ -254,7 +254,7 @@
         .hmi-sidebar .form-select,
         .hmi-sidebar .form-control {
             background: var(--bg-card); border-color: var(--border-bright);
-            color: var(--text-primary); font-size: 12px;
+            color: var(--text-primary); font-size: 13px;
         }
         .hmi-sidebar .form-select:focus,
         .hmi-sidebar .form-control:focus {
@@ -262,16 +262,17 @@
             border-color: var(--cyan); color: var(--text-primary);
             box-shadow: 0 0 0 2px var(--cyan-dim);
         }
+        .hmi-sidebar .form-control::placeholder { color: #6a84a0; }
         .hmi-sidebar select option { background: #0e1828; }
-        .hmi-sidebar .form-label { color: #a8bdd4; font-size: 11px; }
-        .hmi-sidebar .form-text  { color: #7a9ab8 !important; font-size: 10px; }
+        .hmi-sidebar .form-label { color: #a8bdd4; font-size: 12px; }
+        .hmi-sidebar .form-text  { color: #7a9ab8 !important; font-size: 11px; }
         .hmi-sidebar .form-range::-webkit-slider-thumb  { background: var(--cyan); }
         .hmi-sidebar .form-range::-webkit-slider-runnable-track { background: var(--border-bright); }
 
         /* Sidebar buttons */
         .btn-hmi {
             width: 100%; padding: 7px; border: none; border-radius: 2px;
-            font-size: 12px; font-weight: 700; letter-spacing: 0.1em;
+            font-size: 13px; font-weight: 700; letter-spacing: 0.08em;
             text-transform: uppercase; cursor: pointer;
             margin-bottom: 6px; transition: opacity 0.15s;
         }
@@ -281,7 +282,7 @@
         .btn-hmi-pause {
             background: transparent; color: var(--warn);
             border: 1px solid var(--warn); width: 100%;
-            padding: 5px; font-size: 11px; font-weight: 600;
+            padding: 5px; font-size: 12px; font-weight: 600;
             letter-spacing: 0.08em; text-transform: uppercase;
             border-radius: 2px; cursor: pointer; margin-bottom: 0;
             transition: background 0.15s;
@@ -592,7 +593,7 @@
                 <div class="sb-title">Runtime Controls</div>
                 <button id="btn-pause" class="btn-hmi-pause" onclick="togglePause()" disabled>⏸ Pause Line</button>
                 <div class="mt-3">
-                    <label class="form-label" style="color:#a8bdd4;font-size:11px;">
+                    <label class="form-label" style="color:#a8bdd4;font-size:12px;">
                         Interarrival: <span class="ia-val" id="interarrival-value">0.0</span>s
                     </label>
                     <input type="range" id="interarrival-range" class="form-range"
