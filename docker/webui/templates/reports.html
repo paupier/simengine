@@ -7,7 +7,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <style>
-        body { background: #f8f9fa; }
+        body { background: #0d1520; color: #dde4f0; }
         .kpi-card { text-align: center; padding: 12px; }
         .kpi-value { font-size: 1.6rem; font-weight: bold; color: #0d6efd; }
         .kpi-label { font-size: 0.8rem; color: #6c757d; }
@@ -21,22 +21,118 @@
         .stat-label { color: #6c757d; }
         .stat-value { font-weight: 600; }
         #loading-spinner { display: none; }
+        /* ── HMI Page Header ── */
+        .hmi-page-header {
+            height: 52px; background: #080d18;
+            border-bottom: 1px solid #1a2840;
+            display: flex; align-items: center;
+            padding: 0 16px; gap: 0;
+        }
+        .hmi-logo {
+            width: 34px; height: 34px; background: #e63946; color: #fff;
+            font-weight: 900; font-size: 17px; border-radius: 3px;
+            display: flex; align-items: center; justify-content: center;
+            margin-right: 12px; flex-shrink: 0;
+        }
+        .hmi-title {
+            font-size: 14px; font-weight: 600; letter-spacing: 0.08em;
+            text-transform: uppercase; color: #dde4f0; flex-shrink: 0;
+        }
+        .hmi-subtitle {
+            color: #7a8ba8; margin-left: 10px; font-size: 12px;
+            letter-spacing: 0.04em; flex-shrink: 0;
+        }
+        .hmi-vdiv {
+            width: 1px; height: 28px; background: #1a2840;
+            margin: 0 16px; flex-shrink: 0;
+        }
+        .hmi-nav { display: flex; gap: 2px; }
+        .hmi-nav a {
+            color: #7a8ba8; text-decoration: none;
+            font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase;
+            padding: 6px 14px; border-radius: 3px;
+            border-bottom: 2px solid transparent;
+            transition: color 0.15s, background 0.15s;
+        }
+        .hmi-nav a:hover { color: #dde4f0; background: #0e1828; }
+        .hmi-nav a.active { color: #00c8e6; border-bottom-color: #00c8e6; }
+        /* ── Bootstrap dark overrides ── */
+        .card { background: #0e1828 !important; border-color: #1a2840 !important; }
+        .card-header { background: #080d18 !important; border-color: #1a2840 !important; color: #dde4f0 !important; }
+        .card-body, .card-footer { color: #dde4f0; }
+        .table { color: #c8d6e8; --bs-table-bg: transparent; --bs-table-border-color: #1a2840; }
+        .table thead th { background: #080d18; color: #8aaac8; border-color: #1a2840; }
+        .table-hover > tbody > tr:hover > * { background-color: rgba(0,200,230,0.04) !important; color: #dde4f0; }
+        .table-striped > tbody > tr:nth-of-type(odd) > * { background-color: rgba(255,255,255,0.02); }
+        .form-control, .form-select {
+            background: #0e1828; border-color: #1e3555; color: #dde4f0;
+        }
+        .form-control:focus, .form-select:focus {
+            background: #101d30; border-color: #00c8e6; color: #dde4f0;
+            box-shadow: 0 0 0 2px rgba(0,200,230,0.12);
+        }
+        .form-control::placeholder { color: #6a84a0; }
+        .form-control:disabled, .form-control[readonly] { background: #080d18; color: #7a8ba8; }
+        select option { background: #0e1828; }
+        .form-label, label { color: #a8bdd4; }
+        .form-text, .text-muted { color: #7a8ba8 !important; }
+        .form-check-input { background-color: #0e1828; border-color: #1e3555; }
+        .input-group-text { background: #080d18; border-color: #1e3555; color: #8aaac8; }
+        .btn-outline-primary { border-color: #00c8e6; color: #00c8e6; }
+        .btn-outline-primary:hover { background: rgba(0,200,230,0.12); color: #00c8e6; border-color: #00c8e6; }
+        .btn-outline-secondary { border-color: #3d5a7a; color: #96a8be; }
+        .btn-outline-secondary:hover { background: rgba(150,168,190,0.12); color: #c8d6e8; }
+        .btn-outline-info { border-color: #00c8e6; color: #00c8e6; }
+        .btn-outline-info:hover { background: rgba(0,200,230,0.12); color: #00c8e6; }
+        .btn-outline-danger { border-color: #e63946; color: #e63946; }
+        .btn-outline-danger:hover { background: rgba(230,57,70,0.12); color: #e63946; }
+        .btn-outline-warning { border-color: #f4a261; color: #f4a261; }
+        .btn-outline-warning:hover { background: rgba(244,162,97,0.12); color: #f4a261; }
+        .btn-outline-success { border-color: #2ecc71; color: #2ecc71; }
+        .btn-outline-success:hover { background: rgba(46,204,113,0.12); color: #2ecc71; }
+        .btn-outline-light { border-color: #3d5a7a; color: #96a8be; }
+        .btn-outline-light:hover { background: rgba(150,168,190,0.1); color: #c8d6e8; }
+        .btn-primary { background: #00c8e6; border-color: #00c8e6; color: #000; }
+        .btn-success { background: #2ecc71; border-color: #2ecc71; color: #000; }
+        .btn-danger  { background: #e63946; border-color: #e63946; }
+        .btn-warning { background: #f4a261; border-color: #f4a261; color: #000; }
+        .btn-light   { background: #1e3555; border-color: #1e3555; color: #dde4f0; }
+        .btn-info    { background: #00c8e6; border-color: #00c8e6; color: #000; }
+        .badge.bg-secondary { background: #1e3555 !important; }
+        .badge.bg-light { background: #1e3555 !important; color: #a8bdd4 !important; }
+        .alert-info    { background: rgba(0,200,230,0.08);   border-color: rgba(0,200,230,0.2);   color: #96d8e8; }
+        .alert-warning { background: rgba(244,162,97,0.08);  border-color: rgba(244,162,97,0.2);  color: #f4a261; }
+        .alert-danger  { background: rgba(230,57,70,0.1);    border-color: rgba(230,57,70,0.25);  color: #e63946; }
+        .alert-success { background: rgba(46,204,113,0.08);  border-color: rgba(46,204,113,0.2);  color: #2ecc71; }
+        .modal-content { background: #0e1828; border-color: #1a2840; color: #dde4f0; }
+        .modal-header, .modal-footer { border-color: #1a2840; }
+        .dropdown-menu { background: #0e1828; border-color: #1a2840; }
+        .dropdown-item { color: #a8bdd4; }
+        .dropdown-item:hover { background: #1a2840; color: #dde4f0; }
+        hr { border-color: #1a2840; }
+        code { color: #00c8e6; background: rgba(0,200,230,0.08); padding: 1px 4px; border-radius: 3px; }
+        pre { background: #060b14; color: #a8bdd4; border: 1px solid #1a2840; border-radius: 4px; padding: 12px; }
+        h1,h2,h3,h4,h5,h6,strong { color: #dde4f0; }
+        a:not(.btn):not(.hmi-nav a) { color: #00c8e6; }
+        a:not(.btn):not(.hmi-nav a):hover { color: #33d4ee; }
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: #0d1520; }
+        ::-webkit-scrollbar-thumb { background: #1e3555; border-radius: 2px; }
     </style>
 </head>
 <body>
-    <nav class="navbar navbar-dark bg-dark">
-        <div class="container-fluid">
-            <a href="/" class="navbar-brand mb-0 h1">Simantha Digital Twin</a>
-            <div>
-                <a href="/" class="btn btn-sm btn-outline-light me-2">Dashboard</a>
-                <a href="/reports" class="btn btn-sm btn-info me-2">Reports</a>
-                <a href="/runs" class="btn btn-sm btn-outline-light me-2">Runs</a>
-                <a href="/validation" class="btn btn-sm btn-outline-warning me-2">Validation</a>
-                <a href="/config" class="btn btn-sm btn-outline-light me-2">Config</a>
-                <a href="/recipes" class="btn btn-sm btn-outline-light me-2">Recipes</a>
-            </div>
-        </div>
-    </nav>
+    <header class="hmi-page-header">
+        <div class="hmi-logo">S</div>
+        <span class="hmi-title">Simantha Digital Twin</span>
+        <span class="hmi-subtitle">| Plant Overview</span>
+        <div class="hmi-vdiv"></div>
+        <nav class="hmi-nav">
+            <a href="/">Dashboard</a>
+            <a href="/runs" class="active">Run Reports</a>
+            <a href="/config">Config</a>
+            <a href="/recipes">Recipes</a>
+        </nav>
+    </header>
 
     <div class="container-fluid mt-3">
         <!-- File selector -->
