@@ -169,7 +169,7 @@ Per-machine options include:
 - `cycle_time` — direct cycle time in seconds
 - `target_ppm` — parts per minute target (derives `cycle_time = 60 / target_ppm`; takes precedence if both given)
 - `spc.measurement_noise` — coefficient of variation for SPC measurement noise (default: 0.02)
-- `health_states` — multi-state degradation config: `h_max` (number of failed state), `p_degrade` (per-step probability), `cbm_threshold`
+- `health_states` — multi-state degradation config: `h_max` (failed state index), `p_degrade` (per-step degrade probability), `cbm_threshold` (health state at which maintainer is called; if `cbm_threshold < h_max` this is CBM — machine never reaches FAILED; if `cbm_threshold == h_max` this is run-to-failure)
 
 Per-scenario options include:
 - `warm_up_time` — seconds of warm-up before data collection starts (default: 0)

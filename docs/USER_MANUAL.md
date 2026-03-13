@@ -641,6 +641,90 @@ machines:
     cbm_threshold: 1       # Request maintenance when state=1
 ```
 
+### Condition-Based Maintenance (CBM)
+
+**CBM** is a maintenance strategy where the maintainer is called based on the *observed health state* of a machine, rather than waiting for a hard failure or following a fixed time schedule. The goal is to intervene early — while the machine is degrading but still producing — to prevent the costlier outcome of a full breakdown.
+
+#### How it works in this simulator
+
+Each machine with degradation enabled has a health state that steps from `0` (healthy) upward. The `cbm_threshold` setting tells Simantha at which health state to request the maintainer:
+
+```
+Health 0 ──► 1 ──► 2 ──► ... ──► h_max  (= full failure, machine stops)
+                ▲
+         cbm_threshold
+         maintainer called here,
+         machine continues producing
+         while waiting for repair
+```
+
+When `health >= cbm_threshold`, Simantha queues a maintenance request. The machine keeps running in a degraded state until the maintainer arrives. Once repaired, health resets to 0.
+
+If `cbm_threshold == h_max`, the maintainer is only called at full failure — this is **corrective maintenance** (run-to-failure), not CBM.
+
+#### Enabling and disabling CBM
+
+**CBM enabled** — maintainer intervenes before failure:
+```yaml
+machines:
+  - name: M1
+    cycle_time: 1
+    health_states:
+      h_max: 4          # States: 0 (healthy) → 1 → 2 → 3 → 4 (failed)
+      p_degrade: 0.01   # 1% chance of degrading one step per simulation step
+      cbm_threshold: 2  # Call maintainer when health reaches state 2
+                        # Machine never reaches state 4 if maintained promptly
+
+maintainer:
+  enabled: true
+  capacity: 1
+```
+
+**CBM disabled** (run-to-failure) — maintainer only called at full failure:
+```yaml
+machines:
+  - name: M1
+    cycle_time: 1
+    health_states:
+      h_max: 4
+      p_degrade: 0.01
+      cbm_threshold: 4  # Only call maintainer at full failure (= h_max)
+                        # Machine will reach FAILED state and stop producing
+```
+
+**No degradation at all** — machine is perfectly reliable:
+```yaml
+machines:
+  - name: M1
+    cycle_time: 1
+    # No health_states block = no degradation, no failures
+```
+
+#### The threshold trade-off
+
+| `cbm_threshold` | Behaviour | Trade-off |
+|-----------------|-----------|-----------|
+| Low (e.g. 1) | Very early intervention | More frequent maintenance, less production impact |
+| Mid (e.g. h_max / 2) | Balanced CBM | Moderate downtime, moderate maintenance cost |
+| Equal to `h_max` | Run-to-failure | Fewer repairs, but failures cause full production stops |
+
+#### What you observe in the simulation
+
+With CBM active (`cbm_threshold < h_max`):
+- The machine cycles through `PROCESSING → DEGRADED → (maintenance) → PROCESSING`
+- The `FAILED` state rarely or never occurs — **this is correct CBM behaviour, not a data gap**
+- `HealthPercent` in OPC UA drops gradually, then resets to 100% after each repair
+- The Run Reports page "Failure & Maintenance Timeline" chart shows **Degraded** and **Maintenance** events instead of hard failures
+
+With run-to-failure (`cbm_threshold == h_max`):
+- The machine cycles through `PROCESSING → DEGRADED → FAILED → UNDER_REPAIR → PROCESSING`
+- Hard failures appear in the timeline chart
+- MTTF and MTTR are calculable from the failure events
+
+> **Note:** If `total_failures = 0` in your run report for a CBM scenario, that indicates CBM is working as intended — the maintainer is intervening before the machine reaches `h_max`. Degradation and maintenance event counts are the meaningful KPIs in this case, not failure counts.
+
+---
+
 **Machine with Quality Modeling:**
 ```yaml
 machines:
@@ -2337,7 +2421,7 @@ var_custom.set_value(custom_kpi)
 
 **Buffer:** Temporary storage between machines (WIP = Work-In-Progress)
 
-**CBM:** Condition-Based Maintenance - repair when condition threshold reached
+**CBM (Condition-Based Maintenance):** A maintenance strategy where the maintainer is triggered by the machine's observed health state rather than waiting for hard failure (`cbm_threshold < h_max`) or following a fixed schedule. In this simulator, `cbm_threshold` sets the health state at which the maintainer is called. A machine with `cbm_threshold: 2` and `h_max: 4` will never reach the FAILED state under normal CBM operation — the absence of FAILED events is the success condition, not a missing data. Contrast with run-to-failure (`cbm_threshold == h_max`) where machines stop producing before maintenance is triggered.
 
 **Cp/Cpk:** Process capability indices measuring how well a process meets specifications
 
