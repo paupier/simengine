@@ -22,19 +22,19 @@
         .current-run-banner.stopped { border-left-color: #6c757d; }
         .best-oee { background-color: rgba(25, 135, 84, 0.08); }
         .detail-row td { padding: 0 !important; border-top: none !important; }
-        .detail-panel { padding: 16px; background: #fff; border: 1px solid #dee2e6; border-top: none; }
+        .detail-panel { padding: 16px; background: #0a1220; border: 1px solid #1a2840; border-top: none; }
         .kpi-card { text-align: center; padding: 12px; }
-        .kpi-value { font-size: 1.4rem; font-weight: bold; color: #0d6efd; }
-        .kpi-label { font-size: 0.75rem; color: #6c757d; }
+        .kpi-value { font-size: 1.4rem; font-weight: bold; color: #00c8e6; }
+        .kpi-label { font-size: 0.75rem; color: #7a8ba8; }
         .chart-container { position: relative; height: 260px; }
         .section-card { margin-bottom: 12px; }
         .badge-pass { background: #198754; }
         .badge-fail { background: #dc3545; }
         .badge-warn { background: #fd7e14; }
         .badge-skip { background: #6c757d; }
-        .stat-row { display: flex; justify-content: space-between; padding: 3px 0; border-bottom: 1px solid #f0f0f0; font-size: 0.8rem; }
-        .stat-label { color: #6c757d; }
-        .stat-value { font-weight: 600; }
+        .stat-row { display: flex; justify-content: space-between; padding: 3px 0; border-bottom: 1px solid #1a2840; font-size: 0.8rem; }
+        .stat-label { color: #7a8ba8; }
+        .stat-value { font-weight: 600; color: #dde4f0; }
         .influx-badge { font-size: 0.75rem; }
         /* ── HMI Page Header ── */
         .hmi-page-header {
@@ -75,9 +75,10 @@
         .card { background: #0e1828 !important; border-color: #1a2840 !important; }
         .card-header { background: #080d18 !important; border-color: #1a2840 !important; color: #dde4f0 !important; }
         .card-body, .card-footer { color: #dde4f0; }
-        .table { color: #c8d6e8; --bs-table-bg: transparent; --bs-table-border-color: #1a2840; }
-        .table thead th { background: #080d18; color: #8aaac8; border-color: #1a2840; }
-        .table-hover > tbody > tr:hover > * { background-color: rgba(0,200,230,0.04) !important; color: #dde4f0; }
+        .table { color: #dde4f0; --bs-table-color: #dde4f0; --bs-table-bg: transparent; --bs-table-border-color: #1a2840; }
+        .table td, .table th { color: #dde4f0 !important; }
+        .table thead th { background: #080d18; color: #8aaac8 !important; border-color: #1a2840; }
+        .table-hover > tbody > tr:hover > * { background-color: rgba(0,200,230,0.04) !important; color: #dde4f0 !important; }
         .table-striped > tbody > tr:nth-of-type(odd) > * { background-color: rgba(255,255,255,0.02); }
         .form-control, .form-select {
             background: #0e1828; border-color: #1e3555; color: #dde4f0;
@@ -551,7 +552,7 @@
                     <div class="col"><div class="card kpi-card"><div class="kpi-value" id="${sid}-ov-oee">-</div><div class="kpi-label">Line OEE (avg)</div></div></div>
                     <div class="col"><div class="card kpi-card"><div class="kpi-value" id="${sid}-ov-ppm">-</div><div class="kpi-label">Actual PPM</div></div></div>
                     <div class="col"><div class="card kpi-card"><div class="kpi-value" id="${sid}-ov-efficiency">-</div><div class="kpi-label">Efficiency</div></div></div>
-                    <div class="col"><div class="card kpi-card"><div class="kpi-value" id="${sid}-ov-duration">-</div><div class="kpi-label">Duration</div></div></div>
+                    <div class="col"><div class="card kpi-card"><div class="kpi-value" id="${sid}-ov-duration">-</div><div class="kpi-label">Sim Duration</div><div class="kpi-label" id="${sid}-ov-wall-duration" style="color:#8aaac8;margin-top:2px;"></div></div></div>
                     <div class="col"><div class="card kpi-card"><div class="kpi-value" id="${sid}-ov-events">-</div><div class="kpi-label">Total Events</div></div></div>
                 </div>
 
@@ -666,6 +667,9 @@
             const el = id => document.getElementById(sid + '-' + id);
             el('ov-events').textContent = (a.overview.total_events || 0).toLocaleString();
             el('ov-duration').textContent = formatDuration(a.overview.sim_duration_hrs);
+            if (a.overview.wall_duration_hrs != null) {
+                el('ov-wall-duration').textContent = formatDuration(a.overview.wall_duration_hrs) + ' wall';
+            }
             el('ov-parts').textContent = a.throughput.total_parts ? a.throughput.total_parts.toLocaleString() : '-';
             el('ov-oee').textContent = a.oee.mean ? (a.oee.mean * 100).toFixed(1) + '%' : '-';
             el('ov-ppm').textContent = a.throughput.ppm ? a.throughput.ppm.toFixed(1) : '-';
@@ -738,15 +742,21 @@
             const machineNames = Object.keys(moee.machines);
             if (machineNames.length === 0) return;
             const colors = ['#0d6efd','#dc3545','#198754','#fd7e14','#6f42c1','#20c997'];
-            const firstTs = moee.machines[machineNames[0]].timeseries || [];
-            const labels = firstTs.map(p => (p.t / 3600).toFixed(2));
             const datasets = machineNames.map((m, i) => ({
-                label: m, data: (moee.machines[m].timeseries || []).map(p => p.v),
+                label: m,
+                data: (moee.machines[m].timeseries || []).map(p => ({x: p.t / 3600, y: p.v})),
                 borderColor: colors[i % colors.length], borderWidth: 1, pointRadius: 0, fill: false
             }));
             runCharts[runId].machineOee = new Chart(document.getElementById(sid + '-chart-machine-oee'), {
-                type: 'line', data: {labels, datasets},
-                options: {responsive: true, maintainAspectRatio: false, scales: {y: {min: 0, max: 1.05}}, plugins: {legend: {position: 'bottom', labels: {boxWidth: 12}}}}
+                type: 'line', data: {datasets},
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    scales: {
+                        x: {type: 'linear', title: {display: true, text: 'Sim Time (hrs)'}},
+                        y: {min: 0, max: 1.05, title: {display: true, text: 'OEE'}}
+                    },
+                    plugins: {legend: {position: 'bottom', labels: {boxWidth: 12}}}
+                }
             });
             let html = '<table class="table table-sm small"><thead><tr><th>Machine</th><th>OEE</th><th>Util</th><th>Parts</th><th>Good</th><th>Defects</th></tr></thead><tbody>';
             for (const m of machineNames) {

@@ -10,6 +10,7 @@ Used by:
 """
 import json
 import os
+from datetime import datetime
 from pathlib import Path
 
 try:
@@ -135,6 +136,14 @@ def analyze_overview(df):
 
     wall_start = str(df["wall_clock"].iloc[0]) if "wall_clock" in df.columns else None
     wall_end = str(df["wall_clock"].iloc[-1]) if "wall_clock" in df.columns else None
+    wall_duration_hrs = None
+    if wall_start and wall_end:
+        try:
+            dt_start = datetime.fromisoformat(wall_start)
+            dt_end = datetime.fromisoformat(wall_end)
+            wall_duration_hrs = round((dt_end - dt_start).total_seconds() / 3600, 2)
+        except (ValueError, TypeError):
+            pass
 
     # Event type distribution
     event_type_dist = {}
@@ -158,6 +167,7 @@ def analyze_overview(df):
         "events_per_min": round(events_per_min, 1),
         "wall_start": wall_start,
         "wall_end": wall_end,
+        "wall_duration_hrs": wall_duration_hrs,
         "event_type_distribution": event_type_dist,
         "severity_distribution": severity_dist,
     }
