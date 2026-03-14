@@ -19,56 +19,57 @@
             overflow-y: auto;
         }
         .machine-section {
-            border: 1px solid #dee2e6;
+            border: 1px solid #1a2840;
             border-radius: 8px;
             padding: 14px;
             margin-bottom: 12px;
-            background: white;
+            background: #0e1828;
         }
         .buffer-section {
-            border: 1px solid #dee2e6;
+            border: 1px solid #1a2840;
             border-radius: 6px;
             padding: 10px;
             margin-bottom: 8px;
+            background: #0a1220;
         }
-        .remove-btn { cursor: pointer; color: #dc3545; font-size: 1.2rem; }
-        .remove-btn:hover { color: #b02a37; }
+        .remove-btn { cursor: pointer; color: #e63946; font-size: 1.2rem; }
+        .remove-btn:hover { color: #ff6b74; }
         .help-icon {
             display: inline-flex; align-items: center; justify-content: center;
             width: 16px; height: 16px; border-radius: 50%;
-            background: #e9ecef; color: #6c757d;
+            background: #1a2840; color: #8aaac8;
             font-size: 0.65rem; font-weight: bold; cursor: help;
             margin-left: 3px; vertical-align: middle;
         }
-        .help-icon:hover { background: #0d6efd; color: white; }
-        .ppm-formula { font-size: 0.75rem; color: #6c757d; font-style: italic; margin-top: 2px; }
-        #scenario-description { font-size: 0.85rem; color: #6c757d; margin-top: 4px; }
+        .help-icon:hover { background: #00c8e6; color: #000; }
+        .ppm-formula { font-size: 0.75rem; color: #8aaac8; font-style: italic; margin-top: 2px; }
+        #scenario-description { font-size: 0.85rem; color: #8aaac8; margin-top: 4px; }
         .feature-badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
         .feature-badge {
             font-size: 0.7rem; padding: 2px 8px; border-radius: 10px;
-            background: #e9ecef; color: #495057;
+            background: #1a2840; color: #8aaac8; border: 1px solid #243650;
         }
-        .feature-badge.active { background: #0d6efd22; color: #0d6efd; border: 1px solid #0d6efd44; }
-        .feature-badge.active-green { background: #19875422; color: #198754; border: 1px solid #19875444; }
+        .feature-badge.active { background: rgba(0,200,230,0.1); color: #00c8e6; border: 1px solid rgba(0,200,230,0.3); }
+        .feature-badge.active-green { background: #19875422; color: #2ecc71; border: 1px solid #19875444; }
         .feature-badge.active-orange { background: #fd7e1422; color: #fd7e14; border: 1px solid #fd7e1444; }
-        .feature-badge.active-purple { background: #6f42c122; color: #6f42c1; border: 1px solid #6f42c144; }
+        .feature-badge.active-purple { background: #6f42c122; color: #a07de8; border: 1px solid #6f42c144; }
         .detail-panel {
-            font-size: 0.78rem; color: #495057;
-            background: #f8f9fa; border-radius: 6px;
+            font-size: 0.78rem; color: #a8bdd4;
+            background: #0a1220; border-radius: 6px;
             padding: 10px 12px; margin-top: 8px;
-            border-left: 3px solid #0d6efd;
+            border-left: 3px solid #00c8e6;
         }
-        .detail-panel dt { font-weight: 600; color: #212529; }
+        .detail-panel dt { font-weight: 600; color: #dde4f0; }
         .detail-panel dd { margin-bottom: 4px; margin-left: 0; }
         .detail-toggle {
-            font-size: 0.75rem; color: #6c757d; cursor: pointer;
+            font-size: 0.75rem; color: #7a8ba8; cursor: pointer;
             border: none; background: none; padding: 0;
         }
-        .detail-toggle:hover { color: #0d6efd; }
+        .detail-toggle:hover { color: #00c8e6; }
         .feature-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
         .feature-item { display: flex; align-items: center; gap: 4px; }
         .degradation-inline { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
-        .degradation-inline label { font-size: 0.75rem; color: #6c757d; margin: 0; white-space: nowrap; }
+        .degradation-inline label { font-size: 0.75rem; color: #8aaac8; margin: 0; white-space: nowrap; }
         .degradation-inline input { width: 65px; }
         /* ── HMI Page Header ── */
         .hmi-page-header {
