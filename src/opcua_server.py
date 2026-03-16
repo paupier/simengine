@@ -16,6 +16,8 @@ from opcua import Server, ua
 from simantha import Source, Machine, Buffer, Sink, System, Maintainer
 from simantha.simulation import Environment
 
+from line_state import LineState, SimMode
+
 
 # Monkey-patch Simantha's Environment.step() to print actual tracebacks
 # instead of swallowing exceptions with a bare except:
@@ -1084,7 +1086,8 @@ def collect_system_metrics(buffers, maintainer, machines=None):
 def process_machine_step(machine_name, machine_obj, metrics, config_machines,
                          total_parts_produced, pause_line, sim_step, maintainer,
                          shift_manager, spc_monitors, opcua_vars, sink, sim_time,
-                         shift_oee_snapshot=None, shift_start_time=0.0):
+                         shift_oee_snapshot=None, shift_start_time=0.0,
+                         machine_totals=None):
     """Process one simulation step for a single machine.
 
     Updates metrics, detects state, calculates OEE, updates alarms, SPC,
@@ -1175,14 +1178,24 @@ def process_machine_step(machine_name, machine_obj, metrics, config_machines,
     snap = shift_oee_snapshot or {}
     shift_elapsed = sim_time - shift_start_time
     shift_downtime = metrics["down_time"] - snap.get("down_time_accum", 0.0)
-    shift_parts = machine_obj.parts_made - snap.get("parts_made", 0)
+
+    # Read authoritative counters from LineState (machine_totals) when available.
+    # Falls back to Simantha object attributes for call sites that don't yet
+    # provide machine_totals (e.g. tests calling process_machine_step directly).
+    _parts_made = machine_totals.parts_made if machine_totals else machine_obj.parts_made
+    shift_parts = _parts_made - snap.get("parts_made", 0)
 
     if isinstance(machine_obj, QualityRoutingMixin):
-        qr_good = machine_obj._good_count - snap.get("good_count", 0)
-        qr_defective = (
-            (machine_obj._scrap_count + machine_obj._defective_count)
-            - snap.get("scrap_count", 0) - snap.get("defective_count", 0)
-        )
+        if machine_totals:
+            _good = machine_totals.good_count
+            _scrap = machine_totals.scrap_count
+            _defective = machine_totals.defective_count
+        else:
+            _good = machine_obj._good_count
+            _scrap = machine_obj._scrap_count
+            _defective = getattr(machine_obj, '_defective_count', 0)
+        qr_good = _good - snap.get("good_count", 0)
+        qr_defective = (_scrap + _defective) - snap.get("scrap_count", 0) - snap.get("defective_count", 0)
     else:
         qr_good = metrics["good_parts"] - snap.get("metric_good", 0)
         qr_defective = metrics["defective_parts"] - snap.get("metric_defective", 0)
@@ -1977,6 +1990,7 @@ def run_segment(
     historian=None,
     neo4j_hist=None,
     recipe_vars=None,
+    mode=SimMode.REPRODUCIBLE,
 ):
     """Run simulation until time limit OR quantity target is reached.
 
@@ -2017,8 +2031,13 @@ def run_segment(
     real_step = 1.0
     warm_up_time = int(config.get("warm_up_time", 0))
 
-    prev_sink_level = 0
-    total_parts_produced = 0
+    # LineState owns all accumulated counters.  The main loop reads from it
+    # rather than directly from Simantha objects so the same code works in
+    # both REPRODUCIBLE and REALTIME modes.
+    line_state = LineState(mode=mode)
+    for mname in machines:
+        line_state.init_machine(mname)
+    total_parts_produced = 0   # kept as local convenience alias for line_state.total_parts_produced
 
     # Initialize per-machine metrics
     machine_metrics = {}
@@ -2126,24 +2145,31 @@ def run_segment(
             system._last_completed_sim_time = sim_time
             system._last_warm_up_time = warm_up_time
 
-        # Part counter
-        delta_parts, total_parts_produced, prev_sink_level = update_part_counter(
-            sink.level, prev_sink_level)
+            # Sync LineState from Simantha objects immediately after simulate().
+            # Must happen before shift snapshots and process_machine_step reads.
+            line_state.step_count += 1
+            for mname, mobj in machines.items():
+                line_state.sync_machine(mname, mobj)
+
+        # Throughput counter — mode-aware via LineState
+        delta_parts = line_state.sync_sink(sink.level)
+        total_parts_produced = line_state.total_parts_produced
 
         # Shift rotation
         shift_rotated = check_shift_rotation(shift_manager, sim_time, pause_line)
         if shift_rotated:
             shift_start_time = sim_time
-            for mname, mobj in machines.items():
+            for mname in machines:
+                mt = line_state.machines[mname]
                 shift_oee_snapshots[mname] = {
                     "down_time_accum": machine_metrics[mname]["down_time"],
-                    "parts_made": mobj.parts_made,
-                    "good_count": getattr(mobj, '_good_count', 0),
-                    "scrap_count": getattr(mobj, '_scrap_count', 0),
-                    "defective_count": getattr(mobj, '_defective_count', 0),
+                    "parts_made": mt.parts_made,
+                    "good_count": mt.good_count,
+                    "scrap_count": mt.scrap_count,
+                    "defective_count": mt.defective_count,
+                    "metric_good": machine_metrics[mname]["good_parts"],
+                    "metric_defective": machine_metrics[mname]["defective_parts"],
                 }
-                shift_oee_snapshots[mname]["metric_good"] = machine_metrics[mname]["good_parts"]
-                shift_oee_snapshots[mname]["metric_defective"] = machine_metrics[mname]["defective_parts"]
             for mname in machines:
                 machine_metrics[mname]["oee_cached"] = None
 
@@ -2160,7 +2186,8 @@ def run_segment(
                 maintainer, shift_manager, spc_monitors, opcua_vars, sink,
                 sim_time,
                 shift_oee_snapshot=shift_oee_snapshots.get(machine_name),
-                shift_start_time=shift_start_time)
+                shift_start_time=shift_start_time,
+                machine_totals=line_state.machines.get(machine_name))
             if alarms:
                 machine_alarms_map[machine_name] = alarms
 
@@ -2226,6 +2253,10 @@ def main(argv=None):
                        help="Random seed for reproducible simulation")
     parser.add_argument("--trace", action="store_true",
                        help="Enable Simantha DES event trace (outputs pickle file)")
+    parser.add_argument("--mode", choices=["reproducible", "realtime"],
+                       default="reproducible",
+                       help="Simulation mode: reproducible (default) or realtime "
+                            "(realtime: sim clock tracks wall clock, Phase B)")
     args = parser.parse_args(argv)
 
     # Default to balanced_line if neither --scenario nor --recipe given
@@ -2258,7 +2289,7 @@ def main(argv=None):
         )
         print(f"RunID: {run_id}")
 
-        run_recipe(recipe, sim_seed, args, run_id)
+        run_recipe(recipe, sim_seed, args, run_id, mode=SimMode(args.mode))
         return
 
     # ---- Single-scenario mode (default) ----
@@ -2321,6 +2352,7 @@ def main(argv=None):
             shift_manager=shift_manager,
             historian=historian,
             neo4j_hist=neo4j_hist,
+            mode=SimMode(args.mode),
         )
 
     except KeyboardInterrupt:

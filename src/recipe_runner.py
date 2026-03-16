@@ -21,6 +21,8 @@ from pathlib import Path
 from typing import List, Optional
 
 import numpy as np
+
+from line_state import SimMode
 import yaml
 
 from config_loader import load_line_config, validate_distribution_config
@@ -393,6 +395,7 @@ def run_recipe(
     sim_seed: int,
     args,
     run_id: str,
+    mode: SimMode = SimMode.REPRODUCIBLE,
 ):
     """Orchestrate multi-segment recipe execution.
 
@@ -535,6 +538,7 @@ def run_recipe(
                     historian=historian,
                     neo4j_hist=neo4j_hist,
                     recipe_vars=recipe_vars,
+                    mode=mode,
                 )
 
             cumulative_sim_time = segment_start + final_sim_time
