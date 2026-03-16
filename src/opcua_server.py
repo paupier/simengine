@@ -2135,15 +2135,32 @@ def run_segment(
         # Step simulation
         if not pause_line:
             sim_time += sim_step
-            random.seed(sim_seed)
-            np.random.seed(sim_seed)
-            system.simulate(warm_up_time=warm_up_time, simulation_time=sim_time,
-                            verbose=False, collect_data=False, trace=trace)
-            # Track last completed sim_time so we can restore state on Ctrl+C.
-            # KeyboardInterrupt during simulate() leaves Simantha objects in a
-            # partial state (counters reset then only partially re-run).
-            system._last_completed_sim_time = sim_time
-            system._last_warm_up_time = warm_up_time
+
+            if mode == SimMode.REALTIME:
+                # REALTIME: call simulate(sim_step) once — fresh environment
+                # each step so counters reset to 0.  Seed advances per step so
+                # runs are reproducible but each step has an independent draw.
+                # Warm-up is handled externally via _counting_active because
+                # env.now is always 0→sim_step and never crosses warm_up_time.
+                step_seed = (sim_seed + line_state.step_count) % (2 ** 31)
+                random.seed(step_seed)
+                np.random.seed(step_seed)
+                for mobj in machines.values():
+                    mobj._counting_active = line_state.step_count >= warm_up_time
+                system.simulate(warm_up_time=0, simulation_time=sim_step,
+                                verbose=False, collect_data=False, trace=trace)
+                system._last_completed_sim_time = sim_step
+                system._last_warm_up_time = 0
+            else:
+                # REPRODUCIBLE: call simulate(cumulative_N) re-seeded to the
+                # same value — guarantees trajectory in [0, N] is identical
+                # each call so Simantha counters increase monotonically.
+                random.seed(sim_seed)
+                np.random.seed(sim_seed)
+                system.simulate(warm_up_time=warm_up_time, simulation_time=sim_time,
+                                verbose=False, collect_data=False, trace=trace)
+                system._last_completed_sim_time = sim_time
+                system._last_warm_up_time = warm_up_time
 
             # Sync LineState from Simantha objects immediately after simulate().
             # Must happen before shift snapshots and process_machine_step reads.

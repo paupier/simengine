@@ -66,18 +66,21 @@ class LineState:
     def sync_sink(self, sink_level: int) -> int:
         """Update throughput counter from current sink.level.
 
+        In REPRODUCIBLE mode sink.level is a monotonically increasing total
+        for [0, N].  In REALTIME mode each simulate(sim_step) runs a fresh
+        environment so sink.level is the per-step count (0 or a small integer).
+        max(0, ...) handles the reset from the previous step's non-zero value.
+
         Returns:
             delta_parts: parts produced this step (0 when paused or no change).
         """
+        delta = max(0, sink_level - self._prev_sink_level)
+        self._prev_sink_level = sink_level
         if self.mode == SimMode.REPRODUCIBLE:
-            # sink.level is authoritative total for [0, N] — copy directly.
-            delta = max(0, sink_level - self._prev_sink_level)
+            # Assign directly — sink.level is the authoritative running total.
             self.total_parts_produced = sink_level
-            self._prev_sink_level = sink_level
         else:
-            # REALTIME (Phase B): sink.level is the per-step count because
-            # each simulate(sim_step) runs a fresh environment from 0.
-            delta = max(0, sink_level)
+            # Accumulate — sink.level is just this step's count.
             self.total_parts_produced += delta
         return delta
 

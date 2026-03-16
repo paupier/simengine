@@ -45,8 +45,13 @@ def _quality_route(machine, part):
     else:
         effective_rate = machine._defect_rate
 
-    # Only count for metrics after warm-up (matches parts_made behavior)
-    counting = machine.env.now > machine.env.warm_up_time
+    # Only count for metrics after warm-up (matches parts_made behavior).
+    # In REALTIME mode the main loop sets machine._counting_active directly
+    # (env.now is always 0→sim_step so env.now > warm_up_time never triggers).
+    # In REPRODUCIBLE mode _counting_active is absent, so the original
+    # env.now comparison is used as the fallback.
+    counting = getattr(machine, '_counting_active',
+                       machine.env.now > machine.env.warm_up_time)
 
     if effective_rate <= 0:
         if counting:
