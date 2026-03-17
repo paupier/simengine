@@ -236,7 +236,7 @@ def _capture_logs():
         pass
 
 
-def _regenerate_telegraf_config(scenario_name, run_id=""):
+def _regenerate_telegraf_config(scenario_name, run_id="", sim_mode="reproducible"):
     """Regenerate telegraf.conf for the given scenario."""
     try:
         from generate_telegraf_conf import generate_telegraf_conf
@@ -245,7 +245,7 @@ def _regenerate_telegraf_config(scenario_name, run_id=""):
             all_configs = yaml.safe_load(f)
         config = all_configs.get(scenario_name)
         if config and isinstance(config, dict):
-            conf_text = generate_telegraf_conf(config, run_id=run_id)
+            conf_text = generate_telegraf_conf(config, run_id=run_id, sim_mode=sim_mode)
             os.makedirs(os.path.dirname(os.path.abspath(TELEGRAF_CONF_PATH)),
                         exist_ok=True)
             with open(TELEGRAF_CONF_PATH, 'w') as f:
@@ -257,7 +257,7 @@ def _regenerate_telegraf_config(scenario_name, run_id=""):
         print(f"[WebUI] Warning: Could not regenerate Telegraf config: {e}")
 
 
-def start_simulation(scenario, seed=None):
+def start_simulation(scenario, seed=None, mode="reproducible"):
     """Spawn opcua_server.py as a subprocess."""
     global sim_process, sim_scenario, sim_recipe
     global sim_start_time, sim_run_id
@@ -269,9 +269,10 @@ def start_simulation(scenario, seed=None):
         run_id = f"{scenario}_{dt.now().strftime('%Y%m%d_%H%M%S')}"
         sim_run_id = run_id
 
-        _regenerate_telegraf_config(scenario, run_id=run_id)
+        _regenerate_telegraf_config(scenario, run_id=run_id, sim_mode=mode)
 
-        cmd = ["python", OPCUA_SERVER_SCRIPT, "--scenario", scenario]
+        cmd = ["python", OPCUA_SERVER_SCRIPT, "--scenario", scenario,
+               "--mode", mode]
         if seed is not None:
             cmd += ["--seed", str(seed)]
 
@@ -300,7 +301,7 @@ def start_simulation(scenario, seed=None):
         t.start()
 
 
-def start_simulation_recipe(recipe_name, seed=None):
+def start_simulation_recipe(recipe_name, seed=None, mode="reproducible"):
     """Spawn opcua_server.py in recipe mode as a subprocess."""
     global sim_process, sim_scenario, sim_recipe
     global sim_start_time, sim_run_id
@@ -316,9 +317,10 @@ def start_simulation_recipe(recipe_name, seed=None):
         recipe_data = load_recipe(recipe_name)
         if recipe_data and isinstance(recipe_data, dict):
             base_scenario = recipe_data.get("base_scenario", "balanced_line")
-            _regenerate_telegraf_config(base_scenario, run_id=run_id)
+            _regenerate_telegraf_config(base_scenario, run_id=run_id, sim_mode=mode)
 
-        cmd = ["python", OPCUA_SERVER_SCRIPT, "--recipe", recipe_name]
+        cmd = ["python", OPCUA_SERVER_SCRIPT, "--recipe", recipe_name,
+               "--mode", mode]
         if seed is not None:
             cmd += ["--seed", str(seed)]
 
@@ -601,6 +603,7 @@ def api_start():
     data = request.get_json(force=True) if request.data else {}
     scenario = data.get("scenario", "balanced_line")
     seed = data.get("seed")
+    mode = data.get("mode", "reproducible")
 
     # Validate scenario exists
     scenarios = list_scenarios()
@@ -613,8 +616,11 @@ def api_start():
         except (ValueError, TypeError):
             return jsonify({"error": "seed must be an integer"}), 400
 
-    start_simulation(scenario, seed)
-    return jsonify({"status": "started", "scenario": scenario, "seed": seed})
+    if mode not in ("reproducible", "realtime"):
+        return jsonify({"error": "mode must be 'reproducible' or 'realtime'"}), 400
+
+    start_simulation(scenario, seed, mode=mode)
+    return jsonify({"status": "started", "scenario": scenario, "seed": seed, "mode": mode})
 
 
 @app.route("/api/stop", methods=["POST"])
@@ -895,6 +901,7 @@ def api_start_recipe():
     data = request.get_json(force=True) if request.data else {}
     recipe_name = data.get("recipe")
     seed = data.get("seed")
+    mode = data.get("mode", "reproducible")
 
     if not recipe_name:
         return jsonify({"error": "Missing 'recipe' field"}), 400
@@ -910,8 +917,11 @@ def api_start_recipe():
         except (ValueError, TypeError):
             return jsonify({"error": "seed must be an integer"}), 400
 
-    start_simulation_recipe(recipe_name, seed)
-    return jsonify({"status": "started", "recipe": recipe_name, "seed": seed})
+    if mode not in ("reproducible", "realtime"):
+        return jsonify({"error": "mode must be 'reproducible' or 'realtime'"}), 400
+
+    start_simulation_recipe(recipe_name, seed, mode=mode)
+    return jsonify({"status": "started", "recipe": recipe_name, "seed": seed, "mode": mode})
 
 
 # ---------------------------------------------------------------------------

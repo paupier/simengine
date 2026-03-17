@@ -1797,6 +1797,7 @@ def build_opcua_server(config: dict):
     var_simtime = ops_state.add_variable(_nid(f"{os_p}.SimTime", idx), _qn("SimTime", idx), 0.0)
     var_line_state = ops_state.add_variable(_nid(f"{os_p}.LineState", idx), _qn("LineState", idx), "STOPPED")
     var_line_mode = ops_state.add_variable(_nid(f"{os_p}.LineMode", idx), _qn("LineMode", idx), "AUTO")
+    var_sim_mode = ops_state.add_variable(_nid(f"{os_p}.SimMode", idx), _qn("SimMode", idx), "REPRODUCIBLE")
 
     # Controls under OperationsState
     ctrl_p = f"{os_p}.Controls"
@@ -1944,6 +1945,7 @@ def build_opcua_server(config: dict):
             "interarrival_time": var_interarrival,
             "line_state": var_line_state,
             "line_mode": var_line_mode,
+            "sim_mode": var_sim_mode,
             "total_events": var_total_events,
             "run_id": var_run_id,
         },
@@ -2347,9 +2349,12 @@ def main(argv=None):
         neo4j_hist.create_topology(config)
         print(f"  Neo4j historian enabled: {neo4j_hist.describe()}")
 
+    opcua_vars["system"]["sim_mode"].set_value(SimMode(args.mode).value.upper())
+
     server.start()
     print(f"OPC UA server started at opc.tcp://localhost:4840/simantha/")
     print(f"Scenario: {args.scenario} ({len(machines)} machines, {len(buffers)} buffers)")
+    print(f"Sim mode: {args.mode}")
     print("Press Ctrl+C to stop.")
 
     try:

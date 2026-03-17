@@ -584,6 +584,19 @@
                     <label class="form-label" for="seed-input">Seed (optional)</label>
                     <input type="number" id="seed-input" class="form-control form-control-sm" placeholder="e.g. 42">
                 </div>
+                <div class="mb-3">
+                    <label class="form-label">Sim Mode</label>
+                    <div class="d-flex gap-2">
+                        <div class="form-check form-check-inline mb-0">
+                            <input class="form-check-input" type="radio" name="sim-mode" id="sim-mode-reproducible" value="reproducible" checked>
+                            <label class="form-check-label" for="sim-mode-reproducible" style="font-size:12px;color:#a8bdd4;">Reproducible</label>
+                        </div>
+                        <div class="form-check form-check-inline mb-0">
+                            <input class="form-check-input" type="radio" name="sim-mode" id="sim-mode-realtime" value="realtime">
+                            <label class="form-check-label" for="sim-mode-realtime" style="font-size:12px;color:#a8bdd4;">Real-time</label>
+                        </div>
+                    </div>
+                </div>
                 <button id="btn-start" class="btn-hmi btn-hmi-start" onclick="startSim()">▶  Start</button>
                 <button id="btn-stop"  class="btn-hmi btn-hmi-stop"  onclick="stopSim()" disabled>■  Stop</button>
             </div>
@@ -725,9 +738,10 @@
         async function startSim() {
             const isRecipeMode = document.getElementById('mode-recipe').checked;
             const seedVal = document.getElementById('seed-input').value;
+            const simMode = document.querySelector('input[name="sim-mode"]:checked').value;
             if (isRecipeMode) {
                 const recipe = document.getElementById('recipe-select').value;
-                const body = { recipe };
+                const body = { recipe, mode: simMode };
                 if (seedVal) body.seed = parseInt(seedVal);
                 await fetch('/api/start-recipe', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -735,7 +749,7 @@
                 });
             } else {
                 const scenario = document.getElementById('scenario-select').value;
-                const body = { scenario };
+                const body = { scenario, mode: simMode };
                 if (seedVal) body.seed = parseInt(seedVal);
                 await fetch('/api/start', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
