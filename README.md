@@ -17,8 +17,8 @@ A real-time **digital twin** of a manufacturing production line using [Simantha]
 
 | Area | Features |
 |------|----------|
-| **Simulation** | N-machine serial lines (2-10+), config-driven topologies, 20 built-in scenarios, run recipes, two simulation modes (reproducible / real-time) |
-| **OPC UA** | ISA-95/ISO 23247 aligned address space, bidirectional control (pause, arrival rate) |
+| **Simulation** | N-machine serial lines (2-10+), config-driven topologies, 20 built-in scenarios, run recipes, per-step real-time architecture (O(1)/step, sim clock locked to wall clock) |
+| **OPC UA** | ISA-95/ISO 23247 aligned address space; `SetInterarrivalTime` configurable at run start |
 | **Reliability** | Multi-state health degradation, advanced failure modes (Weibull, exponential, lognormal), competing risks |
 | **Maintenance** | Corrective/preventive/predictive strategies, priority maintainer (FIFO, SPT, priority, bottleneck) |
 | **Quality** | Health-correlated defects, scrap/rework routing, SPC (X-bar/R, Cp/Cpk, Western Electric rules) |
@@ -131,15 +131,11 @@ python src/opcua_server.py --recipe monday_schedule --seed 42
 python src/opcua_server.py --recipe quick_test --seed 1
 ```
 
-**Choose simulation mode:**
+**Reproducible runs** — same `--seed` always gives the same trajectory:
 ```bash
-# Reproducible mode (default) — exact reproducibility, quadratic compute cost
-# Best for short experiments, comparisons, and CI
-python src/opcua_server.py --scenario full_feature_line --seed 42 --mode reproducible
-
-# Real-time mode — O(1) per step, sim clock stays in sync with wall clock indefinitely
-# Best for continuous digital twin deployments (multi-shift, multi-day)
-python src/opcua_server.py --scenario full_feature_line --seed 42 --mode realtime
+# The per-step architecture seeds per step: step_seed = (seed + step_count) % 2³¹
+# Same seed → same step outcomes → same trajectory, O(1) per step, indefinitely
+python src/opcua_server.py --scenario full_feature_line --seed 42
 ```
 
 Recipes define ordered production segments with changeover periods, enabling planned-vs-actual changeover analysis and multi-product scheduling. See [Run Recipes](#-run-recipes) below.
@@ -639,14 +635,17 @@ New event types: `SEGMENT_START`, `SEGMENT_END`, `CHANGEOVER`, `RECIPE_COMPLETE`
 
 ## 🗺️ Roadmap
 
-### Recent Changes (2026-03-16)
+### Recent Changes (2026-03-17)
 
-- **Simulation modes** — `--mode reproducible` (default) and `--mode realtime` (`src/line_state.py`)
-  - Reproducible: `simulate(cumulative_N)` re-runs entire history per step — perfect monotonic counters, O(N²) cost
-  - Real-time: `simulate(sim_step)` runs only the next second — O(1) per step, sim clock stays locked to wall clock indefinitely
-  - `LineState` abstraction (`line_state.py`) decouples KPI counters from Simantha objects, surviving per-step reinitialisations
-  - `MachineTotals` dataclass accumulates per-machine counters in mode-agnostic way
-- **Mode exposure** — `SimMode` OPC UA variable under `OperationsState/`; `sim_mode` InfluxDB global tag; Web UI radio buttons; `--mode` CLI flag
+- **Per-step real-time architecture** — `simulate(1)` per loop iteration, O(1)/step forever
+  - Eliminates the O(N²) quadratic compute growth of the previous cumulative `simulate(N)` pattern
+  - Wall-clock pacer measures actual step cost and sleeps only for the remainder of the 1-second budget, keeping sim-time and wall-clock tightly in sync
+  - Per-step seeding (`step_seed = (base_seed + step_count) % 2³¹`) gives fully reproducible trajectories with a fixed `--seed`
+  - `LineState` accumulates per-step deltas; `MachineTotals` per-machine counters
+- **Machine health state continuity** — `machine.initialize()` monkey-patched to restore saved health after Simantha's per-step reset, so degradation and CBM/failure cycles accumulate correctly across steps
+- **Removed `CmdPauseLine`** — runtime pause removed; use Web UI Stop button instead
+- **`SetInterarrivalTime` is now read-only during a run** — set via Web UI before starting
+- **`--mode` CLI flag removed** — single unified architecture replaces `reproducible`/`realtime` choice
 - **Web UI improvements** — Run History page with run_id visibility and Grafana integration; contrast fixes across all pages; wall-clock duration display alongside sim duration in reports
 - **Grafana** — `run_id` filter integration for per-run scoping in dashboards
 

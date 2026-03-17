@@ -206,20 +206,34 @@ A unique `{scenario}_{YYYYMMDD_HHMMSS}` identifier generated at server startup. 
 ### Never modify `machine.cycle_time` after simulation starts
 Setting it dynamically causes "Failed event: time 0" errors. Set in constructor only.
 
-### Simantha stepping pattern
+### Simantha stepping pattern (per-step, O(1))
 ```python
 sim_time = 0.0
+sim_step = 1.0
 warm_up_time = int(config.get("warm_up_time", 0))
+step_wall_start = time.time()
 while True:
-    if not paused:
-        sim_time += sim_step  # ALWAYS increment before simulate()
-        random.seed(sim_seed)        # Re-seed BEFORE every simulate()
-        np.random.seed(sim_seed)
-        system.simulate(warm_up_time=warm_up_time, simulation_time=sim_time)
-```
-Never call `system.simulate(simulation_time=0)` or with time <= 0. The `warm_up_time` parameter (from YAML config) causes Simantha to skip data collection during the warm-up phase, producing more accurate steady-state metrics.
+    elapsed = time.time() - step_wall_start
+    time.sleep(max(0.0, sim_step - elapsed))
+    step_wall_start = time.time()
 
-**Re-seeding is critical:** Each `simulate(N)` re-runs the entire simulation from 0 to N. Without re-seeding, different RNG states cause `sink.level` to fluctuate between steps. Re-seeding ensures `simulate(N)` and `simulate(N+1)` produce identical events in `[0,N]`, so counters increase monotonically. If `--seed` is not provided, one is auto-generated from the current timestamp.
+    sim_time += sim_step
+    step_seed = (sim_seed + line_state.step_count) % (2 ** 31)
+    random.seed(step_seed)
+    np.random.seed(step_seed)
+    for mname, mobj in machines.items():
+        mobj._counting_active = line_state.step_count >= warm_up_time
+        _install_health_restorer(mobj, machine_health[mname])
+    system.simulate(warm_up_time=0, simulation_time=sim_step, ...)
+    for mname, mobj in machines.items():
+        machine_health[mname] = getattr(mobj, 'health', 0)
+```
+- Each step simulates exactly `sim_step=1` second. O(1) per step, sim-time locked to wall-clock.
+- **Per-step seeding:** `step_seed = (base_seed + step_count) % 2³¹`. Same `--seed` → same trajectory.
+- **Health continuity:** `machine_health` dict carries health across steps. `_install_health_restorer` monkey-patches `machine.initialize()` so Simantha's reset is undone immediately.
+- **Warm-up guard:** `_counting_active` flag (not `env.now`) since `env.now` never exceeds `warm_up_time` in per-step mode.
+- **`warm_up_time` from YAML:** counted in steps, not seconds (`step_count >= warm_up_time`).
+- If `--seed` is not provided, one is auto-generated from the current timestamp.
 
 ### Monotonic counter pattern for sink.level
 `sink.level` can **decrease** during maintenance. Always track monotonically:
@@ -237,11 +251,10 @@ Simantha's `Sink.initialize()` does not reset `level_data`, so it grows quadrati
 ### Scrap sinks are NOT in machine.downstream
 Scrap sinks are stored as `_scrap_sink` attribute to avoid random routing by Simantha. Parts are diverted inside `output_addon_process()` using `_redirect_to()` which fixes buffer `reserved_vacancy` bookkeeping.
 
-### State detection order (8 states)
+### State detection order (7 states — PAUSED removed)
 ```python
 failed_health = getattr(machine, "failed_health", 1)
-if pause_line: "PAUSED"
-elif health_state >= failed_health: "FAILED" / "UNDER_REPAIR"
+if health_state >= failed_health: "FAILED" / "UNDER_REPAIR"
 elif m.blocked: "BLOCKED"
 elif m.starved: "STARVED"
 elif health_state > 0: "DEGRADED"
@@ -258,7 +271,7 @@ OEE recalculates every simulation step via `calculate_oee_from_sim()` using shif
 The `oee_cached` dict in `machine_metrics` stores the latest result. `OEE_BUCKET_INTERVAL` was removed — there is no gating.
 
 ### Quality counter warm-up guard
-`_quality_route()` in `quality_machine.py` checks `counting = machine.env.now > machine.env.warm_up_time` before incrementing counters. Routing (scrap redirect, part marking) still runs during warm-up. This ensures `_good_count + _scrap_count + _defective_count == parts_made` (both post-warm-up).
+`_quality_route()` in `quality_machine.py` checks `counting = getattr(machine, '_counting_active', machine.env.now > machine.env.warm_up_time)`. In per-step mode `_counting_active` is used (since `env.now` never reaches `warm_up_time`). Routing (scrap redirect, part marking) still runs during warm-up. This ensures `_good_count + _scrap_count + _defective_count == parts_made` (both post-warm-up).
 
 ### MTTF scaling for multi-state degradation
 In `advanced_machine.py`, `get_time_to_degrade()` divides the sampled MTTF by `self.failed_health` when `failed_health > 1`. This makes total expected failure time equal the configured MTTF. Standard 2-state machines (`failed_health=1`) are unaffected.
@@ -280,7 +293,7 @@ Enterprise (WeylandIndustries)/
       {line_name}_Equipment/
         Identification/           EquipmentID, EquipmentClass, Description, RunID
         OperationsState/          SimTime, LineState, LineMode
-          Controls/               CmdPauseLine (writable), SetInterarrivalTime (writable)
+          Controls/               SetInterarrivalTime (read-only; set at run start)
         OperationsPerformance/    Throughput, TotalWIP, TotalScrap, ScrapRate
         OEE/                      Availability, Performance, Quality, OEE, GoodPartCount, DefectivePartCount
         Resources/
@@ -305,9 +318,7 @@ Enterprise (WeylandIndustries)/
         Identification/           PhysicalAssetID, AssetClass, Description
 ```
 
-Only two variables are writable by OPC UA clients:
-- `CmdPauseLine` (bool) — global pause/resume (under OperationsState/Controls)
-- `SetInterarrivalTime` (float) — part arrival rate on the source (under OperationsState/Controls)
+No OPC UA variables are writable during a run. `SetInterarrivalTime` (under `OperationsState/Controls`) is read-only and reflects the value set when the run started. `CmdPauseLine` was removed in v2.6.
 
 The `opcua_vars` dict serves as an abstraction layer — internal keys (e.g., `opcua_vars["machines"]["M1"]["state"]`) are unchanged from the main loop's perspective. Only the OPC UA NodeId strings changed.
 

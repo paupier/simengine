@@ -1,7 +1,7 @@
 # Simantha OPC UA - Complete User Manual
 
-**Version:** 2.5
-**Last Updated:** 2026-03-16
+**Version:** 2.6
+**Last Updated:** 2026-03-17
 **Difficulty:** Beginner to Advanced
 
 ---
@@ -38,7 +38,7 @@ Simantha OPC UA is a **manufacturing digital twin** that simulates a production 
 
 ✅ **Simulate** realistic manufacturing lines with 2-10+ machines
 ✅ **Monitor** real-time KPIs (throughput, OEE, quality, SPC metrics)
-✅ **Control** the simulation via OPC UA (pause, adjust arrival rate)
+✅ **Configure** arrival rate and other parameters at run start via the Web UI or OPC UA
 ✅ **Track** shift-based production with automatic rotation and per-shift OEE
 ✅ **Route** defective parts to scrap sinks or attempt virtual rework
 ✅ **Record** event history to CSV, InfluxDB, or Neo4j for post-analysis
@@ -246,27 +246,15 @@ Press Ctrl+C to stop.
 
 **You should see values updating in real-time!** 🎉
 
-#### Step 4: Control the Simulation
+#### Step 4: Observe the Simulation
 
-**In UA Expert, find the Controls node:**
+**In UA Expert, watch the Controls node:**
 
 1. Navigate to: `Nostromo_BioProductPakaging_Equipment/OperationsState/Controls`
-2. **Pause the line:**
-   - Right-click `CmdPauseLine`
-   - Select **Write Value**
-   - Change to `true`
-   - Click **Write**
-   - Watch `SimTime` stop incrementing
+2. `SetInterarrivalTime` shows the inter-arrival delay set at run start (read-only during the run).
+3. Watch `SimTime` incrementing — one sim-second equals approximately one wall-clock second.
 
-3. **Resume:**
-   - Write `false` to `CmdPauseLine`
-   - Simulation resumes
-
-4. **Adjust arrival rate:**
-   - Write a value to `SetInterarrivalTime`
-   - `0.0` = parts arrive as fast as possible
-   - `2.0` = 2-second delay between parts
-   - Watch buffer level and throughput change!
+> **Note:** Runtime pause and mid-run interarrival adjustment have been removed. Use the Web UI to set `SetInterarrivalTime` before starting a run, or stop and restart with a different value.
 
 #### Step 5: Stop the Server
 
@@ -534,11 +522,10 @@ try:
     print(f"Simulation Time: {sim_time.get_value()}")
     print(f"Throughput: {throughput.get_value()}")
 
-    # Write to control variable
+    # Read the current interarrival time (set at run start, read-only during run)
     controls = ops_state.get_child(["2:Controls"])
-    pause = controls.get_child(["2:CmdPauseLine"])
-    pause.set_value(True)  # Pause the line
-    print("Line paused!")
+    interarrival = controls.get_child(["2:SetInterarrivalTime"])
+    print(f"Interarrival time: {interarrival.get_value():.2f}s")
 
 finally:
     client.disconnect()
@@ -1451,12 +1438,13 @@ Under the Equipment node:
 | `SupportFunctions/` | Maintenance, ShiftManagement |
 | `EventLog/` | TotalEventsGenerated |
 
-**Writable Variables (under `OperationsState/Controls/`):**
+**Controls (under `OperationsState/Controls/`):**
 
 | Variable | Access | Type | Description |
 |----------|--------|------|-------------|
-| `CmdPauseLine` | **WRITE** | Boolean | Pause/resume entire line |
-| `SetInterarrivalTime` | **WRITE** | Double | Part arrival delay (0 = fast as possible) |
+| `SetInterarrivalTime` | **READ** | Double | Inter-arrival delay set at run start. Read-only during the run. |
+
+> **Note:** `CmdPauseLine` (runtime pause) was removed in v2.6. `SetInterarrivalTime` is now a start-time parameter only — set it via the Web UI before starting a run.
 
 ---
 
@@ -1671,7 +1659,6 @@ python src/opcua_server.py [OPTIONS]
 | `--scenario` | Scenario name from YAML | balanced_line | `--scenario failure_line` |
 | `--recipe` | Recipe name from `config/recipes/` (mutually exclusive with `--scenario`) | — | `--recipe monday_schedule` |
 | `--seed` | Random seed (see below) | Auto-generated | `--seed 42` |
-| `--mode` | Simulation mode: `reproducible` or `realtime` (see Feature 7) | reproducible | `--mode realtime` |
 | `--trace` | Enable DES event tracing (pickle output) | off | `--trace` |
 
 **Examples:**
@@ -2010,15 +1997,13 @@ historian:
 
 ---
 
-### Feature 7: Simulation Modes — Reproducible vs Real-Time
+### Feature 7: Real-Time Simulation Architecture
 
-#### Background: Why Two Modes Exist
+#### The Quadratic Growth Problem (and Why It Matters)
 
-Simantha's simulation engine works by re-running the **entire simulation from time 0** on every step. If you call `system.simulate(simulation_time=N)`, Simantha creates a fresh SimPy environment, reinitialises all objects, and replays the production line from the very beginning up to time N. This is the **Reproducible** mode.
+Simantha's simulation engine always runs from time 0. A call to `system.simulate(simulation_time=N)` creates a fresh SimPy environment, reinitialises all objects, and replays the entire production line from the start up to time N.
 
-This design enables a powerful guarantee: if you re-seed the RNG to the same value before every call, the events in `[0, N]` are identical to those in `[0, N-1]`, so `sink.level` only increases between steps and KPI counters are monotonically consistent.
-
-The cost is **quadratic compute growth**. Step K does O(K) work. After K steps the total work done is O(K²):
+If the server calls `simulate(N)` at step N, the compute cost is O(N) per step and O(N²) total:
 
 ```
 Step 1:   simulate(0 → 1)     — 1 unit of work
@@ -2029,96 +2014,83 @@ Step K:   simulate(0 → K)     — K units of work
 Total:    1 + 2 + 3 + ... + K = K(K+1)/2 ≈ K²/2
 ```
 
-In practical terms: a simulation that runs for 1,000 real-time seconds has already done the work of simulating ~500,000 total simulated seconds internally. At 10,000 steps it has done 50,000,000. CPU time per wall-clock second keeps growing throughout the run, so early steps feel instant while later steps are noticeably slower.
+**This is why a run showing "4h 48m sim time" might have taken "16h 55m wall time"** — the sim clock started near-real-time and then fell behind as the quadratic cost accumulated. The Run History page shows both durations so you can see the divergence.
 
-> **This is why a run showing "4h 48m sim time" might have taken "16h 55m wall time"** — the sim clock stayed near-real-time early on, then fell behind as the quadratic cost accumulated. The two duration figures are always shown in the Run History page so you can see how much wall time a run actually consumed.
+For short experiments (minutes of factory time) the growth is invisible. For multi-shift or continuous simulations it eventually makes the process impractically slow and would exhaust memory.
 
-For **short experiments** (minutes of factory time) this is invisible. For **multi-shift or week-long continuous simulations** the quadratic growth eventually makes the process impractically slow and would exhaust memory without the `Sink.level_data` monkey-patch.
+#### The Per-Step Architecture (Current)
 
-#### Reproducible Mode (default)
-
-```bash
-python src/opcua_server.py --scenario full_feature_line --seed 42 --mode reproducible
-# --mode reproducible is the default; the flag is optional
-```
-
-**How it works:**
-
-Each simulation step increments a cumulative `sim_time` counter and calls `system.simulate(simulation_time=sim_time)` with the same seed. Simantha replays the entire line history from scratch.
-
-**Advantages:**
-- Perfect monotonic counters (no statistical noise between steps)
-- Fully reproducible — identical seed gives byte-for-byte identical KPI trajectories
-- Shift boundaries, quality events, and failure times are deterministic and repeatable
-- Best for: short experiments, scenario comparisons, CI regression testing, report generation
-
-**Limitations:**
-- Compute cost grows as O(N²) — not suitable for runs longer than a few hours of factory time
-- Sim clock can fall behind wall clock on long runs; "real-time" behaviour degrades progressively
-- Maximum practical duration: approximately 4,000–8,000 sim-seconds before memory/CPU becomes noticeable, depending on hardware and scenario complexity
-
-#### Real-Time Mode
-
-```bash
-python src/opcua_server.py --scenario full_feature_line --seed 42 --mode realtime
-```
-
-**How it works:**
-
-Each loop iteration calls `system.simulate(simulation_time=sim_step)` — simulating **only the next second**, not the entire history. A fresh Simantha environment is created each step. The seed is rotated per step: `seed = (base_seed + step_count) % 2^31`, giving independent but deterministic draws per step.
-
-Because each step is O(1) regardless of how long the simulation has been running, the sim clock stays locked to wall clock indefinitely:
+The server now calls `system.simulate(simulation_time=1)` once per loop iteration — always simulating one second of factory time from a fresh environment. Compute cost is O(1) per step and O(N) total:
 
 ```
 Wall second 1:   simulate(0 → 1)   — 1 unit of work always
 Wall second 2:   simulate(0 → 1)   — 1 unit of work always
-Wall second 3:   simulate(0 → 1)   — 1 unit of work always
 ...
 Wall second K:   simulate(0 → 1)   — 1 unit of work always
-Total:           K units (O(K) not O(K²))
+Total:           K units (linear, not quadratic)
 ```
 
-**Advantages:**
-- Sim clock stays in sync with wall clock throughout the run — suitable for continuous, indefinite runs
-- Linear CPU cost — step 10,000 is no slower than step 1
-- Designed for always-on digital twin deployments (days, weeks, shifts)
+The wall-clock pacer at the top of each loop iteration measures how much time the simulate + OPC UA work consumed, then sleeps only for the remainder of the 1-second budget:
 
-**Trade-offs vs Reproducible mode:**
+```python
+elapsed = time.time() - step_wall_start
+time.sleep(max(0.0, real_step - elapsed))
+```
 
-| Aspect | Reproducible | Real-Time |
-|--------|-------------|-----------|
-| Compute per step | Grows with run length | Constant |
-| Suitable run duration | Hours | Indefinite |
-| RNG reproducibility | Exact (same seed → same trajectory) | Per-step (same seed → same step outcomes, but step isolation means multi-step trajectory differs) |
-| Counter source | Simantha totals are authoritative (copy directly) | Per-step deltas accumulated in `LineState` |
-| Warm-up guard | `env.now > warm_up_time` (Simantha's clock) | `step_count >= warm_up_time` (external counter, set via `_counting_active` flag) |
-| Best for | Short experiments, reproducibility, CI | Long-running twins, shift-to-shift, continuous monitoring |
+This keeps sim-time and wall-clock tightly in sync throughout a run — one sim-second equals approximately one wall-clock second, indefinitely.
 
-**Reproducibility in real-time mode:** Giving the same `--seed` and `--mode realtime` will produce identical *per-step* outcomes (same defect decisions, same MTTF draws within each 1-second window). However, because each step is an independent Simantha environment, correlated events that normally span multiple steps in a long Simantha run (e.g., a repair started in step 5 completing in step 8) are reset each step. Real-time mode models the line as a sequence of independent 1-second snapshots rather than a single continuous trajectory. This is the key repeatability trade-off.
+#### Reproducibility
 
-#### How Mode Is Exposed
+With the previous O(N²) architecture, reproducibility was guaranteed by replaying the entire history with the same seed. With per-step simulate, reproducibility works differently but is equally strong:
 
-**CLI:**
+- The seed **advances per step**: `step_seed = (base_seed + step_count) % 2³¹`
+- The same `--seed` value always produces the same sequence of per-step RNG states
+- Same seed → same defect decisions, same MTTF draws, same quality routing outcomes at every step
+
+**The key insight:** you don't need to replay history to get a reproducible trajectory. A fixed seed gives a fixed sequence of per-step seeds, which gives a fixed sequence of outcomes, which gives a reproducible trajectory.
+
 ```bash
-python src/opcua_server.py --mode realtime   # or reproducible (default)
+# These two runs produce identical KPI curves:
+python src/opcua_server.py --scenario full_feature_line --seed 42
+python src/opcua_server.py --scenario full_feature_line --seed 42
 ```
 
-**Web UI:** The Run Mode sidebar on the dashboard has Reproducible / Real-time radio buttons between the seed input and the Start button. The selected mode is sent with both scenario starts and recipe starts.
+#### Machine Health State Continuity
 
-**OPC UA:** `OperationsState/SimMode` — a string variable (`"REPRODUCIBLE"` or `"REALTIME"`) readable by any connected OPC UA client or SCADA system.
+One challenge with per-step simulation is that Simantha's `initialize()` resets `machine.health` to 0 at the start of every `simulate()` call. Without a fix, machines would never accumulate degradation across steps.
 
-**InfluxDB:** `sim_mode` is added as a global tag in the generated `telegraf.conf`, so every data point written by Telegraf carries the mode. You can filter or group by `sim_mode` in Grafana to separate reproducible-run data from real-time-run data.
+The server monkey-patches each `machine.initialize()` to restore the saved health value immediately after Simantha's reset:
 
-#### Choosing a Mode
+```
+Step N:   machine.health = H (from previous step)
+          → simulate(1): Simantha calls initialize() → health resets to 0
+             → patched initialize restores health = H
+             → machine runs from health H for 1 second
+          → after simulate: save new health = machine.health
+Step N+1: repeat with new health
+```
 
-| Scenario | Recommended Mode |
-|----------|-----------------|
-| Comparing two scenario configs | Reproducible |
-| CI test runs / regression testing | Reproducible |
-| Post-run analysis and reports | Reproducible |
-| Multi-shift monitoring over a day | Real-time |
-| Continuous production twin (weeks) | Real-time |
-| Demonstrating to stakeholders | Real-time |
+This means degradation and CBM/failure cycles accumulate correctly across the run, matching the intended physics of the `health_states` configuration.
+
+#### Architecture Options Considered
+
+Three approaches were evaluated before settling on the per-step architecture:
+
+| Option | Cost | Wall-clock sync | Reproducibility |
+|--------|------|-----------------|-----------------|
+| **O(N²) cumulative** (previous) | Grows to unusable | Degrades on long runs | Exact, by replaying history |
+| **Per-step O(1)** (current) | Constant forever | Tight, indefinitely | Per-step seeding |
+| **Lookahead buffer** (considered) | O(1) producer + consumer | Consumer paced at real-time | Per-step seeding |
+
+The lookahead buffer (producer runs simulate fast into a bounded queue; consumer publishes to OPC UA at real-time rate) was considered but deferred: the per-step architecture already achieves real-time sync with O(1) cost, and the additional threading complexity is only warranted if the simulate step itself becomes a bottleneck (which it does not for current scenario sizes).
+
+#### What Was Removed
+
+In the migration to the per-step architecture, two runtime controls were removed:
+
+- **`CmdPauseLine`** — Boolean OPC UA write that paused the simulation. Removed because it required invalidating the simulation state mid-run, which is incompatible with the per-step health continuity model. Use the Web UI Stop button instead.
+- **`SetInterarrivalTime` as a writable node** — Reduced to a read-only node showing the value set at run start. Set it via the Web UI before starting; it cannot be changed while the simulation is running.
+- **`--mode` CLI flag** — The `reproducible` vs `realtime` choice is gone; there is now one unified architecture.
 
 ---
 
@@ -2375,21 +2347,23 @@ ModuleNotFoundError: No module named 'simantha'
 
 #### Issue 5: Sim Clock Falls Behind Wall Clock on Long Runs
 
-**Symptom:** The simulation starts at approximately real-time speed, but after several hours of wall time the sim clock lags noticeably — advancing only a fraction of a second for each wall second. OEE and throughput charts in Grafana may show data points becoming increasingly sparse.
+**Symptom:** The simulation starts at approximately real-time speed, but after several hours of wall time the sim clock lags noticeably — advancing only a fraction of a second for each wall second. OEE and throughput charts in Grafana show data points becoming increasingly sparse.
 
-**Cause:** Default **Reproducible** mode calls `system.simulate(simulation_time=N)` at step N — replaying the entire line history from time 0. Compute cost is O(N) per step and O(N²) total. After thousands of steps, each iteration takes seconds of CPU time.
+**Cause:** This is a symptom of running an older server build that used the O(N²) cumulative simulate pattern. Each step K called `system.simulate(simulation_time=K)`, replaying the entire history. After thousands of steps, each iteration consumed seconds of CPU time.
+
+**The current server (v2.6+) does not have this problem.** It uses per-step `simulate(1)` which is O(1) and keeps wall-clock and sim-clock in sync indefinitely. If you see this issue you are likely running an old Docker image.
 
 **Solutions:**
 
-1. **Switch to Real-Time mode** if you need continuous long-running behaviour:
+1. **Pull and rebuild the Docker image** to get the per-step architecture:
    ```bash
-   python src/opcua_server.py --scenario my_line --mode realtime
+   docker compose -f docker/docker-compose.yml pull
+   docker compose -f docker/docker-compose.yml up --build -d
    ```
-   Real-time mode calls `simulate(sim_step)` — O(1) per step regardless of run length. The sim clock stays locked to wall clock indefinitely. See [Feature 7](#feature-7-simulation-modes--reproducible-vs-real-time) for the reproducibility trade-offs.
 
-2. **Use Recipes with bounded segments** to keep each segment's run length short while still covering long production schedules. Each segment starts fresh, so the quadratic cost resets.
+2. **Use Recipes with bounded segments** if you need to cap individual segment run lengths for reporting purposes. See [Section 11](#11-run-recipes).
 
-3. **Reduce scenario complexity** — fewer machines, fewer failure modes, and no SPC each reduce the constant factor inside Simantha's event loop.
+3. **Reduce scenario complexity** — fewer machines, fewer failure modes, and no SPC each reduce the constant factor inside Simantha's event loop if you observe any CPU pressure.
 
 ---
 
@@ -2593,13 +2567,9 @@ var_custom.set_value(custom_kpi)
 
 **WIP:** Work-In-Progress - parts currently in the system
 
-**Reproducible Mode:** Default simulation mode where `system.simulate(N)` replays the entire line history from time 0 to N on every step. Guarantees monotonic counters and exact reproducibility with a fixed seed. Compute cost is O(N²) total, limiting practical run duration to hours of factory time.
+**Per-Step Architecture:** The simulation engine calls `system.simulate(simulation_time=1)` once per loop iteration. Compute cost is O(1) per step and O(N) total. The seed advances per step (`step_seed = base_seed + step_count`) so a fixed `--seed` gives a reproducible trajectory. Machine health state is carried across steps via a monkey-patch on `machine.initialize()`.
 
-**Real-Time Mode:** Simulation mode where `system.simulate(sim_step)` runs only the next 1-second window per loop iteration. Compute cost is O(1) per step and O(N) total, so the sim clock stays locked to wall clock indefinitely. Each step is an independent Simantha environment; per-step outcomes are reproducible but multi-step trajectory correlation differs from Reproducible mode.
-
-**LineState:** Internal accumulator object (`src/line_state.py`) that holds counters (`total_parts_produced`, per-machine `MachineTotals`) across `system.simulate()` calls. Provides a mode-agnostic interface: in Reproducible mode it copies Simantha's authoritative totals; in Real-Time mode it accumulates per-step deltas.
-
-**SimMode:** OPC UA variable under `OperationsState/SimMode` and InfluxDB `sim_mode` global tag exposing the active simulation mode (`REPRODUCIBLE` or `REALTIME`) to external systems.
+**LineState:** Internal accumulator object (`src/line_state.py`) that holds counters (`total_parts_produced`, per-machine `MachineTotals`) across `system.simulate()` calls. Accumulates per-step deltas from each 1-second Simantha run. Designed as the foundation for future converge/diverge (fork-merge) topology support.
 
 ---
 
@@ -2611,7 +2581,7 @@ Before closing this manual, verify you can:
 - Start the OPC UA server with `--scenario` and `--seed`
 - Connect with UA Expert and browse the ISA-95 address space
 - Monitor real-time variables
-- Write control commands (`CmdPauseLine`, `SetInterarrivalTime`)
+- Set `SetInterarrivalTime` before starting a run and verify it in the Controls node
 - Load different scenarios (including shift, SPC, and quality routing scenarios)
 - Understand the OPC UA address space hierarchy
 - Use the Web UI dashboard, config editor, reports page, and validation page

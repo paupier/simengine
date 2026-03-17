@@ -1963,6 +1963,26 @@ def build_opcua_server(config: dict):
 # ========== SEGMENT RUNNER ==========
 
 
+def _install_health_restorer(machine_obj, health: int) -> None:
+    """Monkey-patch machine.initialize() to restore health after Simantha resets it.
+
+    Each system.simulate() call reinitializes all objects (health → 0).  By
+    wrapping initialize() we restore the saved health value immediately after
+    Simantha's reset, so degradation and failures accumulate across steps.
+    """
+    if not hasattr(machine_obj, '_base_initialize'):
+        machine_obj._base_initialize = machine_obj.initialize
+
+    base_init = machine_obj._base_initialize
+    saved_health = health
+
+    def patched_init(env):
+        base_init(env)
+        machine_obj.health = saved_health
+
+    machine_obj.initialize = patched_init
+
+
 def run_segment(
     system, source, sink, machines, buffers, maintainer, scrap_sinks,
     server, opcua_vars, config, sim_seed,
@@ -2011,9 +2031,10 @@ def run_segment(
     import numpy as np
 
     sim_time = 0.0
-    sim_step = 1.0
-    real_step = 1.0
+    sim_step = 1.0       # simulated seconds per loop iteration
+    real_step = 1.0      # target wall-clock seconds per loop iteration
     warm_up_time = int(config.get("warm_up_time", 0))
+    step_wall_start = time.time()  # initialised here; reset at top of each iteration
 
     # LineState owns all accumulated counters across simulate() calls.
     line_state = LineState()
@@ -2090,6 +2111,9 @@ def run_segment(
         }
 
     historian_state = {}
+    # Per-machine saved health state — carried across simulate() calls so
+    # degradation accumulates.  0 = healthy at segment start.
+    machine_health = {mname: 0 for mname in machines}
     production_summary_counter = 0.0
     production_summary_interval = config.get("historian", {}).get(
         "events", {}
@@ -2099,6 +2123,13 @@ def run_segment(
     line_oee = 0.0
 
     while True:
+        # Pace wall-clock: sleep for whatever remains of the 1-second budget
+        # after the previous iteration's work.  This keeps sim-time and
+        # wall-clock tightly in sync even when the simulate step is slow.
+        elapsed = time.time() - step_wall_start
+        time.sleep(max(0.0, real_step - elapsed))
+        step_wall_start = time.time()
+
         # Check stop conditions
         if sim_time >= max_sim_time:
             if target_quantity is not None:
@@ -2121,12 +2152,17 @@ def run_segment(
         step_seed = (sim_seed + line_state.step_count) % (2 ** 31)
         random.seed(step_seed)
         np.random.seed(step_seed)
-        for mobj in machines.values():
+        for mname, mobj in machines.items():
             mobj._counting_active = line_state.step_count >= warm_up_time
+            # Restore saved health so degradation carries across steps.
+            _install_health_restorer(mobj, machine_health[mname])
         system.simulate(warm_up_time=0, simulation_time=sim_step,
                         verbose=False, collect_data=False, trace=trace)
         system._last_completed_sim_time = sim_step
         system._last_warm_up_time = 0
+        # Save health for next step before any post-simulate reads mutate it.
+        for mname, mobj in machines.items():
+            machine_health[mname] = getattr(mobj, 'health', 0)
 
         # Sync LineState from Simantha objects immediately after simulate().
         # Must happen before shift snapshots and process_machine_step reads.
@@ -2214,8 +2250,6 @@ def run_segment(
             production_summary_counter, production_summary_interval, sim_step,
             line_availability=line_avail, line_performance=line_perf,
             line_quality=line_qual)
-
-        time.sleep(real_step)
 
     return sim_time, total_parts_produced, stop_reason, line_oee
 
