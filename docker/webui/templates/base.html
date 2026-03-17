@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Simantha Digital Twin{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    {% block extra_scripts_head %}{% endblock %}
+    <style>
+        /* ── CSS Variables ── */
+        :root {
+            --bg-shell:      #060b14;
+            --bg-header:     #080d18;
+            --bg-card:       #0e1828;
+            --bg-card-hover: #101d30;
+            --border-dim:    #1a2840;
+            --border-bright: #1e3555;
+            --cyan:          #00c8e6;
+            --cyan-dim:      rgba(0,200,230,0.12);
+            --text-primary:  #dde4f0;
+            --text-secondary:#96a8be;
+            --text-dim:      #5a6e88;
+            --text-label:    #7a8ba8;
+            --good:          #2ecc71;
+            --warn:          #f4a261;
+            --bad:           #e63946;
+        }
+
+        body { background: #0d1520; color: var(--text-primary); }
+
+        /* ── HMI Page Header ── */
+        .hmi-page-header {
+            height: 52px; background: var(--bg-header);
+            border-bottom: 1px solid var(--border-dim);
+            display: flex; align-items: center;
+            padding: 0 16px; gap: 0;
+        }
+        .hmi-logo {
+            width: 34px; height: 34px; background: var(--bad); color: #fff;
+            font-weight: 900; font-size: 17px; border-radius: 3px;
+            display: flex; align-items: center; justify-content: center;
+            margin-right: 12px; flex-shrink: 0;
+        }
+        .hmi-title {
+            font-size: 14px; font-weight: 600; letter-spacing: 0.08em;
+            text-transform: uppercase; color: var(--text-primary); flex-shrink: 0;
+        }
+        .hmi-subtitle {
+            color: var(--text-label); margin-left: 10px; font-size: 12px;
+            letter-spacing: 0.04em; flex-shrink: 0;
+        }
+        .hmi-vdiv {
+            width: 1px; height: 28px; background: var(--border-dim);
+            margin: 0 16px; flex-shrink: 0;
+        }
+        .hmi-nav { display: flex; gap: 2px; }
+        .hmi-nav a {
+            color: var(--text-label); text-decoration: none;
+            font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase;
+            padding: 6px 14px; border-radius: 3px;
+            border-bottom: 2px solid transparent;
+            transition: color 0.15s, background 0.15s;
+        }
+        .hmi-nav a:hover { color: var(--text-primary); background: var(--bg-card); }
+        .hmi-nav a.active { color: var(--cyan); border-bottom-color: var(--cyan); }
+
+        /* ── Bootstrap dark overrides ── */
+        .card { background: var(--bg-card) !important; border-color: var(--border-dim) !important; }
+        .card-header { background: var(--bg-header) !important; border-color: var(--border-dim) !important; color: var(--text-primary) !important; }
+        .card-body, .card-footer { color: var(--text-primary); }
+        .table { color: var(--text-primary); --bs-table-color: var(--text-primary); --bs-table-bg: transparent; --bs-table-border-color: var(--border-dim); }
+        .table td, .table th { color: var(--text-primary) !important; }
+        .table thead th { background: var(--bg-header); color: #8aaac8 !important; border-color: var(--border-dim); }
+        .table-hover > tbody > tr:hover > * { background-color: rgba(0,200,230,0.04) !important; color: var(--text-primary) !important; }
+        .table-striped > tbody > tr:nth-of-type(odd) > * { background-color: rgba(255,255,255,0.02); }
+        .form-control, .form-select {
+            background: var(--bg-card); border-color: var(--border-bright); color: var(--text-primary);
+        }
+        .form-control:focus, .form-select:focus {
+            background: var(--bg-card-hover); border-color: var(--cyan); color: var(--text-primary);
+            box-shadow: 0 0 0 2px var(--cyan-dim);
+        }
+        .form-control::placeholder { color: #6a84a0; }
+        .form-control:disabled, .form-control[readonly] { background: var(--bg-header); color: var(--text-label); }
+        select option { background: var(--bg-card); }
+        .form-label, label { color: #a8bdd4; }
+        .form-text, .text-muted { color: var(--text-label) !important; }
+        .form-check-input { background-color: var(--bg-card); border-color: var(--border-bright); }
+        .input-group-text { background: var(--bg-header); border-color: var(--border-bright); color: #8aaac8; }
+        .btn-outline-primary { border-color: var(--cyan); color: var(--cyan); }
+        .btn-outline-primary:hover { background: var(--cyan-dim); color: var(--cyan); border-color: var(--cyan); }
+        .btn-outline-secondary { border-color: #3d5a7a; color: var(--text-secondary); }
+        .btn-outline-secondary:hover { background: rgba(150,168,190,0.12); color: #c8d6e8; }
+        .btn-outline-info { border-color: var(--cyan); color: var(--cyan); }
+        .btn-outline-info:hover { background: var(--cyan-dim); color: var(--cyan); }
+        .btn-outline-danger { border-color: var(--bad); color: var(--bad); }
+        .btn-outline-danger:hover { background: rgba(230,57,70,0.12); color: var(--bad); }
+        .btn-outline-warning { border-color: var(--warn); color: var(--warn); }
+        .btn-outline-warning:hover { background: rgba(244,162,97,0.12); color: var(--warn); }
+        .btn-outline-success { border-color: var(--good); color: var(--good); }
+        .btn-outline-success:hover { background: rgba(46,204,113,0.12); color: var(--good); }
+        .btn-outline-light { border-color: #3d5a7a; color: var(--text-secondary); }
+        .btn-outline-light:hover { background: rgba(150,168,190,0.1); color: #c8d6e8; }
+        .btn-primary { background: var(--cyan); border-color: var(--cyan); color: #000; }
+        .btn-success { background: var(--good); border-color: var(--good); color: #000; }
+        .btn-danger  { background: var(--bad); border-color: var(--bad); }
+        .btn-warning { background: var(--warn); border-color: var(--warn); color: #000; }
+        .btn-light   { background: var(--border-bright); border-color: var(--border-bright); color: var(--text-primary); }
+        .btn-info    { background: var(--cyan); border-color: var(--cyan); color: #000; }
+        .badge.bg-secondary { background: var(--border-bright) !important; }
+        .badge.bg-light { background: var(--border-bright) !important; color: #a8bdd4 !important; }
+        .alert-info    { background: rgba(0,200,230,0.08);   border-color: rgba(0,200,230,0.2);   color: #96d8e8; }
+        .alert-warning { background: rgba(244,162,97,0.08);  border-color: rgba(244,162,97,0.2);  color: var(--warn); }
+        .alert-danger  { background: rgba(230,57,70,0.1);    border-color: rgba(230,57,70,0.25);  color: var(--bad); }
+        .alert-success { background: rgba(46,204,113,0.08);  border-color: rgba(46,204,113,0.2);  color: var(--good); }
+        .modal-content { background: var(--bg-card); border-color: var(--border-dim); color: var(--text-primary); }
+        .modal-header, .modal-footer { border-color: var(--border-dim); }
+        .dropdown-menu { background: var(--bg-card); border-color: var(--border-dim); }
+        .dropdown-item { color: #a8bdd4; }
+        .dropdown-item:hover { background: var(--border-dim); color: var(--text-primary); }
+        hr { border-color: var(--border-dim); }
+        code { color: var(--cyan); background: rgba(0,200,230,0.08); padding: 1px 4px; border-radius: 3px; }
+        pre { background: var(--bg-shell); color: #a8bdd4; border: 1px solid var(--border-dim); border-radius: 4px; padding: 12px; }
+        h1,h2,h3,h4,h5,h6,strong { color: var(--text-primary); }
+        a:not(.btn):not(.hmi-nav a) { color: var(--cyan); }
+        a:not(.btn):not(.hmi-nav a):hover { color: #33d4ee; }
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: #0d1520; }
+        ::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 2px; }
+
+        /* ── Common utility classes ── */
+        .kpi-card { text-align: center; padding: 12px; }
+        .kpi-value { font-size: 1.4rem; font-weight: bold; color: var(--cyan); }
+        .kpi-label { font-size: 0.75rem; color: var(--text-label); }
+        .stat-row { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid var(--border-dim); font-size: 0.85rem; }
+        .stat-label { color: var(--text-label); }
+        .stat-value { font-weight: 600; color: var(--text-primary); }
+        .section-card { margin-bottom: 16px; }
+        .badge-pass { background: var(--good); }
+        .badge-fail { background: var(--bad); }
+        .badge-warn { background: var(--warn); }
+        .badge-skip { background: #6c757d; }
+    </style>
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <header class="hmi-page-header">
+        <div class="hmi-logo">S</div>
+        <span class="hmi-title">Simantha Digital Twin</span>
+        <span class="hmi-subtitle">{% block page_subtitle %}{% endblock %}</span>
+        <div class="hmi-vdiv"></div>
+        <nav class="hmi-nav">
+            <a href="/">Dashboard</a>
+            <a href="/runs">Run Reports</a>
+            <a href="/reports">Analysis</a>
+            <a href="/config">Config</a>
+            <a href="/recipes">Recipes</a>
+            <a href="/validation">Validation</a>
+        </nav>
+    </header>
+
+    <div class="container-fluid" style="padding-top:1rem;">
+        {% block content %}{% endblock %}
+    </div>
+
+    <script>
+    (function(){
+        var p = window.location.pathname;
+        document.querySelectorAll('.hmi-nav a').forEach(function(a){
+            if(a.getAttribute('href') === p) a.classList.add('active');
+        });
+    })();
+    </script>
+    {% block scripts %}{% endblock %}
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
