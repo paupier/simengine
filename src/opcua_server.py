@@ -16,7 +16,7 @@ from opcua import Server, ua
 from simantha import Source, Machine, Buffer, Sink, System, Maintainer
 from simantha.simulation import Environment
 
-from line_state import LineState, SimMode
+from line_state import LineState
 
 
 # Monkey-patch Simantha's Environment.step() to print actual tracebacks
@@ -519,7 +519,7 @@ def create_shift_management_node(parent_node, opcua_idx: int, node_prefix: str =
     return vars_dict
 
 
-def detect_machine_state(machine, pause_line: bool, health_state: int = 0, maint_active: bool = False) -> str:
+def detect_machine_state(machine, health_state: int = 0, maint_active: bool = False) -> str:
     """
     Determine machine state based on Simantha flags and health.
 
@@ -529,18 +529,14 @@ def detect_machine_state(machine, pause_line: bool, health_state: int = 0, maint
 
     Args:
         machine: Simantha Machine object
-        pause_line: Global pause flag
         health_state: 0=healthy, >=failed_health=failed
         maint_active: True if maintainer is currently repairing this machine
 
     Returns:
-        State string: IDLE, PROCESSING, BLOCKED, STARVED, PAUSED,
-                      DEGRADED, FAILED, UNDER_REPAIR
+        State string: IDLE, PROCESSING, BLOCKED, STARVED, DEGRADED,
+                      FAILED, UNDER_REPAIR
     """
     failed_health = getattr(machine, "failed_health", 1)
-
-    if pause_line:
-        return "PAUSED"
 
     if health_state >= failed_health:
         return "UNDER_REPAIR" if maint_active else "FAILED"
@@ -1016,10 +1012,13 @@ def analyze_part_quality(sink, machines=None, scrap_sinks=None) -> dict:
 
 
 def read_opcua_controls(opcua_vars):
-    """Read writable control values from OPC UA clients."""
-    pause_line = bool(opcua_vars["system"]["pause_line"].get_value())
-    interarrival = float(opcua_vars["system"]["interarrival_time"].get_value())
-    return pause_line, interarrival
+    """Read the configured interarrival time from the OPC UA node.
+
+    SetInterarrivalTime is read-only during a run — it reflects the value
+    the simulation was started with.  Reading it here keeps source.interarrival_time
+    in sync if the value was set via the start API rather than YAML directly.
+    """
+    return float(opcua_vars["system"]["interarrival_time"].get_value())
 
 
 def update_part_counter(sink_level, prev_sink_level):
@@ -1037,9 +1036,9 @@ def update_part_counter(sink_level, prev_sink_level):
     return delta_parts, total_parts_produced, sink_level
 
 
-def check_shift_rotation(shift_manager, sim_time, pause_line):
+def check_shift_rotation(shift_manager, sim_time):
     """Check and perform shift rotation if needed. Returns whether shift rotated."""
-    if shift_manager and not pause_line:
+    if shift_manager:
         shift_rotated = shift_manager.check_shift_rotation(sim_time)
         if shift_rotated:
             print(f"\n[SHIFT CHANGE] Shift {shift_manager.current_shift_number} started: "
@@ -1084,7 +1083,7 @@ def collect_system_metrics(buffers, maintainer, machines=None):
 
 
 def process_machine_step(machine_name, machine_obj, metrics, config_machines,
-                         total_parts_produced, pause_line, sim_step, maintainer,
+                         total_parts_produced, sim_step, maintainer,
                          shift_manager, spc_monitors, opcua_vars, sink, sim_time,
                          shift_oee_snapshot=None, shift_start_time=0.0,
                          machine_totals=None):
@@ -1104,8 +1103,7 @@ def process_machine_step(machine_name, machine_obj, metrics, config_machines,
     prev_partcount = metrics["partcount"]
 
     # Accumulate time based on previous state
-    if not pause_line:
-        accumulate_time(metrics, metrics["prev_state"], sim_step)
+    accumulate_time(metrics, metrics["prev_state"], sim_step)
 
     # Detect current state
     machine_cfg = next(m for m in config_machines if m["name"] == machine_name)
@@ -1116,7 +1114,7 @@ def process_machine_step(machine_name, machine_obj, metrics, config_machines,
     # Check if this machine is being repaired (use machine attribute, not maintainer)
     machine_maint_active = getattr(machine_obj, 'under_repair', False)
 
-    current_state = detect_machine_state(machine_obj, pause_line, health_state, machine_maint_active)
+    current_state = detect_machine_state(machine_obj, health_state, machine_maint_active)
     metrics["prev_state"] = current_state
 
     # Part count (all machines in series produce same total)
@@ -1151,7 +1149,7 @@ def process_machine_step(machine_name, machine_obj, metrics, config_machines,
                     mark_part_defective(part, machine_name, defect_type="quality")
 
     # Shift metrics update
-    if shift_manager and not pause_line:
+    if shift_manager:
         shift_manager.update_machine_time(machine_name, sim_step, current_state)
         if current_state == "FAILED" and metrics["prev_state"] != "FAILED":
             shift_manager.record_failure(machine_name)
@@ -1394,20 +1392,13 @@ def calculate_line_level_oee(machines, machine_metrics):
 def write_system_opcua_vars(opcua_vars, sim_time, total_parts_produced, total_wip,
                             line_availability, line_performance, line_quality, line_oee,
                             maint_active, maint_queue_length, total_repairs,
-                            pause_line=False, line_good_parts=0, line_defective_parts=0):
+                            line_good_parts=0, line_defective_parts=0):
     """Write system-level and line-level KPIs to OPC UA."""
     opcua_vars["system"]["simtime"].set_value(sim_time)
     opcua_vars["system"]["throughput"].set_value(total_parts_produced)
 
-    # ISA-95 LineState derived from pause flag and maintenance
-    if pause_line:
-        line_state = "HELD"
-    elif maint_active:
-        line_state = "RUNNING"
-    elif total_parts_produced > 0:
-        line_state = "RUNNING"
-    else:
-        line_state = "STOPPED"
+    # ISA-95 LineState
+    line_state = "RUNNING" if total_parts_produced > 0 or maint_active else "STOPPED"
     opcua_vars["system"]["line_state"].set_value(line_state)
 
     opcua_vars["line_kpis"]["total_wip"].set_value(total_wip)
@@ -1797,12 +1788,9 @@ def build_opcua_server(config: dict):
     var_simtime = ops_state.add_variable(_nid(f"{os_p}.SimTime", idx), _qn("SimTime", idx), 0.0)
     var_line_state = ops_state.add_variable(_nid(f"{os_p}.LineState", idx), _qn("LineState", idx), "STOPPED")
     var_line_mode = ops_state.add_variable(_nid(f"{os_p}.LineMode", idx), _qn("LineMode", idx), "AUTO")
-    var_sim_mode = ops_state.add_variable(_nid(f"{os_p}.SimMode", idx), _qn("SimMode", idx), "REPRODUCIBLE")
-
-    # Controls under OperationsState
+    # Controls under OperationsState (read-only — set at run start, not during run)
     ctrl_p = f"{os_p}.Controls"
     controls_node = ops_state.add_object(_nid(ctrl_p, idx), _qn("Controls", idx))
-    var_pause_line = controls_node.add_variable(_nid(f"{ctrl_p}.CmdPauseLine", idx), _qn("CmdPauseLine", idx), False)
     default_interarrival = config.get("source", {}).get("interarrival_time", 1.0)
     var_interarrival = controls_node.add_variable(_nid(f"{ctrl_p}.SetInterarrivalTime", idx), _qn("SetInterarrivalTime", idx), default_interarrival)
 
@@ -1915,10 +1903,7 @@ def build_opcua_server(config: dict):
     var_co_planned = recipe_node.add_variable(_nid(f"{rcp_p}.LastChangeoverPlanned", idx), _qn("LastChangeoverPlanned", idx), 0.0)
     var_co_actual = recipe_node.add_variable(_nid(f"{rcp_p}.LastChangeoverActual", idx), _qn("LastChangeoverActual", idx), 0.0)
 
-    # Writable controls
-    writable_vars = [var_pause_line, var_interarrival]
-    for v in writable_vars:
-        v.set_writable()
+    # No writable variables — interarrival_time is set at run start only
 
     # Recipe vars sub-dict
     recipe_vars = {
@@ -1941,11 +1926,9 @@ def build_opcua_server(config: dict):
         "system": {
             "simtime": var_simtime,
             "throughput": var_throughput,
-            "pause_line": var_pause_line,
             "interarrival_time": var_interarrival,
             "line_state": var_line_state,
             "line_mode": var_line_mode,
-            "sim_mode": var_sim_mode,
             "total_events": var_total_events,
             "run_id": var_run_id,
         },
@@ -1992,7 +1975,6 @@ def run_segment(
     historian=None,
     neo4j_hist=None,
     recipe_vars=None,
-    mode=SimMode.REPRODUCIBLE,
 ):
     """Run simulation until time limit OR quantity target is reached.
 
@@ -2033,10 +2015,8 @@ def run_segment(
     real_step = 1.0
     warm_up_time = int(config.get("warm_up_time", 0))
 
-    # LineState owns all accumulated counters.  The main loop reads from it
-    # rather than directly from Simantha objects so the same code works in
-    # both REPRODUCIBLE and REALTIME modes.
-    line_state = LineState(mode=mode)
+    # LineState owns all accumulated counters across simulate() calls.
+    line_state = LineState()
     for mname in machines:
         line_state.init_machine(mname)
     total_parts_produced = 0   # kept as local convenience alias for line_state.total_parts_produced
@@ -2130,52 +2110,36 @@ def run_segment(
             stop_reason = "quantity_reached"
             break
 
-        # Read controls from OPC UA
-        pause_line, interarrival = read_opcua_controls(opcua_vars)
+        # Sync source interarrival from OPC UA node (set at run start, read-only during run)
+        interarrival = read_opcua_controls(opcua_vars)
         source.interarrival_time = interarrival if interarrival > 0 else None
 
-        # Step simulation
-        if not pause_line:
-            sim_time += sim_step
+        # Step simulation — O(1) per step regardless of run length.
+        # Seed advances per step: same base seed gives the same trajectory
+        # every run (reproducible), different seeds give independent runs.
+        sim_time += sim_step
+        step_seed = (sim_seed + line_state.step_count) % (2 ** 31)
+        random.seed(step_seed)
+        np.random.seed(step_seed)
+        for mobj in machines.values():
+            mobj._counting_active = line_state.step_count >= warm_up_time
+        system.simulate(warm_up_time=0, simulation_time=sim_step,
+                        verbose=False, collect_data=False, trace=trace)
+        system._last_completed_sim_time = sim_step
+        system._last_warm_up_time = 0
 
-            if mode == SimMode.REALTIME:
-                # REALTIME: call simulate(sim_step) once — fresh environment
-                # each step so counters reset to 0.  Seed advances per step so
-                # runs are reproducible but each step has an independent draw.
-                # Warm-up is handled externally via _counting_active because
-                # env.now is always 0→sim_step and never crosses warm_up_time.
-                step_seed = (sim_seed + line_state.step_count) % (2 ** 31)
-                random.seed(step_seed)
-                np.random.seed(step_seed)
-                for mobj in machines.values():
-                    mobj._counting_active = line_state.step_count >= warm_up_time
-                system.simulate(warm_up_time=0, simulation_time=sim_step,
-                                verbose=False, collect_data=False, trace=trace)
-                system._last_completed_sim_time = sim_step
-                system._last_warm_up_time = 0
-            else:
-                # REPRODUCIBLE: call simulate(cumulative_N) re-seeded to the
-                # same value — guarantees trajectory in [0, N] is identical
-                # each call so Simantha counters increase monotonically.
-                random.seed(sim_seed)
-                np.random.seed(sim_seed)
-                system.simulate(warm_up_time=warm_up_time, simulation_time=sim_time,
-                                verbose=False, collect_data=False, trace=trace)
-                system._last_completed_sim_time = sim_time
-                system._last_warm_up_time = warm_up_time
-
-            # Sync LineState from Simantha objects immediately after simulate().
-            # Must happen before shift snapshots and process_machine_step reads.
-            line_state.step_count += 1
-            for mname, mobj in machines.items():
-                line_state.sync_machine(mname, mobj)
+        # Sync LineState from Simantha objects immediately after simulate().
+        # Must happen before shift snapshots and process_machine_step reads.
+        line_state.step_count += 1
+        for mname, mobj in machines.items():
+            line_state.sync_machine(mname, mobj)
 
         # Throughput counter — mode-aware via LineState
         delta_parts = line_state.sync_sink(sink.level)
         total_parts_produced = line_state.total_parts_produced
 
         # Shift rotation
-        shift_rotated = check_shift_rotation(shift_manager, sim_time, pause_line)
+        shift_rotated = check_shift_rotation(shift_manager, sim_time)
         if shift_rotated:
             shift_start_time = sim_time
             for mname in machines:
@@ -2201,7 +2165,7 @@ def run_segment(
         for machine_name, machine_obj in machines.items():
             alarms = process_machine_step(
                 machine_name, machine_obj, machine_metrics[machine_name],
-                config["machines"], total_parts_produced, pause_line, sim_step,
+                config["machines"], total_parts_produced, sim_step,
                 maintainer, shift_manager, spc_monitors, opcua_vars, sink,
                 sim_time,
                 shift_oee_snapshot=shift_oee_snapshots.get(machine_name),
@@ -2227,7 +2191,6 @@ def run_segment(
         write_system_opcua_vars(opcua_vars, sim_time, total_parts_produced, total_wip,
                                 line_avail, line_perf, line_qual, line_oee,
                                 maint_active, maint_queue_length, total_repairs,
-                                pause_line=pause_line,
                                 line_good_parts=line_good,
                                 line_defective_parts=line_defective)
 
@@ -2272,10 +2235,6 @@ def main(argv=None):
                        help="Random seed for reproducible simulation")
     parser.add_argument("--trace", action="store_true",
                        help="Enable Simantha DES event trace (outputs pickle file)")
-    parser.add_argument("--mode", choices=["reproducible", "realtime"],
-                       default="reproducible",
-                       help="Simulation mode: reproducible (default) or realtime "
-                            "(realtime: sim clock tracks wall clock, Phase B)")
     args = parser.parse_args(argv)
 
     # Default to balanced_line if neither --scenario nor --recipe given
@@ -2308,7 +2267,7 @@ def main(argv=None):
         )
         print(f"RunID: {run_id}")
 
-        run_recipe(recipe, sim_seed, args, run_id, mode=SimMode(args.mode))
+        run_recipe(recipe, sim_seed, args, run_id)
         return
 
     # ---- Single-scenario mode (default) ----
@@ -2349,12 +2308,9 @@ def main(argv=None):
         neo4j_hist.create_topology(config)
         print(f"  Neo4j historian enabled: {neo4j_hist.describe()}")
 
-    opcua_vars["system"]["sim_mode"].set_value(SimMode(args.mode).value.upper())
-
     server.start()
     print(f"OPC UA server started at opc.tcp://localhost:4840/simantha/")
     print(f"Scenario: {args.scenario} ({len(machines)} machines, {len(buffers)} buffers)")
-    print(f"Sim mode: {args.mode}")
     print("Press Ctrl+C to stop.")
 
     try:
@@ -2374,7 +2330,6 @@ def main(argv=None):
             shift_manager=shift_manager,
             historian=historian,
             neo4j_hist=neo4j_hist,
-            mode=SimMode(args.mode),
         )
 
     except KeyboardInterrupt:

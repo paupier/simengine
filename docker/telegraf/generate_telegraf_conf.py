@@ -50,8 +50,7 @@ def generate_telegraf_conf(config,
                            influxdb_token="simantha-dev-token",
                            influxdb_org="simantha",
                            influxdb_bucket="manufacturing",
-                           run_id="",
-                           sim_mode="reproducible"):
+                           run_id=""):
     """Generate Telegraf TOML config from a scenario config dict.
 
     Args:
@@ -83,11 +82,9 @@ def generate_telegraf_conf(config,
         # {len(machines)} machines, {len(buffers)} buffers, {len(scrap_sinks)} scrap sinks
         # Shifts: {"yes" if has_shifts else "no"}
         # RunID: {run_id or "(not set)"}
-        # SimMode: {sim_mode}
 
         [global_tags]
-          run_id  = "{run_id}"
-          sim_mode = "{sim_mode}"
+          run_id = "{run_id}"
 
         [agent]
           interval = "1s"
@@ -394,9 +391,6 @@ def main():
                         help="InfluxDB bucket")
     parser.add_argument("--run-id", default="",
                         help="Run ID for global_tags (default: empty)")
-    parser.add_argument("--sim-mode", default="reproducible",
-                        choices=["reproducible", "realtime"],
-                        help="Simulation mode for global_tags (default: reproducible)")
     args = parser.parse_args()
 
     # Add src/ to path so we can optionally use config_loader
@@ -423,7 +417,6 @@ def main():
         influxdb_org=args.influxdb_org,
         influxdb_bucket=args.influxdb_bucket,
         run_id=args.run_id,
-        sim_mode=args.sim_mode,
     )
 
     if args.output:

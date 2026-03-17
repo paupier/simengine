@@ -584,35 +584,8 @@
                     <label class="form-label" for="seed-input">Seed (optional)</label>
                     <input type="number" id="seed-input" class="form-control form-control-sm" placeholder="e.g. 42">
                 </div>
-                <div class="mb-3">
-                    <label class="form-label">Sim Mode</label>
-                    <div class="d-flex gap-2">
-                        <div class="form-check form-check-inline mb-0">
-                            <input class="form-check-input" type="radio" name="sim-mode" id="sim-mode-reproducible" value="reproducible" checked>
-                            <label class="form-check-label" for="sim-mode-reproducible" style="font-size:12px;color:#a8bdd4;">Reproducible</label>
-                        </div>
-                        <div class="form-check form-check-inline mb-0">
-                            <input class="form-check-input" type="radio" name="sim-mode" id="sim-mode-realtime" value="realtime">
-                            <label class="form-check-label" for="sim-mode-realtime" style="font-size:12px;color:#a8bdd4;">Real-time</label>
-                        </div>
-                    </div>
-                </div>
                 <button id="btn-start" class="btn-hmi btn-hmi-start" onclick="startSim()">▶  Start</button>
                 <button id="btn-stop"  class="btn-hmi btn-hmi-stop"  onclick="stopSim()" disabled>■  Stop</button>
-            </div>
-
-            <!-- Runtime controls -->
-            <div class="sb-section">
-                <div class="sb-title">Runtime Controls</div>
-                <button id="btn-pause" class="btn-hmi-pause" onclick="togglePause()" disabled>⏸ Pause Line</button>
-                <div class="mt-3">
-                    <label class="form-label" style="color:#a8bdd4;font-size:12px;">
-                        Interarrival: <span class="ia-val" id="interarrival-value">0.0</span>s
-                    </label>
-                    <input type="range" id="interarrival-range" class="form-range"
-                           min="0" max="5" step="0.1" value="0"
-                           oninput="updateInterarrival(this.value)" disabled>
-                </div>
             </div>
 
             <!-- External links -->
@@ -650,7 +623,6 @@
     </footer>
 
     <script>
-        let isPaused = false;
         let isRunning = false;
         const machineHistory = {};
         const HISTORY_LEN = 40;
@@ -738,10 +710,9 @@
         async function startSim() {
             const isRecipeMode = document.getElementById('mode-recipe').checked;
             const seedVal = document.getElementById('seed-input').value;
-            const simMode = document.querySelector('input[name="sim-mode"]:checked').value;
             if (isRecipeMode) {
                 const recipe = document.getElementById('recipe-select').value;
-                const body = { recipe, mode: simMode };
+                const body = { recipe };
                 if (seedVal) body.seed = parseInt(seedVal);
                 await fetch('/api/start-recipe', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -749,7 +720,7 @@
                 });
             } else {
                 const scenario = document.getElementById('scenario-select').value;
-                const body = { scenario, mode: simMode };
+                const body = { scenario };
                 if (seedVal) body.seed = parseInt(seedVal);
                 await fetch('/api/start', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -760,28 +731,6 @@
 
         async function stopSim() {
             await fetch('/api/stop', { method: 'POST' });
-        }
-
-        // --- Pause ---
-        async function togglePause() {
-            isPaused = !isPaused;
-            await fetch('/api/control', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ pause_line: isPaused })
-            });
-        }
-
-        // --- Interarrival ---
-        let interarrivalTimeout = null;
-        function updateInterarrival(val) {
-            document.getElementById('interarrival-value').textContent = parseFloat(val).toFixed(1);
-            clearTimeout(interarrivalTimeout);
-            interarrivalTimeout = setTimeout(async () => {
-                await fetch('/api/control', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ interarrival_time: parseFloat(val) })
-                });
-            }, 200);
         }
 
         // --- Log toggle ---
@@ -1015,10 +964,8 @@
                 const dot = document.getElementById('hdr-status-dot');
                 const lbl = document.getElementById('hdr-status-label');
                 if (data.running) {
-                    const paused = data.opcua && data.opcua.pause_line;
-                    dot.className = 'hmi-dot ' + (paused ? 'paused' : 'running');
-                    lbl.textContent = paused ? 'PAUSED' : 'RUNNING';
-                    isPaused = !!paused;
+                    dot.className = 'hmi-dot running';
+                    lbl.textContent = 'RUNNING';
                 } else {
                     dot.className = 'hmi-dot';
                     lbl.textContent = 'STOPPED';
@@ -1045,10 +992,6 @@
                 // Buttons
                 document.getElementById('btn-start').disabled = data.running;
                 document.getElementById('btn-stop').disabled  = !data.running;
-                document.getElementById('btn-pause').disabled = !data.running;
-                document.getElementById('btn-pause').textContent =
-                    isPaused ? '▶ Resume Line' : '⏸ Pause Line';
-                document.getElementById('interarrival-range').disabled = !data.running;
 
                 if (data.opcua) {
                     // KPI: Line OEE
@@ -1135,14 +1078,6 @@
                         }
                     } else {
                         recipeBar.classList.remove('visible');
-                    }
-
-                    // Interarrival slider sync
-                    const slider = document.getElementById('interarrival-range');
-                    if (document.activeElement !== slider) {
-                        slider.value = data.opcua.interarrival_time;
-                        document.getElementById('interarrival-value').textContent =
-                            parseFloat(data.opcua.interarrival_time).toFixed(1);
                     }
 
                     // Machine cards + nav + alarms

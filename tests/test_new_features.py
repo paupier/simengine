@@ -289,7 +289,7 @@ class TestMultiStateDegradation:
         m.has_part = True
         m.failed_health = 5
         state = detect_machine_state(
-            m, pause_line=False, health_state=2, maint_active=False
+            m, health_state=2, maint_active=False
         )
         assert state == "DEGRADED"
 
@@ -301,7 +301,7 @@ class TestMultiStateDegradation:
         m.has_part = False
         m.failed_health = 5
         state = detect_machine_state(
-            m, pause_line=False, health_state=5, maint_active=False
+            m, health_state=5, maint_active=False
         )
         assert state == "FAILED"
 
@@ -313,7 +313,7 @@ class TestMultiStateDegradation:
         m.has_part = False
         m.failed_health = 5
         state = detect_machine_state(
-            m, pause_line=False, health_state=5, maint_active=True
+            m, health_state=5, maint_active=True
         )
         assert state == "UNDER_REPAIR"
 
@@ -325,7 +325,7 @@ class TestMultiStateDegradation:
         m.has_part = True
         m.failed_health = 5
         state = detect_machine_state(
-            m, pause_line=False, health_state=0, maint_active=False
+            m, health_state=0, maint_active=False
         )
         assert state == "PROCESSING"
 

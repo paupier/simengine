@@ -236,7 +236,7 @@ def _capture_logs():
         pass
 
 
-def _regenerate_telegraf_config(scenario_name, run_id="", sim_mode="reproducible"):
+def _regenerate_telegraf_config(scenario_name, run_id=""):
     """Regenerate telegraf.conf for the given scenario."""
     try:
         from generate_telegraf_conf import generate_telegraf_conf
@@ -245,7 +245,7 @@ def _regenerate_telegraf_config(scenario_name, run_id="", sim_mode="reproducible
             all_configs = yaml.safe_load(f)
         config = all_configs.get(scenario_name)
         if config and isinstance(config, dict):
-            conf_text = generate_telegraf_conf(config, run_id=run_id, sim_mode=sim_mode)
+            conf_text = generate_telegraf_conf(config, run_id=run_id)
             os.makedirs(os.path.dirname(os.path.abspath(TELEGRAF_CONF_PATH)),
                         exist_ok=True)
             with open(TELEGRAF_CONF_PATH, 'w') as f:
@@ -257,7 +257,7 @@ def _regenerate_telegraf_config(scenario_name, run_id="", sim_mode="reproducible
         print(f"[WebUI] Warning: Could not regenerate Telegraf config: {e}")
 
 
-def start_simulation(scenario, seed=None, mode="reproducible"):
+def start_simulation(scenario, seed=None):
     """Spawn opcua_server.py as a subprocess."""
     global sim_process, sim_scenario, sim_recipe
     global sim_start_time, sim_run_id
@@ -269,10 +269,9 @@ def start_simulation(scenario, seed=None, mode="reproducible"):
         run_id = f"{scenario}_{dt.now().strftime('%Y%m%d_%H%M%S')}"
         sim_run_id = run_id
 
-        _regenerate_telegraf_config(scenario, run_id=run_id, sim_mode=mode)
+        _regenerate_telegraf_config(scenario, run_id=run_id)
 
-        cmd = ["python", OPCUA_SERVER_SCRIPT, "--scenario", scenario,
-               "--mode", mode]
+        cmd = ["python", OPCUA_SERVER_SCRIPT, "--scenario", scenario]
         if seed is not None:
             cmd += ["--seed", str(seed)]
 
@@ -301,7 +300,7 @@ def start_simulation(scenario, seed=None, mode="reproducible"):
         t.start()
 
 
-def start_simulation_recipe(recipe_name, seed=None, mode="reproducible"):
+def start_simulation_recipe(recipe_name, seed=None):
     """Spawn opcua_server.py in recipe mode as a subprocess."""
     global sim_process, sim_scenario, sim_recipe
     global sim_start_time, sim_run_id
@@ -317,10 +316,9 @@ def start_simulation_recipe(recipe_name, seed=None, mode="reproducible"):
         recipe_data = load_recipe(recipe_name)
         if recipe_data and isinstance(recipe_data, dict):
             base_scenario = recipe_data.get("base_scenario", "balanced_line")
-            _regenerate_telegraf_config(base_scenario, run_id=run_id, sim_mode=mode)
+            _regenerate_telegraf_config(base_scenario, run_id=run_id)
 
-        cmd = ["python", OPCUA_SERVER_SCRIPT, "--recipe", recipe_name,
-               "--mode", mode]
+        cmd = ["python", OPCUA_SERVER_SCRIPT, "--recipe", recipe_name]
         if seed is not None:
             cmd += ["--seed", str(seed)]
 
@@ -426,7 +424,6 @@ def _read_opcua_values():
         sim_time = ops_state.get_child(["2:SimTime"]).get_value()
 
         controls = ops_state.get_child(["2:Controls"])
-        pause_line = controls.get_child(["2:CmdPauseLine"]).get_value()
         interarrival = controls.get_child(["2:SetInterarrivalTime"]).get_value()
 
         # OperationsPerformance
@@ -536,7 +533,6 @@ def _read_opcua_values():
         result = {
             "sim_time": sim_time,
             "throughput": throughput,
-            "pause_line": pause_line,
             "interarrival_time": interarrival,
             "machines": machines,
             "line_oee": line_oee,
@@ -603,7 +599,6 @@ def api_start():
     data = request.get_json(force=True) if request.data else {}
     scenario = data.get("scenario", "balanced_line")
     seed = data.get("seed")
-    mode = data.get("mode", "reproducible")
 
     # Validate scenario exists
     scenarios = list_scenarios()
@@ -616,11 +611,8 @@ def api_start():
         except (ValueError, TypeError):
             return jsonify({"error": "seed must be an integer"}), 400
 
-    if mode not in ("reproducible", "realtime"):
-        return jsonify({"error": "mode must be 'reproducible' or 'realtime'"}), 400
-
-    start_simulation(scenario, seed, mode=mode)
-    return jsonify({"status": "started", "scenario": scenario, "seed": seed, "mode": mode})
+    start_simulation(scenario, seed)
+    return jsonify({"status": "started", "scenario": scenario, "seed": seed})
 
 
 @app.route("/api/stop", methods=["POST"])
@@ -641,38 +633,13 @@ def api_logs():
 
 @app.route("/api/control", methods=["POST"])
 def api_control():
-    """Write OPC UA control variables (pause, interarrival time)."""
-    if sim_process is None or sim_process.poll() is not None:
-        return jsonify({"error": "Simulation not running"}), 400
+    """Runtime control endpoint.
 
-    data = request.get_json(force=True) if request.data else {}
-    client = _get_opcua_client()
-    if client is None:
-        return jsonify({"error": "Cannot connect to OPC UA server"}), 503
-
-    try:
-        root = client.get_objects_node()
-        line_equip = root.get_child([
-            "2:WeylandIndustries", "2:LV426_Colony",
-            "2:AtmosphereProcessor01", "2:Nostromo_BioProductPakaging_Equipment"
-        ])
-        controls = line_equip.get_child(["2:OperationsState", "2:Controls"])
-        result = {}
-
-        if "pause_line" in data:
-            val = bool(data["pause_line"])
-            controls.get_child(["2:CmdPauseLine"]).set_value(val)
-            result["pause_line"] = val
-
-        if "interarrival_time" in data:
-            val = float(data["interarrival_time"])
-            controls.get_child(["2:SetInterarrivalTime"]).set_value(val)
-            result["interarrival_time"] = val
-
-        return jsonify({"status": "ok", "written": result})
-    except Exception as e:
-        _disconnect_opcua()
-        return jsonify({"error": str(e)}), 500
+    SetInterarrivalTime and CmdPauseLine have been removed — interarrival is
+    a start-time parameter and pause is handled via /api/stop.  This endpoint
+    is kept for backward compatibility but no longer writes OPC UA variables.
+    """
+    return jsonify({"status": "ok", "written": {}})
 
 
 @app.route("/api/opcua/read")
@@ -901,7 +868,6 @@ def api_start_recipe():
     data = request.get_json(force=True) if request.data else {}
     recipe_name = data.get("recipe")
     seed = data.get("seed")
-    mode = data.get("mode", "reproducible")
 
     if not recipe_name:
         return jsonify({"error": "Missing 'recipe' field"}), 400
@@ -917,11 +883,8 @@ def api_start_recipe():
         except (ValueError, TypeError):
             return jsonify({"error": "seed must be an integer"}), 400
 
-    if mode not in ("reproducible", "realtime"):
-        return jsonify({"error": "mode must be 'reproducible' or 'realtime'"}), 400
-
-    start_simulation_recipe(recipe_name, seed, mode=mode)
-    return jsonify({"status": "started", "recipe": recipe_name, "seed": seed, "mode": mode})
+    start_simulation_recipe(recipe_name, seed)
+    return jsonify({"status": "started", "recipe": recipe_name, "seed": seed})
 
 
 # ---------------------------------------------------------------------------
