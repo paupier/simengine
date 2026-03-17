@@ -17,7 +17,7 @@ A real-time **digital twin** of a manufacturing production line using [Simantha]
 
 | Area | Features |
 |------|----------|
-| **Simulation** | N-machine serial lines (2-10+), config-driven topologies, 20 built-in scenarios, run recipes |
+| **Simulation** | N-machine serial lines (2-10+), config-driven topologies, 20 built-in scenarios, run recipes, two simulation modes (reproducible / real-time) |
 | **OPC UA** | ISA-95/ISO 23247 aligned address space, bidirectional control (pause, arrival rate) |
 | **Reliability** | Multi-state health degradation, advanced failure modes (Weibull, exponential, lognormal), competing risks |
 | **Maintenance** | Corrective/preventive/predictive strategies, priority maintainer (FIFO, SPT, priority, bottleneck) |
@@ -129,6 +129,17 @@ python src/opcua_server.py --recipe monday_schedule --seed 42
 
 # Quick recipe for testing (2 segments with 10s changeover)
 python src/opcua_server.py --recipe quick_test --seed 1
+```
+
+**Choose simulation mode:**
+```bash
+# Reproducible mode (default) — exact reproducibility, quadratic compute cost
+# Best for short experiments, comparisons, and CI
+python src/opcua_server.py --scenario full_feature_line --seed 42 --mode reproducible
+
+# Real-time mode — O(1) per step, sim clock stays in sync with wall clock indefinitely
+# Best for continuous digital twin deployments (multi-shift, multi-day)
+python src/opcua_server.py --scenario full_feature_line --seed 42 --mode realtime
 ```
 
 Recipes define ordered production segments with changeover periods, enabling planned-vs-actual changeover analysis and multi-product scheduling. See [Run Recipes](#-run-recipes) below.
@@ -628,7 +639,18 @@ New event types: `SEGMENT_START`, `SEGMENT_END`, `CHANGEOVER`, `RECIPE_COMPLETE`
 
 ## 🗺️ Roadmap
 
-### Recent Changes (2026-02-28)
+### Recent Changes (2026-03-16)
+
+- **Simulation modes** — `--mode reproducible` (default) and `--mode realtime` (`src/line_state.py`)
+  - Reproducible: `simulate(cumulative_N)` re-runs entire history per step — perfect monotonic counters, O(N²) cost
+  - Real-time: `simulate(sim_step)` runs only the next second — O(1) per step, sim clock stays locked to wall clock indefinitely
+  - `LineState` abstraction (`line_state.py`) decouples KPI counters from Simantha objects, surviving per-step reinitialisations
+  - `MachineTotals` dataclass accumulates per-machine counters in mode-agnostic way
+- **Mode exposure** — `SimMode` OPC UA variable under `OperationsState/`; `sim_mode` InfluxDB global tag; Web UI radio buttons; `--mode` CLI flag
+- **Web UI improvements** — Run History page with run_id visibility and Grafana integration; contrast fixes across all pages; wall-clock duration display alongside sim duration in reports
+- **Grafana** — `run_id` filter integration for per-run scoping in dashboards
+
+### Previous Additions (2026-02-28)
 
 - **Run Recipes** — Multi-segment production scheduling with stochastic changeovers (`--recipe` CLI arg)
 - **`run_segment()` extraction** — Core simulation loop extracted into reusable function for both single-scenario and recipe modes
@@ -658,8 +680,8 @@ New event types: `SEGMENT_START`, `SEGMENT_END`, `CHANGEOVER`, `RECIPE_COMPLETE`
 - **Planned Failures** — `Machine(planned_failure=(time, duration))` for scheduled downtime windows
 - **Parallel Replications** — `iterate_simulation(replications=30)` batch analysis with confidence intervals
 - **Part Type Customization** — Custom Part subclass with product_family, order_id for product-mix modeling
-- **Parallel Lines & Assembly** — Multi-line coordination, merge/split topologies
 - **Energy/Sustainability Modeling** — Power consumption per machine state, carbon footprint KPIs
+- **Converge/Diverge Topologies** — Fork-merge production layouts (e.g., 5 serial machines splitting to M6+M7+M8 sharing a downstream buffer, or two lines converging into one). The `LineState`/`MachineTotals` architecture introduced for simulation modes is explicitly designed to support this: counters are per-machine and topology-agnostic, so multi-path lines would only require changes to Simantha object construction and OPC UA node registration — not the KPI accounting layer. Scope limit: maximum one merge or split point between machines 2 and 7 within a single line. True multi-line federation (independent OPC UA servers) is out of scope.
 
 See the [User Manual](docs/user_manual.md) for detailed documentation.
 

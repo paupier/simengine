@@ -3,20 +3,34 @@ LineState — per-line accounting that survives simulate() reinitialisations.
 
 Two simulation modes are supported:
 
-REPRODUCIBLE (current behaviour)
+REPRODUCIBLE (default)
     system.simulate(cumulative_N) is called every step, re-seeded to the same
     value each time.  Simantha object counters (parts_made, _good_count, etc.)
     are authoritative totals for the window [0, N] — LineState copies them
     directly.  The re-seed guarantee ensures the trajectory in [0, N] is
     identical each call, so counters increase monotonically.
+    Cost: O(N) per step → O(N²) total.  Practical limit: a few hours of sim time.
 
-REALTIME (Phase B — stepping logic not yet active)
+REALTIME
     system.simulate(sim_step) is called once per real-time loop iteration.
-    Simantha counters reset to 0 on each call, so LineState accumulates the
-    per-step delta instead of copying the total.
+    Each call creates a fresh Simantha environment, so counters reset to 0.
+    LineState accumulates the per-step delta instead of copying the total.
+    Cost: O(1) per step → O(N) total.  Sim clock stays locked to wall clock
+    indefinitely — suitable for continuous, multi-shift deployments.
 
 The rest of the codebase reads exclusively from LineState.  The only code that
 differs between modes is inside sync_sink() and sync_machine().
+
+Design note — converge/diverge topologies (future):
+    MachineTotals is topology-agnostic: it holds per-machine counters keyed by
+    name regardless of whether machines are in a serial chain, a fork, or a
+    merge.  Adding fork-merge support requires changes to:
+      1. Simantha object construction (multiple upstreams/downstreams per buffer)
+      2. OPC UA node registration (new node paths for fork/merge machines)
+      3. run_segment() — calling sync_machine() for each machine in the graph
+    It does NOT require changes to LineState, MachineTotals, or any downstream
+    KPI code that reads from self.machines[name].  The abstraction is the
+    enablement foundation for that future work.
 """
 
 from dataclasses import dataclass, field
@@ -49,7 +63,7 @@ class LineState:
         mode:                  SimMode controlling sync behaviour.
         total_parts_produced:  Monotonically increasing part count.
         step_count:            Number of simulate() calls completed.
-                               Used as warm-up boundary in REALTIME mode (Phase B).
+                               Used as warm-up boundary in REALTIME mode.
         machines:              Per-machine MachineTotals, keyed by machine name.
     """
     mode: SimMode = SimMode.REPRODUCIBLE
