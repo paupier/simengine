@@ -1976,8 +1976,8 @@ def _install_health_restorer(machine_obj, health: int) -> None:
     base_init = machine_obj._base_initialize
     saved_health = health
 
-    def patched_init(env):
-        base_init(env)
+    def patched_init():
+        base_init()
         machine_obj.health = saved_health
 
     machine_obj.initialize = patched_init
