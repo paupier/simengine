@@ -530,6 +530,13 @@
         </div>
     </div>
 
+    <!-- ── Warm-up progress bar ── -->
+    <div class="prog-strip" id="warmup-bar" style="display:none;border-left:3px solid var(--warn);">
+        <span class="prog-lbl" style="color:var(--warn);">Warm-up</span>
+        <div class="prog-track"><div class="prog-fill" id="warmup-bar-fill" style="width:0%;background:var(--warn);"></div></div>
+        <span class="prog-val" id="warmup-bar-val">—</span>
+    </div>
+
     <!-- ── Shift progress bar ── -->
     <div class="prog-strip" id="shift-bar">
         <span class="prog-lbl" id="shift-bar-label">Shift</span>
@@ -582,9 +589,15 @@
                         <small id="recipe-info" class="form-text"></small>
                     </div>
                 </div>
-                <div class="mb-3">
+                <div class="mb-2">
                     <label class="form-label" for="seed-input">Seed (optional)</label>
                     <input type="number" id="seed-input" class="form-control form-control-sm" placeholder="e.g. 42">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="interarrival-input">Interarrival Time (s, optional)</label>
+                    <input type="number" id="interarrival-input" class="form-control form-control-sm"
+                           placeholder="e.g. 1.0" min="0.01" step="0.1">
+                    <small class="form-text" style="color:var(--text-dim);">Override source part arrival rate</small>
                 </div>
                 <button id="btn-start" class="btn-hmi btn-hmi-start" onclick="startSim()">▶  Start</button>
                 <button id="btn-stop"  class="btn-hmi btn-hmi-stop"  onclick="stopSim()" disabled>■  Stop</button>
@@ -712,10 +725,12 @@
         async function startSim() {
             const isRecipeMode = document.getElementById('mode-recipe').checked;
             const seedVal = document.getElementById('seed-input').value;
+            const interarrivalVal = document.getElementById('interarrival-input').value;
             if (isRecipeMode) {
                 const recipe = document.getElementById('recipe-select').value;
                 const body = { recipe };
                 if (seedVal) body.seed = parseInt(seedVal);
+                if (interarrivalVal) body.interarrival_time = parseFloat(interarrivalVal);
                 await fetch('/api/start-recipe', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(body)
@@ -724,6 +739,7 @@
                 const scenario = document.getElementById('scenario-select').value;
                 const body = { scenario };
                 if (seedVal) body.seed = parseInt(seedVal);
+                if (interarrivalVal) body.interarrival_time = parseFloat(interarrivalVal);
                 await fetch('/api/start', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(body)
@@ -991,9 +1007,35 @@
                     runIdEl.style.display = 'none';
                 }
 
-                // Buttons
+                // Buttons + form controls
                 document.getElementById('btn-start').disabled = data.running;
                 document.getElementById('btn-stop').disabled  = !data.running;
+                const formDisabled = data.running;
+                document.getElementById('scenario-select').disabled    = formDisabled;
+                document.getElementById('recipe-select').disabled      = formDisabled;
+                document.getElementById('seed-input').disabled         = formDisabled;
+                document.getElementById('interarrival-input').disabled = formDisabled;
+                document.getElementById('mode-scenario').disabled      = formDisabled;
+                document.getElementById('mode-recipe').disabled        = formDisabled;
+
+                // Sync dropdown to reflect the running scenario/recipe
+                if (data.running) {
+                    if (data.recipe) {
+                        document.getElementById('mode-recipe').checked = true;
+                        document.getElementById('mode-scenario').checked = false;
+                        document.getElementById('scenario-panel').style.display = 'none';
+                        document.getElementById('recipe-panel').style.display = '';
+                        const recSel = document.getElementById('recipe-select');
+                        if (recSel.value !== data.recipe) recSel.value = data.recipe;
+                    } else if (data.scenario) {
+                        document.getElementById('mode-scenario').checked = true;
+                        document.getElementById('mode-recipe').checked = false;
+                        document.getElementById('scenario-panel').style.display = '';
+                        document.getElementById('recipe-panel').style.display = 'none';
+                        const scnSel = document.getElementById('scenario-select');
+                        if (scnSel.value !== data.scenario) scnSel.value = data.scenario;
+                    }
+                }
 
                 if (data.opcua) {
                     // KPI: Line OEE
@@ -1039,6 +1081,22 @@
                         document.getElementById('kpi-scrap').textContent = '—';
                         document.getElementById('kpi-scrap').style.color = 'var(--text-dim)';
                         document.getElementById('kpi-scrap-sub').textContent = '';
+                    }
+
+                    // Warm-up bar
+                    const warmupBar = document.getElementById('warmup-bar');
+                    const simTime = Math.floor(data.opcua.sim_time || 0);
+                    const runningScenario = data.scenario;
+                    const warmUpTime = runningScenario && _scenarioCache[runningScenario]
+                        ? (_scenarioCache[runningScenario].warm_up_time || 0) : 0;
+                    if (warmUpTime > 0 && simTime < warmUpTime) {
+                        warmupBar.style.display = '';
+                        const wPct = Math.min(100, (simTime / warmUpTime * 100)).toFixed(0);
+                        document.getElementById('warmup-bar-fill').style.width = wPct + '%';
+                        document.getElementById('warmup-bar-val').textContent =
+                            `${simTime}s / ${warmUpTime}s (${wPct}%) — data collection begins after warm-up`;
+                    } else {
+                        warmupBar.style.display = 'none';
                     }
 
                     // Shift bar

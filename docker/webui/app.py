@@ -190,6 +190,7 @@ def list_scenarios():
             "machines": len(machines),
             "buffers": len(buffers),
             "features": list(set(features)),
+            "warm_up_time": cfg.get("warm_up_time", 0),
         }
     return scenarios
 
@@ -257,7 +258,7 @@ def _regenerate_telegraf_config(scenario_name, run_id=""):
         print(f"[WebUI] Warning: Could not regenerate Telegraf config: {e}")
 
 
-def start_simulation(scenario, seed=None):
+def start_simulation(scenario, seed=None, interarrival_time=None):
     """Spawn opcua_server.py as a subprocess."""
     global sim_process, sim_scenario, sim_recipe
     global sim_start_time, sim_run_id
@@ -274,6 +275,8 @@ def start_simulation(scenario, seed=None):
         cmd = ["python", OPCUA_SERVER_SCRIPT, "--scenario", scenario]
         if seed is not None:
             cmd += ["--seed", str(seed)]
+        if interarrival_time is not None:
+            cmd += ["--interarrival-time", str(interarrival_time)]
 
         env = os.environ.copy()
         env["SIMANTHA_CONFIG_PATH"] = str(CONFIG_PATH)
@@ -300,7 +303,7 @@ def start_simulation(scenario, seed=None):
         t.start()
 
 
-def start_simulation_recipe(recipe_name, seed=None):
+def start_simulation_recipe(recipe_name, seed=None, interarrival_time=None):
     """Spawn opcua_server.py in recipe mode as a subprocess."""
     global sim_process, sim_scenario, sim_recipe
     global sim_start_time, sim_run_id
@@ -321,6 +324,8 @@ def start_simulation_recipe(recipe_name, seed=None):
         cmd = ["python", OPCUA_SERVER_SCRIPT, "--recipe", recipe_name]
         if seed is not None:
             cmd += ["--seed", str(seed)]
+        if interarrival_time is not None:
+            cmd += ["--interarrival-time", str(interarrival_time)]
 
         env = os.environ.copy()
         env["SIMANTHA_CONFIG_PATH"] = str(CONFIG_PATH)
@@ -599,6 +604,7 @@ def api_start():
     data = request.get_json(force=True) if request.data else {}
     scenario = data.get("scenario", "balanced_line")
     seed = data.get("seed")
+    interarrival_time = data.get("interarrival_time")
 
     # Validate scenario exists
     scenarios = list_scenarios()
@@ -611,7 +617,15 @@ def api_start():
         except (ValueError, TypeError):
             return jsonify({"error": "seed must be an integer"}), 400
 
-    start_simulation(scenario, seed)
+    if interarrival_time is not None:
+        try:
+            interarrival_time = float(interarrival_time)
+            if interarrival_time <= 0:
+                return jsonify({"error": "interarrival_time must be positive"}), 400
+        except (ValueError, TypeError):
+            return jsonify({"error": "interarrival_time must be a number"}), 400
+
+    start_simulation(scenario, seed, interarrival_time)
     return jsonify({"status": "started", "scenario": scenario, "seed": seed})
 
 
@@ -868,6 +882,7 @@ def api_start_recipe():
     data = request.get_json(force=True) if request.data else {}
     recipe_name = data.get("recipe")
     seed = data.get("seed")
+    interarrival_time = data.get("interarrival_time")
 
     if not recipe_name:
         return jsonify({"error": "Missing 'recipe' field"}), 400
@@ -883,7 +898,15 @@ def api_start_recipe():
         except (ValueError, TypeError):
             return jsonify({"error": "seed must be an integer"}), 400
 
-    start_simulation_recipe(recipe_name, seed)
+    if interarrival_time is not None:
+        try:
+            interarrival_time = float(interarrival_time)
+            if interarrival_time <= 0:
+                return jsonify({"error": "interarrival_time must be positive"}), 400
+        except (ValueError, TypeError):
+            return jsonify({"error": "interarrival_time must be a number"}), 400
+
+    start_simulation_recipe(recipe_name, seed, interarrival_time)
     return jsonify({"status": "started", "recipe": recipe_name, "seed": seed})
 
 

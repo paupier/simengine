@@ -2269,6 +2269,8 @@ def main(argv=None):
                        help="Random seed for reproducible simulation")
     parser.add_argument("--trace", action="store_true",
                        help="Enable Simantha DES event trace (outputs pickle file)")
+    parser.add_argument("--interarrival-time", type=float, default=None, dest="interarrival_time",
+                       help="Override source interarrival time (seconds) at run start")
     args = parser.parse_args(argv)
 
     # Default to balanced_line if neither --scenario nor --recipe given
@@ -2313,6 +2315,8 @@ def main(argv=None):
 
     # Load configuration
     config = load_line_config(args.scenario)
+    if args.interarrival_time is not None:
+        config.setdefault("source", {})["interarrival_time"] = args.interarrival_time
     print(f"Loading scenario: {args.scenario}")
     print(f"RunID: {run_id}")
 
