@@ -1018,7 +1018,7 @@
                 document.getElementById('mode-scenario').disabled      = formDisabled;
                 document.getElementById('mode-recipe').disabled        = formDisabled;
 
-                // Sync dropdown to reflect the running scenario/recipe
+                // Sync controls to reflect the running scenario/recipe/seed/interarrival
                 if (data.running) {
                     if (data.recipe) {
                         document.getElementById('mode-recipe').checked = true;
@@ -1035,6 +1035,10 @@
                         const scnSel = document.getElementById('scenario-select');
                         if (scnSel.value !== data.scenario) scnSel.value = data.scenario;
                     }
+                    const seedEl = document.getElementById('seed-input');
+                    if (seedEl.value === '') seedEl.value = data.seed != null ? data.seed : '';
+                    const iaEl = document.getElementById('interarrival-input');
+                    if (iaEl.value === '') iaEl.value = data.interarrival_time != null ? data.interarrival_time : '';
                 }
 
                 if (data.opcua) {

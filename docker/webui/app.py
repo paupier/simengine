@@ -104,6 +104,8 @@ sim_scenario = None
 sim_recipe = None
 sim_start_time = None
 sim_run_id = None
+sim_seed = None
+sim_interarrival_time = None
 sim_log = deque(maxlen=200)  # Ring buffer for stdout capture
 sim_lock = threading.Lock()
 
@@ -261,7 +263,7 @@ def _regenerate_telegraf_config(scenario_name, run_id=""):
 def start_simulation(scenario, seed=None, interarrival_time=None):
     """Spawn opcua_server.py as a subprocess."""
     global sim_process, sim_scenario, sim_recipe
-    global sim_start_time, sim_run_id
+    global sim_start_time, sim_run_id, sim_seed, sim_interarrival_time
 
     with sim_lock:
         stop_simulation()
@@ -294,6 +296,8 @@ def start_simulation(scenario, seed=None, interarrival_time=None):
         sim_scenario = scenario
         sim_recipe = None
         sim_start_time = time.time()
+        sim_seed = seed
+        sim_interarrival_time = interarrival_time
 
         # Disconnect OPC UA client (will reconnect lazily)
         _disconnect_opcua()
@@ -306,7 +310,7 @@ def start_simulation(scenario, seed=None, interarrival_time=None):
 def start_simulation_recipe(recipe_name, seed=None, interarrival_time=None):
     """Spawn opcua_server.py in recipe mode as a subprocess."""
     global sim_process, sim_scenario, sim_recipe
-    global sim_start_time, sim_run_id
+    global sim_start_time, sim_run_id, sim_seed, sim_interarrival_time
 
     with sim_lock:
         stop_simulation()
@@ -343,6 +347,8 @@ def start_simulation_recipe(recipe_name, seed=None, interarrival_time=None):
         sim_scenario = None
         sim_recipe = recipe_name
         sim_start_time = time.time()
+        sim_seed = seed
+        sim_interarrival_time = interarrival_time
 
         # Disconnect OPC UA client (will reconnect lazily)
         _disconnect_opcua()
@@ -587,6 +593,8 @@ def api_status():
         "run_id": sim_run_id,
         "uptime_seconds": uptime,
         "pid": sim_process.pid if sim_process else None,
+        "seed": sim_seed,
+        "interarrival_time": sim_interarrival_time,
     }
 
     # Include OPC UA values if running
