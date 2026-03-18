@@ -845,8 +845,8 @@ def calculate_oee_from_sim(sim_time, machine_downtime, parts_made, cycle_time,
                            good_parts=None, defective_parts=None):
     """Calculate OEE from Simantha's authoritative per-run data."""
     if sim_time <= 0:
-        return {"availability": 0, "performance": 0, "quality": 0, "oee": 0,
-                "good_parts": 0, "defective_parts": 0, "theoretical_output": 0}
+        return {"availability": 0.0, "performance": 0.0, "quality": 0.0, "oee": 0.0,
+                "good_parts": 0, "defective_parts": 0, "theoretical_output": 0.0}
 
     # Availability = (RunTime - Downtime) / RunTime
     availability = max(0.0, min(1.0, (sim_time - machine_downtime) / sim_time))
@@ -1397,7 +1397,7 @@ def calculate_line_level_oee(machines, machine_metrics):
         if cached:
             all_oee_results.append(cached)
         else:
-            all_oee_results.append({"availability": 0, "performance": 0, "quality": 0, "oee": 0})
+            all_oee_results.append({"availability": 0.0, "performance": 0.0, "quality": 0.0, "oee": 0.0})
 
     line_availability = min(r["availability"] for r in all_oee_results) if all_oee_results else 0.0
     line_performance = min(r["performance"] for r in all_oee_results) if all_oee_results else 0.0
