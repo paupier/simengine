@@ -441,15 +441,47 @@
             color: #6a94be; padding: 10px 12px;
         }
 
-        /* ── Alarm ticker ── */
+        /* ── Alarm ticker (now sits above machine grid) ── */
         .alarm-ticker {
             height: var(--ticker-h);
             background: #06090f;
-            border-top: 1px solid var(--border-dim);
+            border-bottom: 1px solid var(--border-dim);
             display: flex; align-items: center;
             padding: 0 16px; gap: 14px;
             flex-shrink: 0; overflow: hidden;
         }
+
+        /* ── Grafana footer bar ── */
+        .grafana-footer {
+            height: var(--ticker-h);
+            background: #06090f;
+            border-top: 1px solid var(--border-dim);
+            display: flex; align-items: center;
+            padding: 0 16px; gap: 0;
+            flex-shrink: 0; overflow: hidden;
+        }
+        .gf-label {
+            font-size: 10px; letter-spacing: 0.1em;
+            text-transform: uppercase; color: var(--text-label);
+            flex-shrink: 0;
+            border-right: 1px solid var(--border-dim);
+            padding-right: 14px; margin-right: 12px; min-width: 90px;
+        }
+        .gf-links { display: flex; gap: 5px; flex: 1; overflow: hidden; }
+        .gf-link {
+            color: #5a7898; text-decoration: none; font-size: 11px;
+            padding: 3px 8px; border-radius: 2px;
+            border: 1px solid var(--border-dim);
+            white-space: nowrap; flex-shrink: 0;
+            transition: color 0.12s, border-color 0.12s, background 0.12s;
+        }
+        .gf-link:hover {
+            color: var(--cyan); border-color: rgba(0,200,230,0.3);
+            background: var(--cyan-dim); text-decoration: none;
+        }
+        .gf-sep { width: 1px; height: 18px; background: var(--border-dim); margin: 0 10px; flex-shrink: 0; align-self: center; }
+        .gf-ext { color: #3d5570; font-size: 10px; white-space: nowrap; flex-shrink: 0; text-decoration: none; letter-spacing: 0.03em; }
+        .gf-ext:hover { color: var(--text-secondary); text-decoration: none; }
         .alarm-ticker-lbl {
             font-size: 10px; letter-spacing: 0.1em;
             text-transform: uppercase; color: var(--text-label);
@@ -604,22 +636,15 @@
                 <button id="btn-stop"  class="btn-hmi btn-hmi-stop"  onclick="stopSim()" disabled>■  Stop</button>
             </div>
 
-            <!-- External links -->
-            <div class="sb-section">
-                <div class="sb-title">Grafana Dashboards</div>
-                <div id="grafana-links"></div>
-                <div style="margin-top:8px;">
-                    <a id="link-influxdb" href="#" target="_blank" class="btn-ext-link">InfluxDB  :8086</a>
-                </div>
-                <div style="color:#6a84a0;font-size:10px;margin-top:8px;word-break:break-all;line-height:1.5;">
-                    opc.tcp://&lt;host&gt;:4840/simantha/
-                </div>
-            </div>
-
         </aside>
 
         <!-- ── Main content ── -->
         <main class="hmi-content">
+            <!-- Alarm ticker — above machine grid -->
+            <div class="alarm-ticker" id="alarm-ticker">
+                <span class="alarm-ticker-lbl">Active Alarms</span>
+                <span class="alarm-none" id="alarm-none">No active alarms</span>
+            </div>
             <div class="machine-grid" id="machine-details">
                 <div class="mc-placeholder">Start a simulation to see machine status</div>
             </div>
@@ -634,10 +659,14 @@
 
     </div>
 
-    <!-- ── Alarm ticker ── -->
-    <footer class="alarm-ticker" id="alarm-ticker">
-        <span class="alarm-ticker-lbl">Active Alarms</span>
-        <span class="alarm-none" id="alarm-none">No active alarms</span>
+    <!-- ── Grafana footer bar ── -->
+    <footer class="grafana-footer">
+        <span class="gf-label">Grafana</span>
+        <div class="gf-links" id="grafana-links"></div>
+        <div class="gf-sep"></div>
+        <a id="link-influxdb" href="#" target="_blank" class="gf-ext">InfluxDB :8086</a>
+        <div class="gf-sep"></div>
+        <span class="gf-ext">opc.tcp://&lt;host&gt;:4840/simantha/</span>
     </footer>
 
     <script>
@@ -672,7 +701,7 @@
         function renderGrafanaLinks() {
             const container = document.getElementById('grafana-links');
             container.innerHTML = GRAFANA_DASHBOARDS.map(d =>
-                `<a href="${buildGrafanaUrl(d.uid, _currentRunId)}" target="_blank" class="btn-ext-link"
+                `<a href="${buildGrafanaUrl(d.uid, _currentRunId)}" target="_blank" class="gf-link"
                     id="glink-${d.uid}">${d.label}</a>`
             ).join('');
         }
