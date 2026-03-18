@@ -30,6 +30,8 @@ class MachineTotals:
     good_count: int = 0
     scrap_count: int = 0
     defective_count: int = 0
+    rework_count: int = 0
+    rework_success_count: int = 0
 
 
 @dataclass
@@ -87,3 +89,5 @@ class LineState:
             mt.good_count += machine_obj._good_count
             mt.scrap_count += machine_obj._scrap_count
             mt.defective_count += getattr(machine_obj, '_defective_count', 0)
+            mt.rework_count += getattr(machine_obj, '_rework_count', 0)
+            mt.rework_success_count += getattr(machine_obj, '_rework_success_count', 0)

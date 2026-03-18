@@ -1224,14 +1224,15 @@ def process_machine_step(machine_name, machine_obj, metrics, config_machines,
     # Write all OPC UA variables for this machine
     write_machine_opcua_vars(machine_vars, machine_obj, current_state, metrics,
                              utilisation, oee_result, health_state,
-                             spc_monitors.get(machine_name), new_parts)
+                             spc_monitors.get(machine_name), new_parts,
+                             machine_totals=machine_totals)
 
     return machine_alarms
 
 
 def write_machine_opcua_vars(machine_vars, machine_obj, current_state, metrics,
                              utilisation, oee_result, health_state,
-                             spc_monitor, new_parts):
+                             spc_monitor, new_parts, machine_totals=None):
     """Write all OPC UA variables for a single machine."""
     # Core state variables
     machine_vars["state"].set_value(current_state)
@@ -1317,16 +1318,21 @@ def write_machine_opcua_vars(machine_vars, machine_obj, current_state, metrics,
     machine_vars["defective_parts"].set_value(oee_result["defective_parts"])
     machine_vars["theoretical"].set_value(oee_result["theoretical_output"])
 
-    # Quality routing
+    # Quality routing — use LineState accumulated totals, not per-step machine_obj
+    # attributes (machine_obj._scrap_count etc. reset to 0 each simulate() call).
     if isinstance(machine_obj, QualityRoutingMixin):
         if "qr_scrap_count" in machine_vars:
-            machine_vars["qr_scrap_count"].set_value(machine_obj._scrap_count)
-            machine_vars["qr_rework_count"].set_value(machine_obj._rework_count)
-            machine_vars["qr_rework_success_count"].set_value(machine_obj._rework_success_count)
-            rsr = (machine_obj._rework_success_count / machine_obj._rework_count
-                   if machine_obj._rework_count > 0 else 0.0)
+            mt = machine_totals
+            scrap_total = mt.scrap_count if mt else machine_obj._scrap_count
+            good_total = mt.good_count if mt else machine_obj._good_count
+            rework_total = mt.rework_count if mt else machine_obj._rework_count
+            rework_success_total = mt.rework_success_count if mt else machine_obj._rework_success_count
+            machine_vars["qr_scrap_count"].set_value(scrap_total)
+            machine_vars["qr_good_count"].set_value(good_total)
+            machine_vars["qr_rework_count"].set_value(rework_total)
+            machine_vars["qr_rework_success_count"].set_value(rework_success_total)
+            rsr = (rework_success_total / rework_total if rework_total > 0 else 0.0)
             machine_vars["qr_rework_success_rate"].set_value(rsr)
-            machine_vars["qr_good_count"].set_value(machine_obj._good_count)
 
 
 def update_buffers(buffers, opcua_vars):
