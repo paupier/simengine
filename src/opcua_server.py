@@ -2006,7 +2006,20 @@ def _install_health_restorer(machine_obj, health: int, carryover=None,
 
     def patched_init():
         base_init()
-        machine_obj.health = saved_health
+        # Cap health at failed_health-1 so machines never start a step in FAILED
+        # state.  When health reaches failed_health the maintainer is called, but
+        # repair (MTTR ~15 s) cannot finish within a 1-second sim step.  The step
+        # ends with machine_health == failed_health.  If we restore that value the
+        # machine is immediately FAILED again with no failure event in the fresh
+        # environment, so the maintainer is never re-notified and the machine is
+        # stuck forever.  Capping at failed_health-1 keeps the machine in
+        # DEGRADED state (can still process parts) and lets degradation reach
+        # failed_health naturally within the next step so the maintainer is called
+        # correctly.  For 2-state machines (failed_health=1) this always resets
+        # health to 0 (healthy), matching the intent of the MTTR-across-step
+        # boundary comment above.
+        failed_health = getattr(machine_obj, 'failed_health', 1)
+        machine_obj.health = min(saved_health, max(0, failed_health - 1))
         # Restore mid-cycle part carryover.
         if saved_carryover and saved_carryover.get('contents'):
             machine_obj.contents = list(saved_carryover['contents'])

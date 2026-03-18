@@ -145,9 +145,10 @@
                         </div>
 
                         <!-- Actions -->
-                        <div class="d-flex gap-2">
+                        <div class="d-flex gap-2 align-items-center">
                             <button class="btn btn-primary" id="btn-save" onclick="saveScenario()">Save</button>
                             <button class="btn btn-outline-secondary" onclick="previewYaml()">Preview YAML</button>
+                            <span id="save-status" style="font-size:0.85rem; display:none;"></span>
                         </div>
                     </div>
                 </div>
@@ -163,6 +164,15 @@
                 </div>
             </div>
         </div>
+
+        <!-- Fixed save toast — visible regardless of scroll position -->
+        <div id="save-toast" style="
+            position: fixed; bottom: 24px; right: 24px; z-index: 9999;
+            min-width: 260px; padding: 14px 18px; border-radius: 8px;
+            font-size: 0.9rem; font-weight: 500; display: none;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            transition: opacity 0.3s ease;
+        "></div>
 {% endblock %}
 {% block scripts %}
     <script>
@@ -595,25 +605,59 @@
                 method = 'PUT';
             }
 
-            const resp = await fetch(url, {
-                method: method,
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(cfg)
-            });
-            const result = await resp.json();
-            if (resp.ok) {
-                showAlert(`Scenario saved: ${result.scenario}`, 'success');
-                await loadScenarioList();
-                const savedName = result.scenario;
-                if (isNewScenario) {
-                    isNewScenario = false;
-                    document.getElementById('name-group').style.display = 'none';
+            const btn = document.getElementById('btn-save');
+            const statusEl = document.getElementById('save-status');
+            btn.disabled = true;
+            btn.textContent = 'Saving…';
+            statusEl.style.display = 'none';
+
+            try {
+                const resp = await fetch(url, {
+                    method: method,
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(cfg)
+                });
+                const result = await resp.json();
+                if (resp.ok) {
+                    const savedName = result.scenario;
+                    // Button feedback
+                    btn.textContent = '✓ Saved';
+                    btn.classList.replace('btn-primary', 'btn-success');
+                    // Inline status with timestamp
+                    const now = new Date();
+                    const ts = now.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit', second: '2-digit'});
+                    statusEl.textContent = `Saved at ${ts}`;
+                    statusEl.style.color = '#2ecc71';
+                    statusEl.style.display = 'inline';
+                    // Fixed toast at bottom-right
+                    showToast(`✓ Scenario "${savedName}" saved`, 'success');
+                    // Update list and reload YAML preview (but keep form values)
+                    await loadScenarioList();
+                    if (isNewScenario) {
+                        isNewScenario = false;
+                        document.getElementById('name-group').style.display = 'none';
+                    }
+                    document.getElementById('scenario-select').value = savedName;
+                    currentScenario = savedName;
+                    // Refresh YAML preview to confirm saved content
+                    await loadYamlPreview(savedName);
+                    // Restore button after 3s
+                    setTimeout(() => {
+                        btn.textContent = 'Save';
+                        btn.classList.replace('btn-success', 'btn-primary');
+                        btn.disabled = false;
+                    }, 3000);
+                } else {
+                    showAlert(result.error || 'Save failed', 'danger');
+                    showToast(`✗ Save failed: ${result.error || 'unknown error'}`, 'error');
+                    btn.textContent = 'Save';
+                    btn.disabled = false;
                 }
-                document.getElementById('scenario-select').value = savedName;
-                currentScenario = savedName;
-                await loadScenario(savedName);
-            } else {
-                showAlert(result.error, 'danger');
+            } catch (e) {
+                showAlert(`Save error: ${e.message}`, 'danger');
+                showToast(`✗ Save error: ${e.message}`, 'error');
+                btn.textContent = 'Save';
+                btn.disabled = false;
             }
         }
 
@@ -668,6 +712,28 @@
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>`;
             setTimeout(() => { area.innerHTML = ''; }, 5000);
+        }
+
+        let _toastTimer = null;
+        function showToast(msg, kind) {
+            const toast = document.getElementById('save-toast');
+            if (kind === 'success') {
+                toast.style.background = '#0d2b1a';
+                toast.style.color = '#2ecc71';
+                toast.style.border = '1px solid #2ecc7166';
+            } else {
+                toast.style.background = '#2b0d0d';
+                toast.style.color = '#e74c3c';
+                toast.style.border = '1px solid #e74c3c66';
+            }
+            toast.textContent = msg;
+            toast.style.display = 'block';
+            toast.style.opacity = '1';
+            if (_toastTimer) clearTimeout(_toastTimer);
+            _toastTimer = setTimeout(() => {
+                toast.style.opacity = '0';
+                setTimeout(() => { toast.style.display = 'none'; }, 300);
+            }, 4000);
         }
 
         // --- PPM / Cycle Time bidirectional sync ---
