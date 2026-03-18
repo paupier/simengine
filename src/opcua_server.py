@@ -1121,9 +1121,16 @@ def process_machine_step(machine_name, machine_obj, metrics, config_machines,
     metrics["partcount"] = total_parts_produced
 
     # Quality routing: defect tracking
+    # Use machine_totals (LineState accumulated values) when available — quality
+    # counters are reset to 0 each simulate() call by initialize_addon_process(),
+    # so reading machine_obj._good_count directly only gives the per-step delta.
     if isinstance(machine_obj, QualityRoutingMixin):
-        metrics["defective_parts"] = machine_obj._scrap_count + machine_obj._defective_count
-        metrics["good_parts"] = machine_obj._good_count
+        if machine_totals:
+            metrics["defective_parts"] = machine_totals.scrap_count + machine_totals.defective_count
+            metrics["good_parts"] = machine_totals.good_count
+        else:
+            metrics["defective_parts"] = machine_obj._scrap_count + machine_obj._defective_count
+            metrics["good_parts"] = machine_obj._good_count
         metrics["partcount"] = metrics["good_parts"] + metrics["defective_parts"]
         new_defects = metrics["defective_parts"] - (prev_partcount - metrics.get("prev_good", 0))
         if new_defects < 0:
