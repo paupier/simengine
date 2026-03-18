@@ -1970,24 +1970,97 @@ def build_opcua_server(config: dict):
 # ========== SEGMENT RUNNER ==========
 
 
-def _install_health_restorer(machine_obj, health: int) -> None:
-    """Monkey-patch machine.initialize() to restore health after Simantha resets it.
+def _install_health_restorer(machine_obj, health: int, carryover=None,
+                             under_repair: bool = False) -> None:
+    """Monkey-patch machine.initialize() to restore health and mid-cycle state.
 
-    Each system.simulate() call reinitializes all objects (health → 0).  By
-    wrapping initialize() we restore the saved health value immediately after
-    Simantha's reset, so degradation and failures accumulate across steps.
+    Each system.simulate() call reinitializes all objects (health → 0,
+    has_part → False, contents → []).  By wrapping initialize() we:
+      1. Restore health so degradation accumulates across steps.
+      2. Restore any in-progress part so machines with cycle_time >= sim_step
+         continue processing across step boundaries (carryover).
+      3. Restore under_repair flag so failed machines don't pull new parts.
+
+    Args:
+        machine_obj: Simantha Machine instance.
+        health: Saved health state from end of previous step.
+        carryover: Dict with keys 'contents', 'finished', 'remaining', or None.
+        under_repair: Whether the machine was under repair at end of previous step.
     """
     if not hasattr(machine_obj, '_base_initialize'):
         machine_obj._base_initialize = machine_obj.initialize
 
     base_init = machine_obj._base_initialize
     saved_health = health
+    saved_carryover = carryover
+    saved_under_repair = under_repair
+    failed_health = getattr(machine_obj, 'failed_health', 1)
 
     def patched_init():
         base_init()
         machine_obj.health = saved_health
+        # Fix the failed flag: base_init set it based on initial_health (0),
+        # not our restored health value.
+        if saved_health >= failed_health:
+            machine_obj.failed = True
+        # Restore under_repair so the machine doesn't incorrectly pull parts.
+        if saved_under_repair:
+            machine_obj.under_repair = True
+        # Restore mid-cycle part carryover.
+        if saved_carryover and saved_carryover.get('contents'):
+            machine_obj.contents = list(saved_carryover['contents'])
+            machine_obj.has_part = True
+            machine_obj.starved = False
+            if saved_carryover.get('finished'):
+                # Part finished processing but was blocked — try downstream immediately.
+                machine_obj.has_finished_part = True
+                machine_obj.env.schedule_event(
+                    0, machine_obj.name, machine_obj.request_space, 'carryover_blocked'
+                )
+            else:
+                remaining = max(0.001, saved_carryover.get('remaining', 1.0))
+                machine_obj.env.schedule_event(
+                    remaining, machine_obj.name, machine_obj.request_space, 'carryover'
+                )
 
     machine_obj.initialize = patched_init
+
+
+def _persist_buffer_state(buffers) -> None:
+    """Monkey-patch each Buffer.initialize() to restore level and contents.
+
+    Simantha's Buffer.initialize() always resets level to initial_level (0 by
+    default), emptying every inter-machine buffer at the start of each step.
+    This starves all machines downstream of M1.  By saving the end-of-step
+    level and contents list and restoring them in a patched initialize(), parts
+    persist across step boundaries so the full production line operates.
+
+    After restoring, downstream machines that are starved are woken via a
+    request_part event at t=0, completing the notification chain that would
+    normally happen via Buffer.put().
+    """
+    for bobj in buffers.values():
+        saved_level = bobj.level
+        saved_contents = list(getattr(bobj, 'contents', []))
+
+        if not hasattr(bobj, '_base_initialize'):
+            bobj._base_initialize = bobj.initialize
+
+        def make_patch(base_init, level, contents, buf):
+            def patched_init():
+                base_init()
+                buf.level = level
+                buf.contents = list(contents)
+                # Wake downstream starved machines that now have parts available.
+                if level > 0:
+                    for machine in buf.downstream:
+                        if buf.can_give() and machine.can_receive():
+                            buf.env.schedule_event(
+                                0, machine, machine.request_part, 'buf_restore'
+                            )
+            return patched_init
+
+        bobj.initialize = make_patch(bobj._base_initialize, saved_level, saved_contents, bobj)
 
 
 def run_segment(
@@ -2121,6 +2194,13 @@ def run_segment(
     # Per-machine saved health state — carried across simulate() calls so
     # degradation accumulates.  0 = healthy at segment start.
     machine_health = {mname: 0 for mname in machines}
+    # Per-machine mid-cycle part carryover — saves in-progress parts so they
+    # continue processing across step boundaries (cycle_time >= sim_step, or
+    # parts acquired late in a step and not yet completed).
+    machine_carryover = {mname: None for mname in machines}
+    # Per-machine under_repair flag — prevents incorrectly pulling new parts
+    # while a repair is in progress across step boundaries.
+    machine_under_repair = {mname: False for mname in machines}
     production_summary_counter = 0.0
     production_summary_interval = config.get("historian", {}).get(
         "events", {}
@@ -2159,17 +2239,53 @@ def run_segment(
         step_seed = (sim_seed + line_state.step_count) % (2 ** 31)
         random.seed(step_seed)
         np.random.seed(step_seed)
+        # Persist buffer levels and contents so downstream machines are not
+        # starved on every step (Buffer.initialize() normally resets to 0).
+        _persist_buffer_state(buffers)
         for mname, mobj in machines.items():
             mobj._counting_active = line_state.step_count >= warm_up_time
-            # Restore saved health so degradation carries across steps.
-            _install_health_restorer(mobj, machine_health[mname])
+            # Restore saved health, under_repair flag, and any in-progress part.
+            _install_health_restorer(
+                mobj, machine_health[mname],
+                carryover=machine_carryover[mname],
+                under_repair=machine_under_repair[mname],
+            )
         system.simulate(warm_up_time=0, simulation_time=sim_step,
                         verbose=False, collect_data=False, trace=trace)
         system._last_completed_sim_time = sim_step
         system._last_warm_up_time = 0
-        # Save health for next step before any post-simulate reads mutate it.
+        # Save health and repair state for next step.
         for mname, mobj in machines.items():
             machine_health[mname] = getattr(mobj, 'health', 0)
+            machine_under_repair[mname] = getattr(mobj, 'under_repair', False)
+        # Save mid-cycle part carryover for next step: any machine that still
+        # has a part at step end (either mid-cycle or blocked downstream).
+        machine_carryover = {}
+        for mname, mobj in machines.items():
+            if getattr(mobj, 'has_part', False) and mobj.contents:
+                if getattr(mobj, 'blocked', False) or getattr(mobj, 'has_finished_part', False):
+                    # Part finished but blocked waiting for downstream space.
+                    machine_carryover[mname] = {
+                        'contents': list(mobj.contents),
+                        'finished': True,
+                        'remaining': 0.0,
+                    }
+                else:
+                    # Part mid-cycle — find remaining time from event queue.
+                    remaining = None
+                    for event in system.env.events:
+                        if (not event.canceled
+                                and event.location == mname
+                                and event.action.__name__ == 'request_space'):
+                            remaining = max(0.001, event.time - system.env.now)
+                            break
+                    machine_carryover[mname] = {
+                        'contents': list(mobj.contents),
+                        'finished': False,
+                        'remaining': remaining if remaining is not None else 1.0,
+                    }
+            else:
+                machine_carryover[mname] = None
 
         # Sync LineState from Simantha objects immediately after simulate().
         # Must happen before shift snapshots and process_machine_step reads.
