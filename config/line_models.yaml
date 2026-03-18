@@ -711,7 +711,7 @@ full_feature_line:
 # Scenario: 8-Machine Full-Feature Line (max-scale stress test)
 full_feature_8_machine_line:
   description: "8-machine line with ALL features enabled: advanced failures, SPC, quality routing, degradation, shifts, historian"
-  warm_up_time: 600
+  warm_up_time: 120
   machines:
     - name: M1
       cycle_time: 1.0

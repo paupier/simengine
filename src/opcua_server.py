@@ -2333,6 +2333,8 @@ def run_segment(
         # for a long time after warm-up ends (e.g. with warm_up=600 and sim_time
         # only a few steps past 600, actual_ppm = 5 / (605/60) ≈ 0.5).
         if warm_up_time > 0 and line_state.step_count == warm_up_time:
+            print(f"[t={sim_time:.0f}s] Warm-up complete ({warm_up_time}s). "
+                  f"Resetting time accumulators — PPM/OEE now active.")
             shift_start_time = sim_time
             for mname in machines:
                 for key in ("processing_time", "blocked_time", "starved_time",
@@ -2501,6 +2503,8 @@ def main(argv=None):
         config.setdefault("source", {})["interarrival_time"] = args.interarrival_time
     print(f"Loading scenario: {args.scenario}")
     print(f"RunID: {run_id}")
+    _wu = int(config.get("warm_up_time", 0))
+    print(f"  warm_up_time: {_wu}s {'(metrics gated until t=' + str(_wu) + 's)' if _wu > 0 else '(disabled — metrics active from t=0)'}")
 
     # Build Simantha system from config
     system, source, sink, machines, buffers, maintainer, scrap_sinks = build_simantha_system(config)

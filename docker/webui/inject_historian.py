@@ -5,6 +5,10 @@ Reads line_models.yaml, adds historian block (with InfluxDB enabled) to any
 scenario that lacks one, and writes the result to line_models_runtime.yaml.
 Scenarios that already have a historian block are updated to enable InfluxDB
 and point at the Docker-internal InfluxDB URL.
+
+If line_models_runtime.yaml already exists (i.e. user has edited it via the
+web UI), non-historian fields (like warm_up_time) are preserved from the
+runtime file so that web UI edits survive container restarts.
 """
 import os
 from pathlib import Path
@@ -23,6 +27,17 @@ def inject_historian_config():
 
     with open(source_path, "r") as f:
         all_configs = _ryaml.load(f)
+
+    # Load existing runtime YAML if it exists so we can preserve user edits
+    # (e.g. warm_up_time changed via the web UI config editor).
+    existing_runtime = {}
+    if output_path.exists():
+        try:
+            with open(output_path, "r") as f:
+                existing_runtime = _ryaml.load(f) or {}
+            print(f"[Docker] Existing runtime config found — preserving user edits")
+        except Exception as e:
+            print(f"[Docker] Warning: could not read existing runtime config: {e}")
 
     influxdb_url = os.environ.get("INFLUXDB_URL", "http://influxdb:8086")
     influxdb_token = os.environ.get("INFLUXDB_TOKEN", "simantha-dev-token")
@@ -60,6 +75,26 @@ def inject_historian_config():
     for scenario_name, scenario_cfg in all_configs.items():
         if not isinstance(scenario_cfg, dict):
             continue
+
+        # If the runtime YAML already has this scenario, overlay the user's
+        # non-historian fields on top of the source config so edits are kept.
+        existing_scenario = existing_runtime.get(scenario_name)
+        if isinstance(existing_scenario, dict):
+            # Preserve user-edited scalar fields (warm_up_time, description, …)
+            # but NOT machines/buffers/historian — those come from source or
+            # are handled below.
+            preserved_keys = {
+                "warm_up_time", "description", "source",
+                "enterprise", "site", "area", "line_name",
+            }
+            for key in preserved_keys:
+                if key in existing_scenario:
+                    scenario_cfg[key] = existing_scenario[key]
+            # Also preserve user-edited machines and buffers lists if present
+            for key in ("machines", "buffers", "scrap_sinks", "shifts",
+                        "maintainer"):
+                if key in existing_scenario:
+                    scenario_cfg[key] = existing_scenario[key]
 
         if "historian" not in scenario_cfg:
             # Scenario has no historian - inject full block
