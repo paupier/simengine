@@ -906,6 +906,13 @@
                     // Actions
                     const tdAct = document.createElement('td');
                     let actions = '';
+                    // Grafana deep link — Manufacturing Overview filtered to this run_id
+                    const gHost = window.location.hostname;
+                    const gDate = parseDateFromRunId(run.run_id);
+                    const gFrom = gDate ? gDate.getTime() - 60000 : 'now-7d';
+                    const gTo   = gDate ? gDate.getTime() + 86400000 : 'now';
+                    const gUrl  = `http://${gHost}:3000/d/simantha-overview?var-run_id=${encodeURIComponent(run.run_id)}&from=${gFrom}&to=${gTo}`;
+                    actions += `<a href="${gUrl}" target="_blank" class="btn btn-outline-secondary btn-sm me-1" title="Open in Grafana">Grafana</a>`;
                     if (!analyzed && run.csv_file) {
                         actions += `<button class="btn btn-outline-primary btn-sm me-1"
                             onclick="analyzeRun('${run.csv_file}', this)">Analyze</button>`;

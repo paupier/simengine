@@ -605,9 +605,11 @@
 
             <!-- External links -->
             <div class="sb-section">
-                <div class="sb-title">External Links</div>
-                <a id="link-grafana" href="#" target="_blank" class="btn-ext-link">Grafana  :3000</a>
-                <a id="link-influxdb" href="#" target="_blank" class="btn-ext-link">InfluxDB  :8086</a>
+                <div class="sb-title">Grafana Dashboards</div>
+                <div id="grafana-links"></div>
+                <div style="margin-top:8px;">
+                    <a id="link-influxdb" href="#" target="_blank" class="btn-ext-link">InfluxDB  :8086</a>
+                </div>
                 <div style="color:#6a84a0;font-size:10px;margin-top:8px;word-break:break-all;line-height:1.5;">
                     opc.tcp://&lt;host&gt;:4840/simantha/
                 </div>
@@ -644,8 +646,43 @@
 
         // --- External links ---
         const host = window.location.hostname;
-        document.getElementById('link-grafana').href  = `http://${host}:3000`;
         document.getElementById('link-influxdb').href = `http://${host}:8086`;
+
+        // --- Grafana deep links ---
+        let _currentRunId = null;
+
+        const GRAFANA_DASHBOARDS = [
+            { uid: 'simantha-overview',             label: 'Manufacturing Overview' },
+            { uid: 'simantha-oee-detail',           label: 'OEE Detail'             },
+            { uid: 'simantha-machine-kpis',         label: 'Machine KPIs'           },
+            { uid: 'simantha-state-timeline',       label: 'State Timeline'         },
+            { uid: 'simantha-downtime-reliability', label: 'Downtime & Reliability' },
+            { uid: 'simantha-spc',                  label: 'SPC Control Charts'     },
+            { uid: 'simantha-shift-comparison',     label: 'Shift Comparison'       },
+            { uid: 'simantha-alarm-log',            label: 'Alarm Event Log'        },
+        ];
+
+        function buildGrafanaUrl(uid, runId) {
+            let url = `http://${host}:3000/d/${uid}?from=now-1h&to=now&refresh=5s`;
+            if (runId) url += `&var-run_id=${encodeURIComponent(runId)}`;
+            return url;
+        }
+
+        function renderGrafanaLinks() {
+            const container = document.getElementById('grafana-links');
+            container.innerHTML = GRAFANA_DASHBOARDS.map(d =>
+                `<a href="${buildGrafanaUrl(d.uid, _currentRunId)}" target="_blank" class="btn-ext-link"
+                    id="glink-${d.uid}">${d.label}</a>`
+            ).join('');
+        }
+
+        function updateGrafanaLinks(runId) {
+            if (runId === _currentRunId) return;
+            _currentRunId = runId || null;
+            renderGrafanaLinks();
+        }
+
+        renderGrafanaLinks();
 
         // --- Mode toggle ---
         document.getElementById('mode-scenario').addEventListener('change', () => {
@@ -993,7 +1030,8 @@
                 document.getElementById('hdr-uptime').textContent =
                     data.uptime_seconds ? `${Math.floor(data.uptime_seconds)}s` : '';
 
-                // Run ID
+                // Run ID + Grafana links
+                updateGrafanaLinks(data.running ? data.run_id : null);
                 const runIdEl = document.getElementById('hdr-run-id');
                 if (data.run_id && data.running) {
                     runIdEl.style.display = '';
