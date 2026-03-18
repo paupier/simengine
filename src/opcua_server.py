@@ -1979,13 +1979,23 @@ def _install_health_restorer(machine_obj, health: int, carryover=None,
       1. Restore health so degradation accumulates across steps.
       2. Restore any in-progress part so machines with cycle_time >= sim_step
          continue processing across step boundaries (carryover).
-      3. Restore under_repair flag so failed machines don't pull new parts.
+
+    NOTE: under_repair and failed flags are intentionally NOT restored here.
+    Simantha's maintenance completion event (restore()) is scheduled in the
+    event queue with an absolute time.  That event is lost when the step ends
+    because the environment resets.  If we restore under_repair=True without
+    also re-scheduling restore(), the machine stays in repair forever.
+    Instead, machines that were mid-repair reset to operational at the start of
+    the next step (with their saved health state).  This means repair downtime
+    is not fully modelled across step boundaries, but it allows all machines to
+    produce parts and show non-zero PPM.  Health state still accumulates
+    correctly so degradation and failure frequency are realistic.
 
     Args:
         machine_obj: Simantha Machine instance.
         health: Saved health state from end of previous step.
         carryover: Dict with keys 'contents', 'finished', 'remaining', or None.
-        under_repair: Whether the machine was under repair at end of previous step.
+        under_repair: Unused — kept for API compatibility.
     """
     if not hasattr(machine_obj, '_base_initialize'):
         machine_obj._base_initialize = machine_obj.initialize
@@ -1993,19 +2003,10 @@ def _install_health_restorer(machine_obj, health: int, carryover=None,
     base_init = machine_obj._base_initialize
     saved_health = health
     saved_carryover = carryover
-    saved_under_repair = under_repair
-    failed_health = getattr(machine_obj, 'failed_health', 1)
 
     def patched_init():
         base_init()
         machine_obj.health = saved_health
-        # Fix the failed flag: base_init set it based on initial_health (0),
-        # not our restored health value.
-        if saved_health >= failed_health:
-            machine_obj.failed = True
-        # Restore under_repair so the machine doesn't incorrectly pull parts.
-        if saved_under_repair:
-            machine_obj.under_repair = True
         # Restore mid-cycle part carryover.
         if saved_carryover and saved_carryover.get('contents'):
             machine_obj.contents = list(saved_carryover['contents'])
@@ -2244,11 +2245,10 @@ def run_segment(
         _persist_buffer_state(buffers)
         for mname, mobj in machines.items():
             mobj._counting_active = line_state.step_count >= warm_up_time
-            # Restore saved health, under_repair flag, and any in-progress part.
+            # Restore saved health and any in-progress part carryover.
             _install_health_restorer(
                 mobj, machine_health[mname],
                 carryover=machine_carryover[mname],
-                under_repair=machine_under_repair[mname],
             )
         system.simulate(warm_up_time=0, simulation_time=sim_step,
                         verbose=False, collect_data=False, trace=trace)
