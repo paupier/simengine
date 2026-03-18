@@ -1357,11 +1357,22 @@ def update_buffers(buffers, opcua_vars):
     return buffer_alarms_map
 
 
-def update_scrap_tracking(scrap_sinks, total_parts_produced, opcua_vars):
-    """Update scrap sink levels and compute scrap KPIs. Returns total_scrap."""
+def update_scrap_tracking(scrap_sinks, total_parts_produced, opcua_vars,
+                          scrap_totals=None):
+    """Update scrap sink levels and compute scrap KPIs. Returns total_scrap.
+
+    Args:
+        scrap_totals: Optional dict {scrap_name: cumulative_count} accumulated
+            by the caller across steps.  When provided it is used in place of
+            scrap_obj.level (which resets to 0 each step and caused the
+            scrap-rate metric to jump between a per-step spike and 0).
+    """
     total_scrap = 0
     for scrap_name, scrap_obj in scrap_sinks.items():
-        scrap_level = scrap_obj.level
+        if scrap_totals is not None:
+            scrap_level = scrap_totals.get(scrap_name, 0)
+        else:
+            scrap_level = scrap_obj.level
         total_scrap += scrap_level
         if scrap_name in opcua_vars["scrap_sinks"]:
             opcua_vars["scrap_sinks"][scrap_name]["level"].set_value(scrap_level)
@@ -2006,20 +2017,22 @@ def _install_health_restorer(machine_obj, health: int, carryover=None,
 
     def patched_init():
         base_init()
-        # Cap health at failed_health-1 so machines never start a step in FAILED
-        # state.  When health reaches failed_health the maintainer is called, but
-        # repair (MTTR ~15 s) cannot finish within a 1-second sim step.  The step
-        # ends with machine_health == failed_health.  If we restore that value the
-        # machine is immediately FAILED again with no failure event in the fresh
-        # environment, so the maintainer is never re-notified and the machine is
-        # stuck forever.  Capping at failed_health-1 keeps the machine in
-        # DEGRADED state (can still process parts) and lets degradation reach
-        # failed_health naturally within the next step so the maintainer is called
-        # correctly.  For 2-state machines (failed_health=1) this always resets
-        # health to 0 (healthy), matching the intent of the MTTR-across-step
-        # boundary comment above.
+        # Health continuity across step boundaries:
+        # - If the machine was degraded (health < failed_health): restore the
+        #   saved health so degradation accumulates realistically across steps.
+        # - If the machine was fully FAILED (health >= failed_health): the
+        #   maintainer was called but repair (MTTR ~15 s) couldn't finish in
+        #   the 1-second step.  Reset to health=0 (fully repaired) at the step
+        #   boundary — the repair "completes" between steps.  This prevents
+        #   machines from being permanently stuck FAILED with no repair event
+        #   in the fresh environment, while keeping inter-step defect rates
+        #   realistic (healthy machine, low defect rate, degrades again over
+        #   subsequent steps).
         failed_health = getattr(machine_obj, 'failed_health', 1)
-        machine_obj.health = min(saved_health, max(0, failed_health - 1))
+        if saved_health >= failed_health:
+            machine_obj.health = 0   # repair completes at step boundary
+        else:
+            machine_obj.health = saved_health
         # Restore mid-cycle part carryover.
         if saved_carryover and saved_carryover.get('contents'):
             machine_obj.contents = list(saved_carryover['contents'])
@@ -2215,6 +2228,10 @@ def run_segment(
     # Per-machine under_repair flag — prevents incorrectly pulling new parts
     # while a repair is in progress across step boundaries.
     machine_under_repair = {mname: False for mname in machines}
+    # Running scrap totals — scrap Sink.level resets to 0 each step (same as
+    # the main sink), so we accumulate deltas here rather than reading the
+    # raw level which would jump up/down each step.
+    scrap_totals = {sname: 0 for sname in scrap_sinks}
     production_summary_counter = 0.0
     production_summary_interval = config.get("historian", {}).get(
         "events", {}
@@ -2310,6 +2327,34 @@ def run_segment(
         delta_parts = line_state.sync_sink(sink.level)
         total_parts_produced = line_state.total_parts_produced
 
+        # Warm-up completion: reset time accumulators and OEE shift baseline so
+        # PPM and OEE are computed from post-warm-up time only.  Without this,
+        # the denominators include warm-up seconds and PPM/OEE appear near-zero
+        # for a long time after warm-up ends (e.g. with warm_up=600 and sim_time
+        # only a few steps past 600, actual_ppm = 5 / (605/60) ≈ 0.5).
+        if warm_up_time > 0 and line_state.step_count == warm_up_time:
+            shift_start_time = sim_time
+            for mname in machines:
+                for key in ("processing_time", "blocked_time", "starved_time",
+                            "down_time", "idle_time"):
+                    machine_metrics[mname][key] = 0.0
+                mt = line_state.machines[mname]
+                shift_oee_snapshots[mname] = {
+                    "down_time_accum": 0.0,
+                    "parts_made": mt.parts_made,
+                    "good_count": mt.good_count,
+                    "scrap_count": mt.scrap_count,
+                    "defective_count": mt.defective_count,
+                    "metric_good": 0,
+                    "metric_defective": 0,
+                }
+
+        # Scrap accumulator — scrap Sink.level resets to 0 each step (same
+        # mechanism as the main sink), so accumulate deltas just like sync_sink.
+        for sname, sobj in scrap_sinks.items():
+            if sobj.level > 0:
+                scrap_totals[sname] += sobj.level
+
         # Shift rotation
         shift_rotated = check_shift_rotation(shift_manager, sim_time)
         if shift_rotated:
@@ -2350,7 +2395,8 @@ def run_segment(
         buffer_alarms_map = update_buffers(buffers, opcua_vars)
 
         # Scrap tracking
-        update_scrap_tracking(scrap_sinks, total_parts_produced, opcua_vars)
+        update_scrap_tracking(scrap_sinks, total_parts_produced, opcua_vars,
+                              scrap_totals=scrap_totals)
 
         # Line-level OEE
         line_avail, line_perf, line_qual, line_oee = \
