@@ -1988,31 +1988,34 @@ def build_opcua_server(config: dict):
 
 
 def _install_health_restorer(machine_obj, health: int, carryover=None,
-                             under_repair: bool = False) -> None:
+                             under_repair: bool = False,
+                             repair_remaining: float = 0.0) -> None:
     """Monkey-patch machine.initialize() to restore health and mid-cycle state.
 
     Each system.simulate() call reinitializes all objects (health → 0,
     has_part → False, contents → []).  By wrapping initialize() we:
       1. Restore health so degradation accumulates across steps.
-      2. Restore any in-progress part so machines with cycle_time >= sim_step
+      2. Keep machines FAILED for the full sampled MTTR duration so repair
+         downtime is realistically modelled across step boundaries.
+      3. Restore any in-progress part so machines with cycle_time >= sim_step
          continue processing across step boundaries (carryover).
 
-    NOTE: under_repair and failed flags are intentionally NOT restored here.
-    Simantha's maintenance completion event (restore()) is scheduled in the
-    event queue with an absolute time.  That event is lost when the step ends
-    because the environment resets.  If we restore under_repair=True without
-    also re-scheduling restore(), the machine stays in repair forever.
-    Instead, machines that were mid-repair reset to operational at the start of
-    the next step (with their saved health state).  This means repair downtime
-    is not fully modelled across step boundaries, but it allows all machines to
-    produce parts and show non-zero PPM.  Health state still accumulates
-    correctly so degradation and failure frequency are realistic.
+    Repair tracking (repair_remaining):
+      When a machine fails (health >= failed_health), the caller samples a
+      repair duration from the machine's MTTR distribution and passes it as
+      repair_remaining.  Each subsequent step the caller decrements it by
+      sim_step.  While repair_remaining > 0 the machine is kept at
+      failed_health with under_repair=True so it shows UNDER_REPAIR in OPC UA
+      and continues accumulating down_time.  When repair_remaining reaches 0
+      the machine is restored to health=0 (fully repaired).
 
     Args:
         machine_obj: Simantha Machine instance.
         health: Saved health state from end of previous step.
         carryover: Dict with keys 'contents', 'finished', 'remaining', or None.
         under_repair: Unused — kept for API compatibility.
+        repair_remaining: Seconds of repair time still outstanding.  0 means
+            either the machine is not failed or repair just completed.
     """
     if not hasattr(machine_obj, '_base_initialize'):
         machine_obj._base_initialize = machine_obj.initialize
@@ -2020,23 +2023,28 @@ def _install_health_restorer(machine_obj, health: int, carryover=None,
     base_init = machine_obj._base_initialize
     saved_health = health
     saved_carryover = carryover
+    saved_repair_remaining = repair_remaining
 
     def patched_init():
         base_init()
         # Health continuity across step boundaries:
-        # - If the machine was degraded (health < failed_health): restore the
-        #   saved health so degradation accumulates realistically across steps.
-        # - If the machine was fully FAILED (health >= failed_health): the
-        #   maintainer was called but repair (MTTR ~15 s) couldn't finish in
-        #   the 1-second step.  Reset to health=0 (fully repaired) at the step
-        #   boundary — the repair "completes" between steps.  This prevents
-        #   machines from being permanently stuck FAILED with no repair event
-        #   in the fresh environment, while keeping inter-step defect rates
-        #   realistic (healthy machine, low defect rate, degrades again over
-        #   subsequent steps).
+        # - Degraded (health < failed_health): restore saved health so
+        #   degradation accumulates realistically.
+        # - FAILED (health >= failed_health) with repair in progress:
+        #   keep machine at failed_health and set under_repair=True so it
+        #   shows UNDER_REPAIR and continues accumulating down_time.  The
+        #   caller's repair_remaining countdown controls when repair finishes.
+        # - FAILED with repair_remaining == 0: repair just completed, restore
+        #   to health=0 so the machine starts the new step fully healthy.
         failed_health = getattr(machine_obj, 'failed_health', 1)
         if saved_health >= failed_health:
-            machine_obj.health = 0   # repair completes at step boundary
+            if saved_repair_remaining > 0:
+                # Repair still in progress — keep machine FAILED/UNDER_REPAIR.
+                machine_obj.health = failed_health
+                machine_obj.under_repair = True
+            else:
+                # Repair complete (or first step, repair will be sampled).
+                machine_obj.health = 0
         else:
             machine_obj.health = saved_health
         # Restore mid-cycle part carryover.
@@ -2234,6 +2242,11 @@ def run_segment(
     # Per-machine under_repair flag — prevents incorrectly pulling new parts
     # while a repair is in progress across step boundaries.
     machine_under_repair = {mname: False for mname in machines}
+    # Per-machine remaining repair time (seconds).  When a machine first fails
+    # (health >= failed_health) we sample the MTTR distribution and store the
+    # result here.  Each step we decrement by sim_step.  While > 0 the machine
+    # stays FAILED/UNDER_REPAIR; when it reaches 0 health is reset to 0.
+    machine_repair_remaining = {mname: 0.0 for mname in machines}
     # Running scrap totals — scrap Sink.level resets to 0 each step (same as
     # the main sink), so we accumulate deltas here rather than reading the
     # raw level which would jump up/down each step.
@@ -2285,6 +2298,7 @@ def run_segment(
             _install_health_restorer(
                 mobj, machine_health[mname],
                 carryover=machine_carryover[mname],
+                repair_remaining=machine_repair_remaining[mname],
             )
         system.simulate(warm_up_time=0, simulation_time=sim_step,
                         verbose=False, collect_data=False, trace=trace)
@@ -2294,6 +2308,29 @@ def run_segment(
         for mname, mobj in machines.items():
             machine_health[mname] = getattr(mobj, 'health', 0)
             machine_under_repair[mname] = getattr(mobj, 'under_repair', False)
+
+        # Update repair countdown for each machine.
+        # On the step a machine first fails: sample MTTR and start countdown.
+        # On subsequent repair steps: decrement and keep machine FAILED.
+        # When countdown reaches 0: next patched_init restores health=0.
+        for mname, mobj in machines.items():
+            fh = getattr(mobj, 'failed_health', 1)
+            curr_health = machine_health[mname]
+            if curr_health >= fh:
+                if machine_repair_remaining[mname] <= 0:
+                    # Machine just reached failed state this step — sample MTTR.
+                    repair_time = float(mobj.get_time_to_repair())
+                    # Ensure at least sim_step so the machine is visible as
+                    # UNDER_REPAIR for at least one step before recovering.
+                    machine_repair_remaining[mname] = max(sim_step, repair_time)
+                else:
+                    # Repair in progress — count down.
+                    machine_repair_remaining[mname] = max(
+                        0.0, machine_repair_remaining[mname] - sim_step
+                    )
+            else:
+                # Machine healthy or degraded — no repair in progress.
+                machine_repair_remaining[mname] = 0.0
         # Save mid-cycle part carryover for next step: any machine that still
         # has a part at step end (either mid-cycle or blocked downstream).
         machine_carryover = {}

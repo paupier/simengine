@@ -223,14 +223,26 @@ while True:
     np.random.seed(step_seed)
     for mname, mobj in machines.items():
         mobj._counting_active = line_state.step_count >= warm_up_time
-        _install_health_restorer(mobj, machine_health[mname])
+        _install_health_restorer(mobj, machine_health[mname],
+                                 repair_remaining=machine_repair_remaining[mname])
     system.simulate(warm_up_time=0, simulation_time=sim_step, ...)
     for mname, mobj in machines.items():
         machine_health[mname] = getattr(mobj, 'health', 0)
+    # Repair countdown — see "Repair downtime tracking" below
+    for mname, mobj in machines.items():
+        fh = getattr(mobj, 'failed_health', 1)
+        if machine_health[mname] >= fh:
+            if machine_repair_remaining[mname] <= 0:
+                machine_repair_remaining[mname] = max(sim_step, mobj.get_time_to_repair())
+            else:
+                machine_repair_remaining[mname] = max(0.0, machine_repair_remaining[mname] - sim_step)
+        else:
+            machine_repair_remaining[mname] = 0.0
 ```
 - Each step simulates exactly `sim_step=1` second. O(1) per step, sim-time locked to wall-clock.
 - **Per-step seeding:** `step_seed = (base_seed + step_count) % 2³¹`. Same `--seed` → same trajectory.
 - **Health continuity:** `machine_health` dict carries health across steps. `_install_health_restorer` monkey-patches `machine.initialize()` so Simantha's reset is undone immediately.
+- **Repair downtime:** `machine_repair_remaining` dict tracks remaining repair seconds (see below).
 - **Warm-up guard:** `_counting_active` flag (not `env.now`) since `env.now` never exceeds `warm_up_time` in per-step mode.
 - **`warm_up_time` from YAML:** counted in steps, not seconds (`step_count >= warm_up_time`).
 - If `--seed` is not provided, one is auto-generated from the current timestamp.
@@ -272,6 +284,19 @@ The `oee_cached` dict in `machine_metrics` stores the latest result. `OEE_BUCKET
 
 ### Quality counter warm-up guard
 `_quality_route()` in `quality_machine.py` checks `counting = getattr(machine, '_counting_active', machine.env.now > machine.env.warm_up_time)`. In per-step mode `_counting_active` is used (since `env.now` never reaches `warm_up_time`). Routing (scrap redirect, part marking) still runs during warm-up. This ensures `_good_count + _scrap_count + _defective_count == parts_made` (both post-warm-up).
+
+### Repair downtime tracking (`machine_repair_remaining`)
+When a machine first reaches `failed_health`, the main loop calls `machine_obj.get_time_to_repair()` (which samples from the configured MTTR distribution) and stores the result in `machine_repair_remaining[mname]`. Each subsequent step it is decremented by `sim_step`. `_install_health_restorer` checks this value:
+- `repair_remaining > 0`: keep `machine_obj.health = failed_health` and set `machine_obj.under_repair = True` → state shows **UNDER_REPAIR**, `down_time` continues accumulating, OEE Availability is correctly reduced.
+- `repair_remaining == 0`: reset `machine_obj.health = 0` → machine starts the step fully healthy.
+
+This means machines stay FAILED/UNDER_REPAIR for `ceil(MTTR_sample / sim_step)` steps (e.g. a 15 s sample → 15–16 steps of downtime). The mechanism is independent of whether a maintainer is configured.
+
+**CBM vs run-to-failure:**
+- **CBM** (`cbm_threshold < h_max`): maintainer intervenes before `failed_health` is reached; machine never enters the FAILED repair path; `machine_repair_remaining` stays 0.
+- **Run-to-failure** (`cbm_threshold == h_max`, or no CBM): machine degrades to `failed_health`, repair is sampled from the MTTR distribution, machine is UNDER_REPAIR for the sampled duration, then recovers to health=0 and begins degrading again.
+
+**Why `get_time_to_repair()` works at step end:** `pending_failure_mode` is set by `get_time_to_degrade()` during the step in which the machine first reaches `failed_health`. After `system.simulate()` returns that value is still on the object, so sampling via `get_time_to_repair()` correctly uses the MTTR for the specific failure mode that caused the failure. We only sample once (`repair_remaining <= 0` guard prevents re-sampling on subsequent repair steps).
 
 ### MTTF scaling for multi-state degradation
 In `advanced_machine.py`, `get_time_to_degrade()` divides the sampled MTTF by `self.failed_health` when `failed_health > 1`. This makes total expected failure time equal the configured MTTF. Standard 2-state machines (`failed_health=1`) are unaffected.
