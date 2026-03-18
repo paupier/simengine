@@ -1,0 +1,1862 @@
+{% extends "base.html" %}
+{% block title %}Documentation — Simantha Digital Twin{% endblock %}
+{% block page_subtitle %}/ Documentation{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ── Docs layout ── */
+.docs-layout {
+    display: flex;
+    gap: 0;
+    min-height: calc(100vh - 52px);
+    margin: -1rem -12px 0;
+}
+.docs-sidebar {
+    width: 240px;
+    flex-shrink: 0;
+    background: var(--bg-header);
+    border-right: 1px solid var(--border-dim);
+    position: sticky;
+    top: 52px;
+    height: calc(100vh - 52px);
+    overflow-y: auto;
+    padding: 20px 0;
+}
+.docs-sidebar::-webkit-scrollbar { width: 4px; }
+.docs-sidebar::-webkit-scrollbar-thumb { background: var(--border-bright); }
+
+.docs-main {
+    flex: 1;
+    padding: 32px 48px 64px;
+    max-width: 900px;
+    overflow-x: hidden;
+}
+
+/* ── Sidebar nav ── */
+.toc-section {
+    margin-bottom: 4px;
+}
+.toc-header {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    padding: 12px 20px 4px;
+}
+.toc-link {
+    display: block;
+    padding: 5px 20px 5px 28px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    border-left: 2px solid transparent;
+    transition: color 0.12s, border-color 0.12s, background 0.12s;
+    line-height: 1.4;
+}
+.toc-link:hover {
+    color: var(--text-primary);
+    background: rgba(0,200,230,0.04);
+    text-decoration: none;
+}
+.toc-link.active {
+    color: var(--cyan);
+    border-left-color: var(--cyan);
+    background: rgba(0,200,230,0.06);
+}
+.toc-sub {
+    padding-left: 40px;
+    font-size: 11px;
+    color: var(--text-dim);
+}
+.toc-sub:hover { color: var(--text-secondary); }
+
+/* ── Content typography ── */
+.docs-main h1 {
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-dim);
+}
+.docs-main h2 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-top: 40px;
+    margin-bottom: 12px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border-dim);
+    scroll-margin-top: 20px;
+}
+.docs-main h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--cyan);
+    margin-top: 24px;
+    margin-bottom: 8px;
+    scroll-margin-top: 20px;
+}
+.docs-main h4 {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-top: 16px;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+.docs-main p {
+    font-size: 0.9rem;
+    line-height: 1.75;
+    color: var(--text-secondary);
+    margin-bottom: 12px;
+}
+.docs-main ul, .docs-main ol {
+    font-size: 0.9rem;
+    line-height: 1.75;
+    color: var(--text-secondary);
+    margin-bottom: 12px;
+    padding-left: 1.5rem;
+}
+.docs-main li { margin-bottom: 3px; }
+.docs-main strong { color: var(--text-primary); }
+.docs-main a { color: var(--cyan); }
+
+/* ── Callout boxes ── */
+.callout {
+    border-left: 3px solid var(--cyan);
+    background: rgba(0,200,230,0.06);
+    padding: 10px 16px;
+    margin: 16px 0;
+    border-radius: 0 4px 4px 0;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+.callout.warn {
+    border-left-color: var(--warn);
+    background: rgba(244,162,97,0.06);
+}
+.callout.good {
+    border-left-color: var(--good);
+    background: rgba(46,204,113,0.06);
+}
+.callout strong { color: var(--text-primary); }
+
+/* ── Diagrams ── */
+.diagram-box {
+    background: var(--bg-shell);
+    border: 1px solid var(--border-dim);
+    border-radius: 6px;
+    padding: 24px;
+    margin: 20px 0;
+    overflow-x: auto;
+}
+.diagram-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-dim);
+    margin-bottom: 16px;
+}
+
+/* ── Flow diagram (serial line) ── */
+.flow-diagram {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    flex-wrap: nowrap;
+    min-width: max-content;
+}
+.flow-node {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+.flow-box {
+    padding: 8px 14px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-align: center;
+    min-width: 70px;
+}
+.flow-box.source  { background: rgba(46,204,113,0.15); border: 1px solid rgba(46,204,113,0.4); color: var(--good); }
+.flow-box.machine { background: rgba(0,200,230,0.12); border: 1px solid rgba(0,200,230,0.35); color: var(--cyan); }
+.flow-box.buffer  { background: rgba(244,162,97,0.12); border: 1px solid rgba(244,162,97,0.35); color: var(--warn); }
+.flow-box.sink    { background: rgba(230,57,70,0.12); border: 1px solid rgba(230,57,70,0.35); color: var(--bad); }
+.flow-box.scrap   { background: rgba(130,80,200,0.15); border: 1px solid rgba(130,80,200,0.4); color: #a87ee0; }
+.flow-label { font-size: 10px; color: var(--text-dim); }
+.flow-arrow {
+    color: var(--border-bright);
+    font-size: 18px;
+    padding: 0 4px;
+    margin-top: -14px;
+}
+.flow-arrow-down {
+    color: var(--border-bright);
+    font-size: 14px;
+    margin: 2px 0;
+    text-align: center;
+}
+
+/* ── State badge grid ── */
+.state-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 8px;
+    margin: 16px 0;
+}
+.state-card {
+    background: var(--bg-shell);
+    border: 1px solid var(--border-dim);
+    border-radius: 4px;
+    padding: 10px 12px;
+}
+.state-name {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+}
+.state-desc { font-size: 11px; color: var(--text-dim); line-height: 1.5; }
+.s-idle      { color: #96a8be; border-left: 3px solid #96a8be; }
+.s-proc      { color: var(--good); border-left: 3px solid var(--good); }
+.s-blocked   { color: var(--warn); border-left: 3px solid var(--warn); }
+.s-starved   { color: #f0c040; border-left: 3px solid #f0c040; }
+.s-degraded  { color: #e8983c; border-left: 3px solid #e8983c; }
+.s-failed    { color: var(--bad); border-left: 3px solid var(--bad); }
+.s-repair    { color: #c070e0; border-left: 3px solid #c070e0; }
+
+/* ── OEE diagram ── */
+.oee-tree {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+.oee-root {
+    background: rgba(0,200,230,0.15);
+    border: 1px solid rgba(0,200,230,0.4);
+    color: var(--cyan);
+    font-weight: 700;
+    padding: 8px 20px;
+    border-radius: 4px;
+    display: inline-block;
+    font-size: 14px;
+    margin-bottom: 12px;
+}
+.oee-branches {
+    display: flex;
+    gap: 16px;
+    margin-top: 8px;
+}
+.oee-branch {
+    flex: 1;
+    background: var(--bg-card);
+    border: 1px solid var(--border-dim);
+    border-radius: 4px;
+    padding: 10px 14px;
+}
+.oee-branch-title {
+    font-weight: 700;
+    margin-bottom: 6px;
+    font-size: 12px;
+}
+.av { color: #4ac4f0; }
+.pe { color: var(--good); }
+.qu { color: var(--warn); }
+.oee-formula {
+    font-family: monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 4px;
+    border-top: 1px solid var(--border-dim);
+    padding-top: 6px;
+}
+
+/* ── Loop diagram ── */
+.loop-diagram {
+    position: relative;
+    padding: 12px;
+}
+.loop-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 8px 0;
+    border-left: 2px solid var(--border-bright);
+    padding-left: 20px;
+    margin-left: 8px;
+    position: relative;
+}
+.loop-step::before {
+    content: '';
+    position: absolute;
+    left: -5px;
+    top: 14px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--border-bright);
+}
+.loop-step.highlight::before { background: var(--cyan); }
+.loop-step-num {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--text-dim);
+    min-width: 20px;
+    margin-top: 1px;
+}
+.loop-step-content { flex: 1; }
+.loop-step-title { font-size: 12px; font-weight: 600; color: var(--text-primary); }
+.loop-step-detail { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+
+/* ── Scenario cards ── */
+.scenario-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 10px;
+    margin: 16px 0;
+}
+.scenario-card {
+    background: var(--bg-shell);
+    border: 1px solid var(--border-dim);
+    border-radius: 4px;
+    padding: 12px 14px;
+    transition: border-color 0.15s;
+}
+.scenario-card:hover { border-color: var(--border-bright); }
+.scenario-key {
+    font-family: monospace;
+    font-size: 11px;
+    color: var(--cyan);
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+.scenario-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 6px;
+}
+.scenario-desc { font-size: 11px; color: var(--text-dim); line-height: 1.5; margin-bottom: 8px; }
+.scenario-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.stag {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    border-radius: 2px;
+    border: 1px solid;
+}
+.stag-fail { color: var(--bad); border-color: rgba(230,57,70,0.35); background: rgba(230,57,70,0.08); }
+.stag-spc  { color: #4ac4f0; border-color: rgba(74,196,240,0.35); background: rgba(74,196,240,0.08); }
+.stag-qr   { color: var(--warn); border-color: rgba(244,162,97,0.35); background: rgba(244,162,97,0.08); }
+.stag-shift{ color: var(--good); border-color: rgba(46,204,113,0.35); background: rgba(46,204,113,0.08); }
+.stag-hist { color: #a87ee0; border-color: rgba(168,126,224,0.35); background: rgba(168,126,224,0.08); }
+.stag-cbm  { color: #f0c040; border-color: rgba(240,192,64,0.35); background: rgba(240,192,64,0.08); }
+.stag-deg  { color: #e0a060; border-color: rgba(224,160,96,0.35); background: rgba(224,160,96,0.08); }
+.stag-maint{ color: #70c0a0; border-color: rgba(112,192,160,0.35); background: rgba(112,192,160,0.08); }
+
+/* ── Glossary ── */
+.glossary-grid {
+    display: grid;
+    gap: 2px;
+}
+.glossary-item {
+    display: grid;
+    grid-template-columns: 180px 1fr;
+    gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border-dim);
+    font-size: 0.875rem;
+}
+.glossary-item:last-child { border-bottom: none; }
+.glossary-term {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-family: monospace;
+    font-size: 12px;
+    padding-top: 1px;
+}
+.glossary-def { color: var(--text-secondary); line-height: 1.6; }
+.glossary-filter {
+    margin-bottom: 16px;
+}
+
+/* ── Parameter table ── */
+.param-table { width: 100%; font-size: 0.83rem; margin: 12px 0; border-collapse: collapse; }
+.param-table th {
+    background: var(--bg-header);
+    color: #8aaac8;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 6px 10px;
+    text-align: left;
+    border-bottom: 1px solid var(--border-dim);
+}
+.param-table td {
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border-dim);
+    color: var(--text-secondary);
+    vertical-align: top;
+}
+.param-table td:first-child { color: var(--cyan); font-family: monospace; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.param-table td:nth-child(2) { color: var(--text-dim); white-space: nowrap; }
+.param-table tr:hover td { background: rgba(0,200,230,0.03); }
+
+/* ── Section separator ── */
+.docs-section { margin-bottom: 48px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="docs-layout">
+
+    <!-- ── Sidebar TOC ── -->
+    <aside class="docs-sidebar" id="docs-sidebar">
+        <div class="toc-section">
+            <div class="toc-header">Overview</div>
+            <a class="toc-link" href="#overview">What is this system?</a>
+            <a class="toc-link" href="#architecture">System Architecture</a>
+            <a class="toc-link" href="#data-flow">Data Flow</a>
+        </div>
+        <div class="toc-section">
+            <div class="toc-header">Simulation Engine</div>
+            <a class="toc-link" href="#line-topology">Line Topology</a>
+            <a class="toc-link" href="#sim-loop">The Per-Step Loop</a>
+            <a class="toc-link" href="#machine-states">Machine States</a>
+            <a class="toc-link" href="#warm-up">Warm-Up Period</a>
+        </div>
+        <div class="toc-section">
+            <div class="toc-header">Machine Features</div>
+            <a class="toc-link" href="#failure-modes">Failure Modes &amp; MTTF</a>
+            <a class="toc-link" href="#health-degradation">Health Degradation</a>
+            <a class="toc-link" href="#cbm">CBM vs Run-to-Failure</a>
+            <a class="toc-link" href="#quality-routing">Quality Routing</a>
+            <a class="toc-link" href="#spc">SPC Analytics</a>
+        </div>
+        <div class="toc-section">
+            <div class="toc-header">KPIs &amp; Metrics</div>
+            <a class="toc-link" href="#oee">OEE</a>
+            <a class="toc-link" href="#ppm">PPM / Throughput</a>
+            <a class="toc-link" href="#quality-kpis">Quality KPIs</a>
+        </div>
+        <div class="toc-section">
+            <div class="toc-header">Operations</div>
+            <a class="toc-link" href="#shifts">Shift Management</a>
+            <a class="toc-link" href="#maintenance">Maintenance Strategies</a>
+            <a class="toc-link" href="#historian">Event Historian</a>
+            <a class="toc-link" href="#run-id">Run IDs</a>
+        </div>
+        <div class="toc-section">
+            <div class="toc-header">Configuration</div>
+            <a class="toc-link" href="#scenarios">Scenarios</a>
+            <a class="toc-link" href="#recipes">Recipes</a>
+            <a class="toc-link" href="#opcua">OPC UA Address Space</a>
+        </div>
+        <div class="toc-section">
+            <div class="toc-header">Reference</div>
+            <a class="toc-link" href="#glossary">Glossary</a>
+        </div>
+    </aside>
+
+    <!-- ── Main Content ── -->
+    <main class="docs-main" id="docs-main">
+
+        <!-- ═══════════════════════ OVERVIEW ═══════════════════════ -->
+        <div class="docs-section" id="overview">
+            <h1>Simantha OPC UA Digital Twin</h1>
+            <p>
+                This system is a <strong>manufacturing digital twin</strong> — a real-time software model of a
+                physical production line. It uses the <a href="https://github.com/usnistgov/simantha" target="_blank">Simantha</a>
+                discrete-event simulation library (NIST) to model machines, buffers, and material flow, then exposes
+                everything through an <strong>OPC UA server</strong> so any SCADA, MES, or analytics tool can connect.
+            </p>
+            <p>
+                Unlike a batch simulator that runs once and stops, this system runs <em>continuously at wall-clock
+                speed</em> — one simulation step per real second — making it suitable as a live digital twin that
+                mirrors a physical line in real time.
+            </p>
+
+            <h3>Key capabilities</h3>
+            <ul>
+                <li><strong>Serial production lines</strong> of 2–20+ machines connected by finite-capacity buffers</li>
+                <li><strong>Realistic failure modeling</strong> via Weibull, exponential, and lognormal distributions</li>
+                <li><strong>Multi-state health degradation</strong> with optional Condition-Based Maintenance (CBM)</li>
+                <li><strong>Quality routing</strong> — defective parts are scrapped or sent for rework</li>
+                <li><strong>SPC analytics</strong> — X-bar/R control charts, Cp/Cpk, Western Electric rules</li>
+                <li><strong>Shift management</strong> — per-shift KPI resets and performance tracking</li>
+                <li><strong>Event historian</strong> — structured event logs to CSV and/or InfluxDB</li>
+                <li><strong>OPC UA interface</strong> — ISA-95/ISO 23247 aligned address space</li>
+                <li><strong>Grafana dashboards</strong> via Telegraf → InfluxDB pipeline</li>
+                <li><strong>Run recipes</strong> — ordered multi-product production schedules with changeovers</li>
+            </ul>
+        </div>
+
+        <!-- ═══════════════════════ ARCHITECTURE ═══════════════════════ -->
+        <div class="docs-section" id="architecture">
+            <h2>System Architecture</h2>
+            <p>
+                The system is composed of several cooperating services. In Docker deployment all services run in the
+                same Compose stack; locally you can run just the OPC UA server or the web UI independently.
+            </p>
+
+            <div class="diagram-box">
+                <div class="diagram-title">Component Architecture</div>
+                <svg viewBox="0 0 720 220" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:720px;font-family:inherit;">
+                    <!-- OPC UA Server -->
+                    <rect x="10" y="60" width="140" height="100" rx="4" fill="#0e1828" stroke="#1e3555"/>
+                    <text x="80" y="82" text-anchor="middle" font-size="9" fill="#00c8e6" font-weight="700" letter-spacing="1">OPC UA SERVER</text>
+                    <text x="80" y="96" text-anchor="middle" font-size="9" fill="#96a8be">opcua_server.py</text>
+                    <rect x="24" y="105" width="112" height="18" rx="2" fill="#060b14" stroke="#1a2840"/>
+                    <text x="80" y="118" text-anchor="middle" font-size="9" fill="#7a8ba8">Simantha Simulation</text>
+                    <rect x="24" y="128" width="112" height="18" rx="2" fill="#060b14" stroke="#1a2840"/>
+                    <text x="80" y="141" text-anchor="middle" font-size="9" fill="#7a8ba8">Event Historian</text>
+                    <!-- arrow to Telegraf -->
+                    <line x1="150" y1="110" x2="196" y2="110" stroke="#1e3555" stroke-width="1.5" marker-end="url(#arr)"/>
+                    <text x="173" y="106" text-anchor="middle" font-size="8" fill="#5a6e88">OPC UA</text>
+                    <!-- Telegraf -->
+                    <rect x="196" y="85" width="110" height="50" rx="4" fill="#0e1828" stroke="#1e3555"/>
+                    <text x="251" y="108" text-anchor="middle" font-size="9" fill="#f4a261" font-weight="700" letter-spacing="1">TELEGRAF</text>
+                    <text x="251" y="122" text-anchor="middle" font-size="9" fill="#96a8be">OPC UA → metrics</text>
+                    <!-- arrow to InfluxDB -->
+                    <line x1="306" y1="110" x2="352" y2="110" stroke="#1e3555" stroke-width="1.5" marker-end="url(#arr)"/>
+                    <text x="329" y="106" text-anchor="middle" font-size="8" fill="#5a6e88">write API</text>
+                    <!-- InfluxDB -->
+                    <rect x="352" y="75" width="110" height="70" rx="4" fill="#0e1828" stroke="#1e3555"/>
+                    <text x="407" y="98" text-anchor="middle" font-size="9" fill="#a87ee0" font-weight="700" letter-spacing="1">INFLUXDB</text>
+                    <text x="407" y="112" text-anchor="middle" font-size="9" fill="#96a8be">Time-series store</text>
+                    <text x="407" y="126" text-anchor="middle" font-size="9" fill="#5a6e88">sim_metrics + events</text>
+                    <!-- arrow to Grafana -->
+                    <line x1="462" y1="110" x2="508" y2="110" stroke="#1e3555" stroke-width="1.5" marker-end="url(#arr)"/>
+                    <text x="485" y="106" text-anchor="middle" font-size="8" fill="#5a6e88">Flux query</text>
+                    <!-- Grafana -->
+                    <rect x="508" y="85" width="110" height="50" rx="4" fill="#0e1828" stroke="#1e3555"/>
+                    <text x="563" y="108" text-anchor="middle" font-size="9" fill="#f4a261" font-weight="700" letter-spacing="1">GRAFANA</text>
+                    <text x="563" y="122" text-anchor="middle" font-size="9" fill="#96a8be">Live dashboards</text>
+                    <!-- Flask Web UI -->
+                    <rect x="196" y="165" width="110" height="50" rx="4" fill="#0e1828" stroke="#1e3555"/>
+                    <text x="251" y="187" text-anchor="middle" font-size="9" fill="#2ecc71" font-weight="700" letter-spacing="1">FLASK WEB UI</text>
+                    <text x="251" y="201" text-anchor="middle" font-size="9" fill="#96a8be">app.py — browser</text>
+                    <!-- arrow from Flask to OPC UA server -->
+                    <line x1="196" y1="190" x2="160" y2="145" stroke="#1e3555" stroke-width="1.5" stroke-dasharray="4,2" marker-end="url(#arr)"/>
+                    <text x="166" y="178" text-anchor="middle" font-size="8" fill="#5a6e88">subprocess</text>
+                    <!-- arrow from Flask to InfluxDB -->
+                    <line x1="306" y1="190" x2="360" y2="148" stroke="#1e3555" stroke-width="1.5" stroke-dasharray="4,2" marker-end="url(#arr)"/>
+                    <text x="348" y="182" text-anchor="middle" font-size="8" fill="#5a6e88">reports</text>
+                    <!-- OPC UA client arrow from Flask -->
+                    <text x="80" y="22" text-anchor="middle" font-size="9" fill="#5a6e88">opc.tcp://localhost:4840</text>
+                    <!-- defs -->
+                    <defs>
+                        <marker id="arr" markerWidth="6" markerHeight="6" refX="6" refY="3" orient="auto">
+                            <path d="M0,0 L0,6 L6,3 z" fill="#1e3555"/>
+                        </marker>
+                    </defs>
+                </svg>
+            </div>
+
+            <h3>Service responsibilities</h3>
+            <table class="param-table">
+                <thead><tr><th>Service</th><th>Port</th><th>Purpose</th></tr></thead>
+                <tbody>
+                    <tr><td>opcua_server.py</td><td>4840</td><td>Runs the Simantha simulation and hosts the OPC UA address space. Started as a subprocess by the web UI or directly from CLI.</td></tr>
+                    <tr><td>Telegraf</td><td>—</td><td>Polls OPC UA nodes every second and writes to InfluxDB. Config auto-generated from the active scenario by <code>generate_telegraf_conf.py</code>.</td></tr>
+                    <tr><td>InfluxDB</td><td>8086</td><td>Time-series database. Stores all Telegraf metrics (<code>sim_metrics</code> measurement) and historian events (<code>sim_events</code>).</td></tr>
+                    <tr><td>Grafana</td><td>3000</td><td>Visualisation layer. Pre-provisioned dashboards query InfluxDB with Flux. Filtered by <code>run_id</code> tag.</td></tr>
+                    <tr><td>Flask Web UI</td><td>5000</td><td>Browser-based control panel. Scenario/recipe editor, live dashboard, run history, validation, reports.</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- ═══════════════════════ DATA FLOW ═══════════════════════ -->
+        <div class="docs-section" id="data-flow">
+            <h2>Data Flow</h2>
+            <p>Every simulation second produces data that flows through two parallel pipelines:</p>
+
+            <div class="diagram-box">
+                <div class="diagram-title">Per-step data paths</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;font-size:12px;">
+                    <div>
+                        <div style="color:var(--cyan);font-weight:700;margin-bottom:8px;">📡 Metrics Pipeline (real-time KPIs)</div>
+                        <div class="loop-step highlight">
+                            <div class="loop-step-content">
+                                <div class="loop-step-title">OPC UA Server writes nodes</div>
+                                <div class="loop-step-detail">OEE, PPM, machine states, buffer levels — every step</div>
+                            </div>
+                        </div>
+                        <div class="loop-step">
+                            <div class="loop-step-content">
+                                <div class="loop-step-title">Telegraf polls OPC UA</div>
+                                <div class="loop-step-detail">Reads configured node list every 1s, batches points</div>
+                            </div>
+                        </div>
+                        <div class="loop-step">
+                            <div class="loop-step-content">
+                                <div class="loop-step-title">InfluxDB stores measurement</div>
+                                <div class="loop-step-detail"><code>sim_metrics</code> measurement, tagged with <code>run_id</code></div>
+                            </div>
+                        </div>
+                        <div class="loop-step">
+                            <div class="loop-step-content">
+                                <div class="loop-step-title">Grafana queries &amp; displays</div>
+                                <div class="loop-step-detail">Live panels, auto-refresh, run_id filter variable</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div>
+                        <div style="color:#a87ee0;font-weight:700;margin-bottom:8px;">📝 Event Pipeline (state transitions)</div>
+                        <div class="loop-step highlight">
+                            <div class="loop-step-content">
+                                <div class="loop-step-title">State-change detected</div>
+                                <div class="loop-step-detail">Edge detection: only written when value changes</div>
+                            </div>
+                        </div>
+                        <div class="loop-step">
+                            <div class="loop-step-content">
+                                <div class="loop-step-title">EventHistorian records</div>
+                                <div class="loop-step-detail">CSVHistorian, InfluxDBHistorian, or both via CompositeHistorian</div>
+                            </div>
+                        </div>
+                        <div class="loop-step">
+                            <div class="loop-step-content">
+                                <div class="loop-step-title">CSV: results/historian/</div>
+                                <div class="loop-step-detail">Rotates on shift change or 50 MB limit</div>
+                            </div>
+                        </div>
+                        <div class="loop-step">
+                            <div class="loop-step-content">
+                                <div class="loop-step-title">InfluxDB: sim_events</div>
+                                <div class="loop-step-detail">Queryable by event_type, source, severity, run_id</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══════════════════════ LINE TOPOLOGY ═══════════════════════ -->
+        <div class="docs-section" id="line-topology">
+            <h2>Line Topology</h2>
+            <p>
+                All scenarios use a <strong>serial production line</strong> topology — a chain of machines separated
+                by finite-capacity buffers. Parts flow left to right: from a (virtual) Source through each machine
+                and buffer until they reach the Sink.
+            </p>
+
+            <div class="diagram-box">
+                <div class="diagram-title">Serial line — parts flow left → right</div>
+                <div class="flow-diagram">
+                    <div class="flow-node">
+                        <div class="flow-box source">Source</div>
+                        <div class="flow-label">infinite parts</div>
+                    </div>
+                    <div class="flow-arrow">→</div>
+                    <div class="flow-node">
+                        <div class="flow-box machine">M1</div>
+                        <div class="flow-label">cycle_time</div>
+                    </div>
+                    <div class="flow-arrow" style="display:flex;flex-direction:column;align-items:center;margin-top:-14px;">
+                        <span>→</span>
+                    </div>
+                    <div class="flow-node">
+                        <div class="flow-box buffer">B1</div>
+                        <div class="flow-label">capacity=10</div>
+                    </div>
+                    <div class="flow-arrow">→</div>
+                    <div class="flow-node">
+                        <div class="flow-box machine">M2</div>
+                        <div class="flow-label">cycle_time</div>
+                    </div>
+                    <div class="flow-arrow">→</div>
+                    <div class="flow-node">
+                        <div class="flow-box buffer">B2</div>
+                        <div class="flow-label">capacity=10</div>
+                    </div>
+                    <div class="flow-arrow">→</div>
+                    <div class="flow-node">
+                        <div class="flow-box machine">M3</div>
+                        <div class="flow-label">cycle_time</div>
+                    </div>
+                    <div class="flow-arrow">→</div>
+                    <div class="flow-node">
+                        <div class="flow-box sink">Sink</div>
+                        <div class="flow-label">good parts</div>
+                    </div>
+                </div>
+                <div style="margin-top:16px;display:flex;align-items:flex-start;gap:24px;font-size:11px;color:var(--text-dim);">
+                    <div>
+                        <div style="color:var(--text-secondary);font-weight:600;margin-bottom:4px;">Quality Routing (optional)</div>
+                        <div class="flow-diagram" style="gap:4px;">
+                            <div class="flow-box machine" style="font-size:10px;padding:5px 8px;">M1</div>
+                            <span style="color:var(--border-bright);margin-top:-5px;">→</span>
+                            <div>
+                                <div class="flow-box scrap" style="font-size:10px;padding:4px 8px;margin-bottom:4px;">ScrapBin</div>
+                                <div style="color:var(--text-dim);font-size:10px;text-align:center;">defective</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div style="padding-top:2px;color:var(--text-dim);line-height:1.6;">
+                        When a machine has <strong style="color:var(--text-primary);">quality_routing</strong> enabled,
+                        defective parts are diverted to a scrap sink (removed from line)
+                        or sent for rework before the scrap decision.
+                    </div>
+                </div>
+            </div>
+
+            <h3>Buffer blocking and starvation</h3>
+            <p>
+                Buffers have finite capacity. When a buffer is <strong>full</strong>, the upstream machine cannot
+                deposit a finished part and enters the <strong>BLOCKED</strong> state. When a buffer is
+                <strong>empty</strong>, the downstream machine has no part to process and enters the
+                <strong>STARVED</strong> state. Both conditions reduce throughput — a correctly sized buffer
+                absorbs variability and keeps the line flowing.
+            </p>
+            <div class="callout">
+                <strong>Bottleneck rule:</strong> In a balanced line the bottleneck machine — the one with the
+                longest cycle time — limits overall throughput. OEE is calculated using a bottleneck model:
+                line OEE is the minimum-OEE machine's result.
+            </div>
+        </div>
+
+        <!-- ═══════════════════════ SIM LOOP ═══════════════════════ -->
+        <div class="docs-section" id="sim-loop">
+            <h2>The Per-Step Simulation Loop</h2>
+            <p>
+                The simulation runs at <strong>1 step per real second</strong>. Each step calls
+                <code>system.simulate(simulation_time=1)</code> — Simantha runs 1 second of discrete events then
+                returns. This keeps simulation time locked to wall time and gives O(1) compute per step,
+                regardless of how long the simulation has been running.
+            </p>
+
+            <div class="diagram-box">
+                <div class="diagram-title">Main loop — executed once per second</div>
+                <div class="loop-diagram">
+                    <div class="loop-step highlight">
+                        <div class="loop-step-content">
+                            <div class="loop-step-title">Sleep to align with wall clock</div>
+                            <div class="loop-step-detail"><code>time.sleep(max(0, 1.0 - elapsed))</code> — stays locked to real time</div>
+                        </div>
+                    </div>
+                    <div class="loop-step">
+                        <div class="loop-step-content">
+                            <div class="loop-step-title">Check stop conditions</div>
+                            <div class="loop-step-detail">max_sim_time, target_quantity, or external stop signal</div>
+                        </div>
+                    </div>
+                    <div class="loop-step">
+                        <div class="loop-step-content">
+                            <div class="loop-step-title">Seed RNG deterministically</div>
+                            <div class="loop-step-detail"><code>step_seed = (base_seed + step_count) % 2³¹</code> — same --seed → same trajectory</div>
+                        </div>
+                    </div>
+                    <div class="loop-step">
+                        <div class="loop-step-content">
+                            <div class="loop-step-title">Restore machine health &amp; repair state</div>
+                            <div class="loop-step-detail">Simantha's initialize() resets health to 0 each step — a monkey-patch restores saved health</div>
+                        </div>
+                    </div>
+                    <div class="loop-step highlight">
+                        <div class="loop-step-content">
+                            <div class="loop-step-title">system.simulate(1 second)</div>
+                            <div class="loop-step-detail">Simantha runs discrete events: failures, processing, maintenance, routing</div>
+                        </div>
+                    </div>
+                    <div class="loop-step">
+                        <div class="loop-step-content">
+                            <div class="loop-step-title">Accumulate LineState deltas</div>
+                            <div class="loop-step-detail">sync_sink(), sync_machine() — build running totals that survive step resets</div>
+                        </div>
+                    </div>
+                    <div class="loop-step">
+                        <div class="loop-step-content">
+                            <div class="loop-step-title">Calculate KPIs</div>
+                            <div class="loop-step-detail">OEE, PPM, utilisation, SPC — using post-warm-up accumulators</div>
+                        </div>
+                    </div>
+                    <div class="loop-step">
+                        <div class="loop-step-content">
+                            <div class="loop-step-title">Write OPC UA nodes</div>
+                            <div class="loop-step-detail">All machine/buffer/line variables updated in one pass</div>
+                        </div>
+                    </div>
+                    <div class="loop-step">
+                        <div class="loop-step-content">
+                            <div class="loop-step-title">Record historian events</div>
+                            <div class="loop-step-detail">Edge detection: only write on state transitions, not every step</div>
+                        </div>
+                    </div>
+                    <div class="loop-step highlight">
+                        <div class="loop-step-content">
+                            <div class="loop-step-title">Save health &amp; advance repair countdown</div>
+                            <div class="loop-step-detail">machine_health saved; repair_remaining decremented by 1s each step</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <h3>Reproducibility with --seed</h3>
+            <p>
+                The <code>--seed</code> CLI argument seeds both <code>random</code> and <code>numpy.random</code>
+                before each step. Because the seed is <code>base_seed + step_count</code>, the same base seed
+                always produces the same sequence of events — failure times, repair times, defect decisions, SPC
+                noise — making runs fully reproducible for debugging or comparison.
+            </p>
+            <div class="callout">
+                If <code>--seed</code> is omitted, a seed is auto-generated from the current timestamp and printed
+                to the console. Record it to reproduce interesting runs later.
+            </div>
+        </div>
+
+        <!-- ═══════════════════════ MACHINE STATES ═══════════════════════ -->
+        <div class="docs-section" id="machine-states">
+            <h2>Machine States</h2>
+            <p>
+                Every machine is in exactly one of seven states at any moment. States are detected by evaluating
+                conditions in a fixed priority order after each simulation step.
+            </p>
+
+            <div class="state-grid">
+                <div class="state-card s-idle">
+                    <div class="state-name">IDLE</div>
+                    <div class="state-desc">Machine is healthy, not blocked, not starved, and has no part currently in process. Waiting for the next part to arrive from the upstream buffer.</div>
+                </div>
+                <div class="state-card s-proc">
+                    <div class="state-name">PROCESSING</div>
+                    <div class="state-desc">A part is currently in the machine being worked on. The machine will finish after one cycle_time.</div>
+                </div>
+                <div class="state-card s-blocked">
+                    <div class="state-name">BLOCKED</div>
+                    <div class="state-desc">Machine has finished a part but cannot deposit it because the downstream buffer is full. No production is occurring.</div>
+                </div>
+                <div class="state-card s-starved">
+                    <div class="state-name">STARVED</div>
+                    <div class="state-desc">Machine is ready to process but the upstream buffer is empty — no parts available to work on. Throughput loss.</div>
+                </div>
+                <div class="state-card s-degraded">
+                    <div class="state-name">DEGRADED</div>
+                    <div class="state-desc">Machine health has dropped below 100% but has not yet failed. Still processing, but at increased defect rate if health_multiplier is configured. CBM triggers maintenance before failure.</div>
+                </div>
+                <div class="state-card s-failed">
+                    <div class="state-name">FAILED</div>
+                    <div class="state-desc">Health has reached the failed threshold (h_max). Machine is down, waiting for a maintainer to begin repairs. No production.</div>
+                </div>
+                <div class="state-card s-repair">
+                    <div class="state-name">UNDER_REPAIR</div>
+                    <div class="state-desc">Maintenance is in progress. The repair duration is sampled from the MTTR distribution. Machine returns to IDLE when repair_remaining reaches zero.</div>
+                </div>
+            </div>
+
+            <h3>State detection order</h3>
+            <p>Conditions are checked in this order — the first match wins:</p>
+            <pre style="font-size:12px;line-height:1.8;">if health &gt;= failed_health:
+    → FAILED (repair_remaining &gt; 0 → UNDER_REPAIR)
+elif machine.blocked:
+    → BLOCKED
+elif machine.starved:
+    → STARVED
+elif health &gt; 0:
+    → DEGRADED
+elif machine.has_part:
+    → PROCESSING
+else:
+    → IDLE</pre>
+        </div>
+
+        <!-- ═══════════════════════ WARM-UP ═══════════════════════ -->
+        <div class="docs-section" id="warm-up">
+            <h2>Warm-Up Period</h2>
+            <p>
+                When a simulation starts, the line is empty — buffers are empty, machines have no work in progress.
+                It takes time for parts to fill the buffers and for the line to reach a <em>steady state</em>.
+                Metrics collected during this transient phase are not representative of normal operation.
+            </p>
+            <p>
+                The <code>warm_up_time</code> parameter (in steps, i.e. seconds) tells the simulation how long
+                to let the line stabilise before starting to count. During warm-up:
+            </p>
+            <ul>
+                <li>The simulation runs normally — machines process parts, failures can occur</li>
+                <li>OEE, PPM, quality counters, and downtime accumulators are <strong>not incremented</strong></li>
+                <li>OPC UA KPI nodes remain at zero until warm-up completes</li>
+                <li>A console message confirms when warm-up ends and metrics become active</li>
+            </ul>
+            <div class="callout warn">
+                <strong>Common issue:</strong> If OEE/PPM are showing zero for an extended period after start, check
+                <code>warm_up_time</code> in the scenario config. The <code>full_feature_8_machine_line</code>
+                uses 120s warm-up by default.
+            </div>
+        </div>
+
+        <!-- ═══════════════════════ FAILURE MODES ═══════════════════════ -->
+        <div class="docs-section" id="failure-modes">
+            <h2>Failure Modes &amp; MTTF/MTTR</h2>
+            <p>
+                When <code>enable_advanced_failures: true</code> is set on a machine, it uses
+                <strong>FailureModeManager</strong> to model realistic failure behaviour with distinct failure
+                types that compete to cause the next failure (competing risks model).
+            </p>
+
+            <h3>MTTF — Mean Time To Failure</h3>
+            <p>Defines how frequently a failure type occurs. Three distributions are supported:</p>
+
+            <table class="param-table">
+                <thead><tr><th>Distribution</th><th>Typical use</th><th>Parameters</th></tr></thead>
+                <tbody>
+                    <tr>
+                        <td>weibull</td>
+                        <td>Wearout failures — hazard rate increases with age (e.g. mechanical fatigue)</td>
+                        <td><code>shape</code> (β&gt;1 = increasing hazard), <code>scale</code> (characteristic life)</td>
+                    </tr>
+                    <tr>
+                        <td>exponential</td>
+                        <td>Random failures — constant hazard rate, memoryless (e.g. electrical)</td>
+                        <td><code>mean</code> (MTTF)</td>
+                    </tr>
+                    <tr>
+                        <td>lognormal</td>
+                        <td>General-purpose, models repair-time variability well</td>
+                        <td><code>mean</code>, <code>std</code></td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h3>MTTR — Mean Time To Repair</h3>
+            <p>
+                Defines how long a repair takes. Also uses the three distributions above. MTTR is sampled
+                <strong>once per failure</strong> at the moment the machine first reaches the failed state.
+                The sampled duration is tracked in <code>machine_repair_remaining</code>, which counts down
+                1 second per step. The machine stays in UNDER_REPAIR until the countdown reaches zero.
+            </p>
+
+            <div class="callout">
+                <strong>Simple failures</strong> (no <code>enable_advanced_failures</code>) use scalar
+                <code>failure_rate</code> and <code>repair_time</code> — Simantha's built-in exponential
+                failure model with a fixed repair time.
+            </div>
+
+            <h3>Multiple concurrent failure modes</h3>
+            <p>
+                A single machine can have multiple failure modes (e.g., <code>mechanical</code> and
+                <code>electrical</code>). The system uses a <strong>competing risks</strong> model: the
+                next failure time is the minimum across all modes. When a failure occurs, the failing
+                mode's MTTR distribution is used for the repair time.
+            </p>
+        </div>
+
+        <!-- ═══════════════════════ HEALTH DEGRADATION ═══════════════════════ -->
+        <div class="docs-section" id="health-degradation">
+            <h2>Health Degradation (Multi-State)</h2>
+            <p>
+                Health degradation models gradual machine ageing using a <strong>discrete-state Markov chain</strong>.
+                At each simulation step, the machine's health state can increase by 1 (degrade) with probability
+                <code>p_degrade</code>, or stay the same.
+            </p>
+
+            <div class="diagram-box">
+                <div class="diagram-title">Health state progression (h_max = 4 example)</div>
+                <svg viewBox="0 0 560 80" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:560px;">
+                    <defs>
+                        <marker id="arr2" markerWidth="6" markerHeight="6" refX="6" refY="3" orient="auto">
+                            <path d="M0,0 L0,6 L6,3 z" fill="#1e3555"/>
+                        </marker>
+                    </defs>
+                    <!-- States -->
+                    <rect x="10" y="20" width="80" height="36" rx="4" fill="#0e1828" stroke="#2ecc71" stroke-width="1.5"/>
+                    <text x="50" y="37" text-anchor="middle" font-size="10" fill="#2ecc71" font-weight="700">health=0</text>
+                    <text x="50" y="50" text-anchor="middle" font-size="9" fill="#5a6e88">HEALTHY</text>
+
+                    <rect x="130" y="20" width="80" height="36" rx="4" fill="#0e1828" stroke="#e0a060"/>
+                    <text x="170" y="37" text-anchor="middle" font-size="10" fill="#e0a060" font-weight="700">health=1</text>
+                    <text x="170" y="50" text-anchor="middle" font-size="9" fill="#5a6e88">DEGRADED</text>
+
+                    <rect x="250" y="20" width="80" height="36" rx="4" fill="#0e1828" stroke="#f4a261"/>
+                    <text x="290" y="37" text-anchor="middle" font-size="10" fill="#f4a261" font-weight="700">health=2</text>
+                    <text x="290" y="50" text-anchor="middle" font-size="9" fill="#5a6e88">DEGRADED</text>
+
+                    <rect x="370" y="20" width="80" height="36" rx="4" fill="#0e1828" stroke="#e63946"/>
+                    <text x="410" y="37" text-anchor="middle" font-size="10" fill="#e63946" font-weight="700">health=3</text>
+                    <text x="410" y="50" text-anchor="middle" font-size="9" fill="#5a6e88">DEGRADED</text>
+
+                    <rect x="490" y="20" width="60" height="36" rx="4" fill="#0e1828" stroke="#e63946" stroke-width="2"/>
+                    <text x="520" y="37" text-anchor="middle" font-size="10" fill="#e63946" font-weight="700">h_max=4</text>
+                    <text x="520" y="50" text-anchor="middle" font-size="9" fill="#e63946">FAILED</text>
+
+                    <!-- Arrows (degrade direction) -->
+                    <line x1="90" y1="38" x2="128" y2="38" stroke="#1e3555" stroke-width="1.5" marker-end="url(#arr2)"/>
+                    <text x="109" y="33" text-anchor="middle" font-size="8" fill="#5a6e88">p_deg</text>
+                    <line x1="210" y1="38" x2="248" y2="38" stroke="#1e3555" stroke-width="1.5" marker-end="url(#arr2)"/>
+                    <line x1="330" y1="38" x2="368" y2="38" stroke="#1e3555" stroke-width="1.5" marker-end="url(#arr2)"/>
+                    <line x1="450" y1="38" x2="488" y2="38" stroke="#e63946" stroke-width="1.5" marker-end="url(#arr2)"/>
+
+                    <!-- CBM arrow back -->
+                    <path d="M170,56 Q170,70 50,70 Q50,56 50,56" fill="none" stroke="#f0c040" stroke-width="1" stroke-dasharray="3,2" marker-end="url(#arr2)"/>
+                    <text x="110" y="74" text-anchor="middle" font-size="8" fill="#f0c040">CBM repair → health=0</text>
+                </svg>
+            </div>
+
+            <h3>Health state configuration</h3>
+            <table class="param-table">
+                <thead><tr><th>Parameter</th><th>Type</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td>h_max</td><td>int</td><td>Maximum health state index. At this level the machine is FAILED. E.g. h_max=4 means 5 states (0–4).</td></tr>
+                    <tr><td>p_degrade</td><td>float</td><td>Probability per step of moving one state worse (0.01 = ~100 steps average in each state).</td></tr>
+                    <tr><td>cbm_threshold</td><td>int</td><td>Health state at which the maintainer is called. If equal to h_max, machine must fail before repair (run-to-failure). If less than h_max, machine is repaired before failing (CBM).</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- ═══════════════════════ CBM ═══════════════════════ -->
+        <div class="docs-section" id="cbm">
+            <h2>CBM vs Run-to-Failure</h2>
+            <p>
+                <strong>Condition-Based Maintenance (CBM)</strong> triggers a repair before the machine fully fails.
+                The key parameter is <code>cbm_threshold</code> relative to <code>h_max</code>:
+            </p>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0;">
+                <div class="callout good">
+                    <strong>CBM: cbm_threshold &lt; h_max</strong><br>
+                    Maintainer is called when health reaches the threshold. Machine is repaired before reaching h_max.
+                    Machine never enters FAILED state. Repair happens proactively during DEGRADED state.
+                    <em>Best for high-value machines where failure is very costly.</em>
+                </div>
+                <div class="callout warn">
+                    <strong>Run-to-Failure: cbm_threshold == h_max</strong><br>
+                    Machine must reach the fully-failed state before a maintainer is called. MTTR distribution
+                    is sampled at the moment of failure. Machine enters FAILED then UNDER_REPAIR.
+                    <em>Appropriate for low-cost or easily replaced components.</em>
+                </div>
+            </div>
+
+            <h3>MTTF scaling for multi-state machines</h3>
+            <p>
+                When a machine has multiple health states (<code>h_max &gt; 1</code>), the sampled MTTF is
+                divided by <code>h_max</code> to keep the total expected time-to-failure equal to the configured
+                MTTF. Standard 2-state machines (<code>h_max=1</code>) are unaffected.
+            </p>
+        </div>
+
+        <!-- ═══════════════════════ QUALITY ROUTING ═══════════════════════ -->
+        <div class="docs-section" id="quality-routing">
+            <h2>Quality Routing</h2>
+            <p>
+                When <code>quality_routing.enabled: true</code> is configured on a machine, defective parts
+                are diverted away from the main line instead of passing through to the next station.
+            </p>
+
+            <h3>Routing modes</h3>
+            <table class="param-table">
+                <thead><tr><th>Mode</th><th>Behaviour</th></tr></thead>
+                <tbody>
+                    <tr>
+                        <td>scrap</td>
+                        <td>Defective parts are immediately sent to the configured scrap sink. They leave the line permanently and increment the scrap counter.</td>
+                    </tr>
+                    <tr>
+                        <td>scrap_and_rework</td>
+                        <td>Defective parts first go through virtual rework (up to <code>max_rework</code> attempts). Each attempt succeeds with probability <code>rework_success_rate</code>. Parts that fail all rework attempts are scrapped.</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h3>Health-correlated defect rate</h3>
+            <p>
+                When <code>enable_health_correlation: true</code>, the effective defect rate is:
+            </p>
+            <pre style="font-size:12px;">effective_defect_rate = base_defect_rate × (1 + health_multiplier × health_state / h_max)</pre>
+            <p>
+                A machine with <code>defect_rate: 0.05</code> and <code>health_multiplier: 5</code> at
+                health state 2 of 4 would have an effective defect rate of 5% × (1 + 5×0.5) = 17.5%.
+            </p>
+
+            <h3>Quality KPI counters</h3>
+            <p>
+                Quality routing increments per-machine counters: <strong>good_count</strong>,
+                <strong>scrap_count</strong>, <strong>defective_count</strong>,
+                <strong>rework_count</strong>, <strong>rework_success_count</strong>. These accumulate
+                in <code>LineState.MachineTotals</code> across all simulation steps — the OPC UA
+                <code>QualityRouting/</code> nodes always show cumulative totals.
+            </p>
+            <div class="callout">
+                Quality counters are warm-up aware: they only increment after <code>step_count ≥ warm_up_time</code>.
+                Physical routing (scrap redirect, part marking) still occurs during warm-up.
+            </div>
+        </div>
+
+        <!-- ═══════════════════════ SPC ═══════════════════════ -->
+        <div class="docs-section" id="spc">
+            <h2>SPC Analytics</h2>
+            <p>
+                Statistical Process Control (SPC) monitors the cycle time of each configured machine for
+                signs of process drift or special-cause variation. When enabled, the machine periodically
+                samples its measured cycle time and adds it to an X-bar/R control chart.
+            </p>
+
+            <h3>Control chart mechanics</h3>
+            <ul>
+                <li><strong>Subgroup</strong>: <code>subgroup_size</code> measurements are collected, then averaged (X-bar) and ranged (R)</li>
+                <li><strong>Control limits</strong>: Calculated from the first <code>num_subgroups</code> subgroups. UCL/LCL are ±3σ from the grand mean.</li>
+                <li><strong>Measurement noise</strong>: Gaussian noise with CoV = <code>measurement_noise</code> (default 2%) is applied to each measurement — models real-world gauge variation</li>
+            </ul>
+
+            <h3>Western Electric rules</h3>
+            <p>When <code>enable_western_electric: true</code>, these out-of-control signals are detected:</p>
+            <table class="param-table">
+                <thead><tr><th>Rule</th><th>Signal</th></tr></thead>
+                <tbody>
+                    <tr><td>Rule 1</td><td>1 point beyond 3σ control limits</td></tr>
+                    <tr><td>Rule 2</td><td>9 consecutive points on the same side of the centre line</td></tr>
+                    <tr><td>Rule 3</td><td>6 consecutive points trending in the same direction</td></tr>
+                    <tr><td>Rule 4</td><td>14 consecutive points alternating up-down</td></tr>
+                </tbody>
+            </table>
+
+            <h3>Capability indices</h3>
+            <p>When <code>usl</code> and <code>lsl</code> (upper/lower specification limits) are configured:</p>
+            <ul>
+                <li><strong>Cp</strong> = (USL − LSL) / 6σ — process spread relative to specification width</li>
+                <li><strong>Cpk</strong> = min(Cpu, Cpl) — measures how centred the process is within limits. Cpk ≥ 1.33 is generally considered capable.</li>
+            </ul>
+        </div>
+
+        <!-- ═══════════════════════ OEE ═══════════════════════ -->
+        <div class="docs-section" id="oee">
+            <h2>OEE — Overall Equipment Effectiveness</h2>
+            <p>
+                OEE is the standard KPI for manufacturing efficiency. It is a composite metric combining three
+                factors, each in range [0, 1]. OEE = 1.0 (100%) means the line produced only good parts, at
+                full speed, with no downtime.
+            </p>
+
+            <div class="diagram-box">
+                <div class="diagram-title">OEE = Availability × Performance × Quality</div>
+                <div style="text-align:center;margin-bottom:16px;">
+                    <div class="oee-root">OEE</div>
+                </div>
+                <div class="oee-branches">
+                    <div class="oee-branch">
+                        <div class="oee-branch-title av">Availability (A)</div>
+                        <div style="font-size:11px;color:var(--text-dim);">How often the machine was running vs. total available time.</div>
+                        <div class="oee-formula">A = (shift_time - down_time) / shift_time</div>
+                    </div>
+                    <div class="oee-branch">
+                        <div class="oee-branch-title pe">Performance (P)</div>
+                        <div style="font-size:11px;color:var(--text-dim);">How fast the machine ran vs. its theoretical maximum speed.</div>
+                        <div class="oee-formula">P = parts_made / (available_time / cycle_time)</div>
+                    </div>
+                    <div class="oee-branch">
+                        <div class="oee-branch-title qu">Quality (Q)</div>
+                        <div style="font-size:11px;color:var(--text-dim);">What fraction of parts produced were good (no scrap).</div>
+                        <div class="oee-formula">Q = good_parts / total_parts_made</div>
+                    </div>
+                </div>
+            </div>
+
+            <h3>Per-machine vs line OEE</h3>
+            <p>
+                OEE is calculated individually for every machine using <strong>shift-relative</strong> time
+                windows — counters reset at each shift boundary. Line-level OEE uses a
+                <strong>bottleneck model</strong>: it takes the minimum OEE across all machines, reflecting
+                that the weakest link constrains the whole line.
+            </p>
+
+            <div class="callout">
+                <strong>Warm-up aware:</strong> Availability uses <code>metrics["down_time"]</code> (our
+                post-warm-up accumulator, not Simantha's). Performance uses <code>machine.parts_made</code>
+                (post-warm-up only). Quality uses <code>_good_count</code> etc., which only increment after
+                warm-up completes.
+            </div>
+        </div>
+
+        <!-- ═══════════════════════ PPM ═══════════════════════ -->
+        <div class="docs-section" id="ppm">
+            <h2>PPM / Throughput</h2>
+            <p>
+                <strong>Parts Per Minute (PPM)</strong> is the actual throughput of the line or individual
+                machines. Two values are tracked:
+            </p>
+            <ul>
+                <li><strong>TargetPPM</strong> — derived from <code>cycle_time</code>: <code>60 / cycle_time</code>. The theoretical maximum rate for that machine.</li>
+                <li><strong>ActualPPM</strong> — measured over the current shift: <code>parts_made / elapsed_shift_time × 60</code>.</li>
+            </ul>
+            <p>
+                Total throughput (<strong>Throughput</strong> OPC UA node) is the rate at which parts exit
+                the Sink — good parts that completed the full line. It reflects the combined effect of all
+                machine availabilities and the bottleneck constraint.
+            </p>
+        </div>
+
+        <!-- ═══════════════════════ QUALITY KPIS ═══════════════════════ -->
+        <div class="docs-section" id="quality-kpis">
+            <h2>Quality KPIs</h2>
+            <table class="param-table">
+                <thead><tr><th>KPI</th><th>OPC UA Node</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td>GoodPartCount</td><td>OEE/GoodPartCount</td><td>Cumulative good parts (post-warm-up) across all machines</td></tr>
+                    <tr><td>DefectivePartCount</td><td>OEE/DefectivePartCount</td><td>Parts that entered quality routing but were not scrapped yet</td></tr>
+                    <tr><td>TotalScrap</td><td>OperationsPerformance/TotalScrap</td><td>Total parts sent to any scrap sink on the line</td></tr>
+                    <tr><td>ScrapRate</td><td>OperationsPerformance/ScrapRate</td><td>TotalScrap / TotalPartsProduced</td></tr>
+                    <tr><td>QR.GoodCount</td><td>M{i}/QualityRouting/GoodCount</td><td>Per-machine good count from quality routing (cumulative)</td></tr>
+                    <tr><td>QR.ScrapCount</td><td>M{i}/QualityRouting/ScrapCount</td><td>Per-machine parts sent to scrap sink (cumulative)</td></tr>
+                    <tr><td>QR.ReworkCount</td><td>M{i}/QualityRouting/ReworkCount</td><td>Per-machine parts sent for rework (cumulative)</td></tr>
+                    <tr><td>QR.ReworkSuccessCount</td><td>M{i}/QualityRouting/ReworkSuccessCount</td><td>Rework attempts that successfully saved the part (cumulative)</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- ═══════════════════════ SHIFTS ═══════════════════════ -->
+        <div class="docs-section" id="shifts">
+            <h2>Shift Management</h2>
+            <p>
+                Shifts divide production time into named windows (e.g. Day, Evening, Night). When a shift
+                boundary is crossed, per-shift metrics reset to zero — enabling shift-vs-shift comparison
+                without losing cumulative totals.
+            </p>
+
+            <h3>Shift configuration</h3>
+            <pre style="font-size:12px;">shifts:
+  schedule:
+    - name: "Day Shift"
+      duration: 28800      # seconds (8 hours)
+      start_offset: 0      # seconds from cycle start
+
+    - name: "Evening Shift"
+      duration: 28800
+      start_offset: 28800  # starts after Day Shift
+
+    - name: "Night Shift"
+      duration: 28800
+      start_offset: 57600  # starts after Evening Shift</pre>
+
+            <p>
+                The shift cycle repeats continuously. Shift time is sim-time based (not wall clock), so
+                an 8-hour shift is 8×3600 = 28,800 simulation steps.
+            </p>
+
+            <h3>OPC UA nodes (ShiftManagement/)</h3>
+            <ul>
+                <li><strong>CurrentShiftName</strong> — name of active shift</li>
+                <li><strong>ShiftNumber</strong> — 1-based index within the cycle</li>
+                <li><strong>ShiftElapsed</strong>, <strong>ShiftRemaining</strong> — seconds</li>
+                <li><strong>ShiftPartsProduced</strong>, <strong>ShiftGoodParts</strong></li>
+                <li><strong>ShiftOEE</strong> — OEE over the current shift only</li>
+            </ul>
+        </div>
+
+        <!-- ═══════════════════════ MAINTENANCE ═══════════════════════ -->
+        <div class="docs-section" id="maintenance">
+            <h2>Maintenance Strategies</h2>
+            <p>
+                When a maintainer is enabled (<code>maintainer.enabled: true</code>), the
+                <strong>PriorityMaintainer</strong> manages repairs. If multiple machines fail simultaneously,
+                the repair scheduling strategy determines which is fixed first.
+            </p>
+
+            <table class="param-table">
+                <thead><tr><th>Strategy</th><th>Behaviour</th></tr></thead>
+                <tbody>
+                    <tr><td>fifo</td><td>First-in, first-out. Machines are repaired in the order they failed. Default strategy.</td></tr>
+                    <tr><td>spt</td><td>Shortest Processing Time. Machine with the shortest MTTR estimate is repaired first — minimises average downtime per repair.</td></tr>
+                    <tr><td>priority</td><td>User-assigned numeric priorities (<code>machine_priorities</code> dict). Lower number = higher priority. Ties broken by FIFO.</td></tr>
+                    <tr><td>bottleneck</td><td>Machine with the longest cycle time (lowest throughput) is repaired first — maximises line throughput recovery.</td></tr>
+                </tbody>
+            </table>
+
+            <h3>Maintainer capacity</h3>
+            <p>
+                <code>maintainer.capacity</code> sets how many machines can be under repair simultaneously.
+                The default capacity is 1 (one repair team). The 8-machine scenario uses capacity 2.
+            </p>
+        </div>
+
+        <!-- ═══════════════════════ HISTORIAN ═══════════════════════ -->
+        <div class="docs-section" id="historian">
+            <h2>Event Historian</h2>
+            <p>
+                The historian records <strong>state transition events</strong> — not every simulation step, only
+                when something changes. This produces a compact, queryable log of what happened and when.
+            </p>
+
+            <h3>Event types</h3>
+            <table class="param-table">
+                <thead><tr><th>Event type</th><th>When triggered</th></tr></thead>
+                <tbody>
+                    <tr><td>STATE_CHANGE</td><td>Machine state transitions (IDLE→PROCESSING, PROCESSING→BLOCKED, etc.)</td></tr>
+                    <tr><td>ALARM</td><td>Machine failure or quality alert activated/cleared</td></tr>
+                    <tr><td>SHIFT_CHANGE</td><td>New shift begins</td></tr>
+                    <tr><td>MAINTENANCE</td><td>Repair started or completed</td></tr>
+                    <tr><td>SPC_VIOLATION</td><td>Western Electric rule triggered on a control chart</td></tr>
+                    <tr><td>BUFFER_LEVEL_CHANGE</td><td>Buffer fill level changes</td></tr>
+                    <tr><td>PRODUCTION_SUMMARY</td><td>Periodic snapshot (every <code>production_summary_interval</code> seconds)</td></tr>
+                    <tr><td>SEGMENT_START / END</td><td>Recipe segment begins or ends</td></tr>
+                    <tr><td>CHANGEOVER</td><td>Recipe changeover period starts/ends</td></tr>
+                    <tr><td>RECIPE_COMPLETE</td><td>All recipe segments finished</td></tr>
+                </tbody>
+            </table>
+
+            <h3>Storage backends</h3>
+            <ul>
+                <li><strong>CSVHistorian</strong> — writes to <code>results/historian/</code>. Rotates on shift change or 50 MB limit. Backward-compatible columns.</li>
+                <li><strong>InfluxDBHistorian</strong> — writes to the <code>sim_events</code> measurement. Each event is one InfluxDB Point tagged with <code>run_id</code>, <code>event_type</code>, <code>source</code>, <code>severity</code>.</li>
+                <li><strong>CompositeHistorian</strong> — wraps both; used when both backends are enabled.</li>
+                <li><strong>Neo4jHistorian</strong> (optional) — graph database backend for part genealogy and event relationship queries.</li>
+            </ul>
+
+            <div class="callout">
+                <strong>Docker deployment:</strong> <code>inject_historian.py</code> runs at container start and
+                enables InfluxDB for all scenarios, pointing at the Docker-internal InfluxDB URL. Your
+                <code>warm_up_time</code> and other edits in the runtime config are preserved across restarts.
+            </div>
+        </div>
+
+        <!-- ═══════════════════════ RUN ID ═══════════════════════ -->
+        <div class="docs-section" id="run-id">
+            <h2>Run IDs</h2>
+            <p>
+                Every simulation run gets a unique <strong>Run ID</strong> in the format
+                <code>{scenario}_{YYYYMMDD_HHMMSS}</code>. This ID is propagated through every layer of the
+                stack so you can isolate data from a specific run.
+            </p>
+            <ul>
+                <li><strong>OPC UA</strong>: <code>Identification/RunID</code> variable</li>
+                <li><strong>Telegraf</strong>: <code>[global_tags]</code> block — all InfluxDB points carry <code>run_id</code> tag</li>
+                <li><strong>CSV historian</strong>: <code>run_id</code> column in every row</li>
+                <li><strong>InfluxDB historian</strong>: <code>run_id</code> tag on every Point</li>
+                <li><strong>Grafana dashboards</strong>: A <code>run_id</code> template variable lets you filter all panels to a specific run</li>
+                <li><strong>Web UI → Run Reports</strong>: Lists all past runs; click to copy run_id for Grafana filter</li>
+            </ul>
+            <p>
+                Use the <a href="/runs">Run Reports</a> page to see past run IDs. Click any ID to copy it, then
+                paste into the Grafana <code>run_id</code> variable selector.
+            </p>
+        </div>
+
+        <!-- ═══════════════════════ SCENARIOS ═══════════════════════ -->
+        <div class="docs-section" id="scenarios">
+            <h2>Scenarios</h2>
+            <p>
+                Scenarios are named line configurations defined in <code>config/line_models.yaml</code>. Select a
+                scenario from the <a href="/">Dashboard</a> or edit it on the <a href="/config">Config</a> page.
+            </p>
+
+            <div class="scenario-grid">
+                <div class="scenario-card">
+                    <div class="scenario-key">balanced_line</div>
+                    <div class="scenario-name">Balanced Line</div>
+                    <div class="scenario-desc">2-machine baseline with equal cycle times and no failures. Establishes theoretical maximum throughput. Good starting point.</div>
+                    <div class="scenario-tags"><span class="stag">2 machines</span></div>
+                </div>
+                <div class="scenario-card">
+                    <div class="scenario-key">bottleneck_line</div>
+                    <div class="scenario-name">Bottleneck Line</div>
+                    <div class="scenario-desc">M1 has 2× the cycle time of M2, making it the bottleneck. Demonstrates how a single slow machine constrains the whole line.</div>
+                    <div class="scenario-tags"><span class="stag">2 machines</span></div>
+                </div>
+                <div class="scenario-card">
+                    <div class="scenario-key">failure_line</div>
+                    <div class="scenario-name">Failure Line</div>
+                    <div class="scenario-desc">Simple exponential failures on M1 using Simantha's built-in failure model. Introduces Availability loss in OEE.</div>
+                    <div class="scenario-tags"><span class="stag">2 machines</span><span class="stag stag-fail">failures</span></div>
+                </div>
+                <div class="scenario-card">
+                    <div class="scenario-key">extended_line</div>
+                    <div class="scenario-name">Extended 3-Machine Line</div>
+                    <div class="scenario-desc">3-machine serial line with 2 buffers. M2 is bottleneck. M1 has 2-state health degradation with CBM.</div>
+                    <div class="scenario-tags"><span class="stag">3 machines</span><span class="stag stag-deg">degradation</span><span class="stag stag-cbm">CBM</span></div>
+                </div>
+                <div class="scenario-card">
+                    <div class="scenario-key">long_line</div>
+                    <div class="scenario-name">Long Line (4 Machines)</div>
+                    <div class="scenario-desc">4-machine scalability test with balanced cycle times. No failures — used for throughput stress testing.</div>
+                    <div class="scenario-tags"><span class="stag">4 machines</span></div>
+                </div>
+                <div class="scenario-card">
+                    <div class="scenario-key">quality_line</div>
+                    <div class="scenario-name">Quality Line</div>
+                    <div class="scenario-desc">Health-correlated quality. M1 defect rate increases 3× when degraded. Demonstrates the link between machine health and product quality.</div>
+                    <div class="scenario-tags"><span class="stag">2 machines</span><span class="stag stag-deg">degradation</span></div>
+                </div>
+                <div class="scenario-card">
+                    <div class="scenario-key">advanced_failure_line</div>
+                    <div class="scenario-name">Advanced Failure Modes</div>
+                    <div class="scenario-desc">M1 has two competing failure modes: Weibull mechanical wearout and exponential electrical failures. Each has its own lognormal MTTR.</div>
+                    <div class="scenario-tags"><span class="stag stag-fail">wearout</span><span class="stag stag-fail">random</span><span class="stag stag-maint">maintainer</span></div>
+                </div>
+                <div class="scenario-card">
+                    <div class="scenario-key">spc_quality_line</div>
+                    <div class="scenario-name">SPC Quality Analytics</div>
+                    <div class="scenario-desc">Both machines have SPC enabled with X-bar/R charts and Western Electric rules. Monitors cycle-time variation and detects process drift.</div>
+                    <div class="scenario-tags"><span class="stag stag-spc">SPC</span><span class="stag stag-spc">WE rules</span></div>
+                </div>
+                <div class="scenario-card">
+                    <div class="scenario-key">advanced_spc_line</div>
+                    <div class="scenario-name">Advanced Failures + SPC</div>
+                    <div class="scenario-desc">Combines Weibull/exponential failure modes with X-bar/R SPC monitoring. Shows how machine health correlates with SPC signals.</div>
+                    <div class="scenario-tags"><span class="stag stag-fail">failures</span><span class="stag stag-spc">SPC</span><span class="stag stag-maint">CBM</span></div>
+                </div>
+                <div class="scenario-card">
+                    <div class="scenario-key">shift_line</div>
+                    <div class="scenario-name">Shift Tracking</div>
+                    <div class="scenario-desc">3-shift 24/7 operation (Day/Evening/Night, 8h each) with per-shift KPI resets. No failures — focus on shift performance comparison.</div>
+                    <div class="scenario-tags"><span class="stag stag-shift">3 shifts</span></div>
+                </div>
+                <div class="scenario-card">
+                    <div class="scenario-key">advanced_shift_line</div>
+                    <div class="scenario-name">Advanced Shift Line</div>
+                    <div class="scenario-desc">Shift tracking + Weibull failures + SPC on M1. The full shift management experience with realistic failure and quality monitoring.</div>
+                    <div class="scenario-tags"><span class="stag stag-shift">shifts</span><span class="stag stag-fail">failures</span><span class="stag stag-spc">SPC</span></div>
+                </div>
+                <div class="scenario-card">
+                    <div class="scenario-key">historian_line</div>
+                    <div class="scenario-name">Historian Line</div>
+                    <div class="scenario-desc">Event logging to CSV with all event types enabled. 2-shift operation. Good for testing the historian pipeline and inspecting event data.</div>
+                    <div class="scenario-tags"><span class="stag stag-hist">CSV historian</span><span class="stag stag-shift">shifts</span><span class="stag stag-deg">degradation</span></div>
+                </div>
+                <div class="scenario-card">
+                    <div class="scenario-key">scrap_line</div>
+                    <div class="scenario-name">Scrap Routing</div>
+                    <div class="scenario-desc">Both machines divert defective parts to dedicated scrap sinks (ScrapBin1/2). M1 has health-correlated defect rate.</div>
+                    <div class="scenario-tags"><span class="stag stag-qr">scrap routing</span><span class="stag stag-deg">degradation</span></div>
+                </div>
+                <div class="scenario-card">
+                    <div class="scenario-key">rework_line</div>
+                    <div class="scenario-name">Rework Line</div>
+                    <div class="scenario-desc">M1 uses scrap_and_rework mode: defective parts get up to 3 rework attempts (70% success rate each) before scrapping.</div>
+                    <div class="scenario-tags"><span class="stag stag-qr">rework</span><span class="stag stag-qr">scrap</span></div>
+                </div>
+                <div class="scenario-card">
+                    <div class="scenario-key">full_feature_line</div>
+                    <div class="scenario-name">Full Feature Line</div>
+                    <div class="scenario-desc">2-machine line with ALL features: advanced failures (Weibull+exponential), SPC, scrap+rework routing, 3-shift operation, CSV+InfluxDB historian.</div>
+                    <div class="scenario-tags"><span class="stag stag-fail">failures</span><span class="stag stag-spc">SPC</span><span class="stag stag-qr">quality</span><span class="stag stag-shift">shifts</span><span class="stag stag-hist">historian</span></div>
+                </div>
+                <div class="scenario-card">
+                    <div class="scenario-key">full_feature_8_machine_line</div>
+                    <div class="scenario-name">8-Machine Full Feature</div>
+                    <div class="scenario-desc">Maximum-scale stress test: 8 machines, all features enabled per machine. Multi-state degradation (h_max 3–5), bottleneck maintainer strategy, 2 repair teams, 120s warm-up.</div>
+                    <div class="scenario-tags"><span class="stag">8 machines</span><span class="stag stag-fail">failures</span><span class="stag stag-spc">SPC</span><span class="stag stag-qr">quality</span><span class="stag stag-deg">multi-state</span><span class="stag stag-maint">bottleneck</span></div>
+                </div>
+                <div class="scenario-card">
+                    <div class="scenario-key">warm_up_line</div>
+                    <div class="scenario-name">Warm-Up Line</div>
+                    <div class="scenario-desc">3-machine line with 300s warm-up period. Used to demonstrate and test the warm-up gating mechanism for metrics.</div>
+                    <div class="scenario-tags"><span class="stag">3 machines</span><span class="stag stag-cbm">warm-up 300s</span></div>
+                </div>
+                <div class="scenario-card">
+                    <div class="scenario-key">priority_maintenance_line</div>
+                    <div class="scenario-name">Priority Maintenance (Bottleneck)</div>
+                    <div class="scenario-desc">3-machine line with bottleneck maintenance strategy. Maintainer always repairs the slowest machine first to maximise throughput recovery.</div>
+                    <div class="scenario-tags"><span class="stag">3 machines</span><span class="stag stag-maint">bottleneck strategy</span><span class="stag stag-deg">degradation</span></div>
+                </div>
+                <div class="scenario-card">
+                    <div class="scenario-key">priority_user_line</div>
+                    <div class="scenario-name">Priority Maintenance (User)</div>
+                    <div class="scenario-desc">2-machine line with user-defined repair priorities (M1=1, M2=2). Demonstrates the priority maintenance strategy.</div>
+                    <div class="scenario-tags"><span class="stag">2 machines</span><span class="stag stag-maint">priority strategy</span></div>
+                </div>
+                <div class="scenario-card">
+                    <div class="scenario-key">multi_state_degradation_line</div>
+                    <div class="scenario-name">Multi-State Degradation</div>
+                    <div class="scenario-desc">M1 has 5 health states (h_max=5, CBM at 3). M2 has 3 states (h_max=3, CBM at 2). Demonstrates fine-grained health tracking.</div>
+                    <div class="scenario-tags"><span class="stag stag-deg">5-state health</span><span class="stag stag-cbm">CBM</span></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══════════════════════ RECIPES ═══════════════════════ -->
+        <div class="docs-section" id="recipes">
+            <h2>Run Recipes</h2>
+            <p>
+                Recipes define ordered multi-segment production schedules. Each segment runs against a base
+                scenario with optional per-machine overrides, separated by changeover periods. Use recipes to
+                model multi-product scheduling, shift schedules, or product qualification runs.
+            </p>
+
+            <h3>Recipe structure</h3>
+            <pre style="font-size:12px;">name: "Monday Production Schedule"
+base_scenario: full_feature_line   # which scenario topology to use
+
+segments:
+  - name: "Product A Morning"
+    quantity: 500          # stop after 500 good parts
+    max_duration: 18000    # safety timeout (5h)
+    overrides:
+      machines:
+        - name: M1
+          cycle_time: 10   # override cycle time for this product
+          defect_rate: 0.02
+    changeover:
+      target: 300          # planned changeover duration (seconds)
+      distribution: lognormal
+      mean: 300            # actual duration is sampled from this distribution
+      std: 60
+
+  - name: "Product B Afternoon"
+    duration: 7200         # time-box: run for exactly 2h
+    overrides: ...</pre>
+
+            <h3>Stop conditions</h3>
+            <table class="param-table">
+                <thead><tr><th>Field</th><th>Type</th><th>Behaviour</th></tr></thead>
+                <tbody>
+                    <tr><td>quantity</td><td>int</td><td>Stop when this many good parts have been produced in the segment</td></tr>
+                    <tr><td>duration</td><td>int (s)</td><td>Stop after this many seconds regardless of quantity</td></tr>
+                    <tr><td>max_duration</td><td>int (s)</td><td>Safety timeout when using quantity stop — prevents infinite runs if throughput is very low</td></tr>
+                </tbody>
+            </table>
+
+            <h3>Changeover distributions</h3>
+            <p>
+                Changeover durations can be deterministic or stochastic, modelling real-world changeover
+                variability:
+            </p>
+            <ul>
+                <li><code>constant</code> — fixed <code>value</code> (deterministic)</li>
+                <li><code>normal</code> — Gaussian with <code>mean</code> and <code>std</code></li>
+                <li><code>lognormal</code> — log-normal (always positive), good for changeover times</li>
+                <li><code>exponential</code> — exponential with <code>mean</code></li>
+            </ul>
+            <p>During changeover the OPC UA <code>OperationsState/Recipe/ChangeoverState</code> node is
+            set to "CHANGEOVER" and no parts are produced.</p>
+
+            <h3>Available recipes</h3>
+            <table class="param-table">
+                <thead><tr><th>Recipe file</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td>monday_schedule</td><td>3-segment day: Product A (500 parts, lognormal ~5min changeover) → Product B (2h, normal ~15min changeover) → Product A evening (300 parts)</td></tr>
+                    <tr><td>single_product</td><td>Single-segment recipe for testing recipe plumbing without changeovers</td></tr>
+                    <tr><td>quick_test</td><td>2-segment recipe on balanced_line for fast CI validation (20 parts + 60s)</td></tr>
+                </tbody>
+            </table>
+
+            <p>Create and edit recipes on the <a href="/recipes">Recipes</a> page.</p>
+        </div>
+
+        <!-- ═══════════════════════ OPC UA ═══════════════════════ -->
+        <div class="docs-section" id="opcua">
+            <h2>OPC UA Address Space</h2>
+            <p>
+                The OPC UA address space follows the <strong>ISA-95 / IEC 62264</strong> equipment hierarchy
+                aligned with <strong>ISO 23247</strong> digital twin identification. All nodes are read-only
+                during a run.
+            </p>
+
+            <pre style="font-size:11px;line-height:1.8;">Enterprise (WeylandIndustries)
+└── Site (LV426_Colony)
+    └── Area (AtmosphereProcessor01)
+        └── {line_name}_Equipment
+            ├── Identification/       EquipmentID, EquipmentClass, Description, RunID
+            ├── OperationsState/      SimTime, LineState, LineMode
+            │   └── Controls/         SetInterarrivalTime (read-only)
+            │   └── Recipe/           RecipeName, SegmentName, SegmentIndex, …
+            ├── OperationsPerformance/ Throughput, TotalWIP, TotalScrap, ScrapRate
+            ├── OEE/                  Availability, Performance, Quality, OEE, …
+            └── Resources/
+                ├── M{i}_Equipment/
+                │   ├── OperationsState/   State, HealthState, HealthPercent
+                │   ├── OperationsPerformance/ PartCount, Utilisation, TargetPPM, ActualPPM
+                │   ├── OEE/               Availability, Performance, Quality, OEE
+                │   ├── Alarms/            MachineFailureActive, MaintenanceActive, QualityAlertActive
+                │   ├── SPC/               (if enable_spc)
+                │   └── QualityRouting/    GoodCount, ScrapCount, ReworkCount, … (if quality_routing)
+                ├── B{i}_StorageUnit/      CurrentLevel, Capacity, Alarms/
+                └── SupportFunctions/
+                    ├── Maintenance/       MaintenanceActive, QueueLength, TotalRepairs
+                    └── ShiftManagement/   (if shifts configured)</pre>
+
+            <h3>Connecting via OPC UA</h3>
+            <p>
+                Endpoint: <code>opc.tcp://localhost:4840/simantha/</code> (no authentication).
+                Use any OPC UA client (UaExpert, Python <code>asyncua</code>, etc.) to browse and subscribe
+                to nodes. Telegraf polls all nodes automatically when running in Docker.
+            </p>
+        </div>
+
+        <!-- ═══════════════════════ GLOSSARY ═══════════════════════ -->
+        <div class="docs-section" id="glossary">
+            <h2>Glossary</h2>
+
+            <div class="glossary-filter mb-3">
+                <input type="text" class="form-control" id="glossary-search" placeholder="Filter terms…" style="max-width:300px;">
+            </div>
+
+            <div class="glossary-grid" id="glossary-grid">
+                <div class="glossary-item">
+                    <div class="glossary-term">ActualPPM</div>
+                    <div class="glossary-def">Measured parts-per-minute rate for a machine during the current shift. Contrast with <strong>TargetPPM</strong>.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">Availability (A)</div>
+                    <div class="glossary-def">OEE factor: fraction of planned production time that the machine was actually running (not failed or in repair). A = (shift_time − down_time) / shift_time.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">BLOCKED</div>
+                    <div class="glossary-def">Machine state: machine has completed a part but cannot move it downstream because the output buffer is full.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">Buffer</div>
+                    <div class="glossary-def">A finite-capacity queue between two machines. Decouples machine speeds and absorbs variability. When full, the upstream machine is BLOCKED. When empty, the downstream machine is STARVED.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">CBM</div>
+                    <div class="glossary-def">Condition-Based Maintenance. Maintenance triggered by machine health reaching a threshold (<code>cbm_threshold &lt; h_max</code>) before actual failure. Prevents FAILED state.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">Changeover</div>
+                    <div class="glossary-def">The period between recipe segments during which the line is reconfigured for a new product. Duration is sampled from a distribution. No parts are produced.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">Cp</div>
+                    <div class="glossary-def">Process capability index. Cp = (USL − LSL) / 6σ. Measures how well the process spread fits within the specification limits. Cp ≥ 1.33 is typically required.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">Cpk</div>
+                    <div class="glossary-def">Process capability index accounting for centring. Cpk = min((USL−μ)/3σ, (μ−LSL)/3σ). Lower than Cp indicates the process mean is off-centre.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">cycle_time</div>
+                    <div class="glossary-def">Seconds per part for one machine. The reciprocal of throughput rate. <code>target_ppm</code> overrides this: cycle_time = 60 / target_ppm.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">defect_rate</div>
+                    <div class="glossary-def">Probability [0,1] that any given part exiting a machine is classified as defective. Combined with health_multiplier for health-correlated quality.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">DEGRADED</div>
+                    <div class="glossary-def">Machine state: health &gt; 0 but below the failure threshold. Machine is still operating but at potentially higher defect rate. CBM triggers repair during this state.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">Digital Twin</div>
+                    <div class="glossary-def">A real-time virtual model of a physical asset or system that mirrors its current state and behaviour. This system is a manufacturing line digital twin.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">EventHistorian</div>
+                    <div class="glossary-def">The event logging subsystem. Detects state transitions and records structured events to CSV and/or InfluxDB. Abstract base class with CSV, InfluxDB, and Neo4j backends.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">FAILED</div>
+                    <div class="glossary-def">Machine state: health has reached h_max. Machine is down and not producing. Waiting for a maintainer to begin repair.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">failure_rate</div>
+                    <div class="glossary-def">Simple (non-advanced) failure parameter: failures per hour, modelled as Poisson process. Replaced by <code>failure_modes</code> when using advanced failures.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">Grafana</div>
+                    <div class="glossary-def">Open-source visualisation platform. Pre-provisioned dashboards query InfluxDB via Flux queries, filtered by run_id for per-run analysis.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">health_multiplier</div>
+                    <div class="glossary-def">Scaling factor for health-correlated quality. Effective defect rate = base_defect_rate × (1 + health_multiplier × health_fraction).</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">health_states</div>
+                    <div class="glossary-def">Multi-state degradation config block: h_max (failed state index), p_degrade (per-step degrade probability), cbm_threshold.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">historian</div>
+                    <div class="glossary-def">Config block enabling the EventHistorian for a scenario. Can enable CSV, InfluxDB, and Neo4j backends independently with per-event-type control.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">h_max</div>
+                    <div class="glossary-def">Maximum health state index. Machine is FAILED at this level. Total health states = h_max + 1 (states 0 through h_max).</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">IDLE</div>
+                    <div class="glossary-def">Machine state: healthy, no part being processed, not blocked, not starved. Waiting for a part to arrive.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">InfluxDB</div>
+                    <div class="glossary-def">Time-series database. Stores Telegraf metrics (sim_metrics measurement) and historian events (sim_events measurement) tagged by run_id.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">ISA-95</div>
+                    <div class="glossary-def">International standard (IEC 62264) for enterprise-control system integration. Defines a 4-level hierarchy: Enterprise → Site → Area → Work Centre. The OPC UA address space follows this model.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">LineState</div>
+                    <div class="glossary-def">Python class that accumulates per-step simulation deltas into monotonically increasing counters. Survives simulate() reinitialisations. Also the OPC UA variable name for the line operating mode.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">lognormal</div>
+                    <div class="glossary-def">Probability distribution: always positive, right-skewed. Commonly used for repair time modelling. Specified by mean and std of the underlying normal distribution.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">MachineTotals</div>
+                    <div class="glossary-def">Dataclass holding cumulative counters per machine (parts_made, good_count, scrap_count, defective_count, rework_count, rework_success_count). Populated by LineState.sync_machine().</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">MTTF</div>
+                    <div class="glossary-def">Mean Time To Failure. Expected time between failures for a given failure mode. Specified as a probability distribution (Weibull, exponential, lognormal).</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">MTTR</div>
+                    <div class="glossary-def">Mean Time To Repair. Expected duration of one repair event. Sampled from a distribution at the moment of failure. Tracked via machine_repair_remaining countdown.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">OEE</div>
+                    <div class="glossary-def">Overall Equipment Effectiveness = Availability × Performance × Quality. Industry-standard composite KPI for manufacturing efficiency. 1.0 = perfect production.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">OPC UA</div>
+                    <div class="glossary-def">OPC Unified Architecture. Industrial communication protocol (IEC 62541). Platform-independent, secure, with a rich information model. Endpoint: opc.tcp://localhost:4840/simantha/</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">p_degrade</div>
+                    <div class="glossary-def">Per-step probability of the machine degrading one health state. p_degrade=0.01 means on average 100 steps per health state.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">Performance (P)</div>
+                    <div class="glossary-def">OEE factor: actual parts produced vs. theoretical maximum at full speed. P = parts_made / (available_time / cycle_time).</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">PPM</div>
+                    <div class="glossary-def">Parts Per Minute. Throughput metric. TargetPPM = 60/cycle_time. ActualPPM = parts_made / elapsed_minutes during current shift.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">PROCESSING</div>
+                    <div class="glossary-def">Machine state: a part is currently in the machine being worked on, completing after one cycle_time.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">Quality (Q)</div>
+                    <div class="glossary-def">OEE factor: good parts as a fraction of total parts produced. Q = good_parts / total_parts_made.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">quality_routing</div>
+                    <div class="glossary-def">Per-machine config block enabling defect diversion to scrap sinks or rework. Modes: scrap, scrap_and_rework.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">Recipe</div>
+                    <div class="glossary-def">A YAML file defining an ordered sequence of production segments on a base scenario. Each segment can override machine parameters and is separated by a changeover period.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">repair_time</div>
+                    <div class="glossary-def">Fixed repair duration for simple (non-advanced) failures. Replaced by MTTR distribution when using advanced failures.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">rework_success_rate</div>
+                    <div class="glossary-def">Probability [0,1] that a single rework attempt successfully salvages a defective part. Parts failing all max_rework attempts are scrapped.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">run_id</div>
+                    <div class="glossary-def">Unique identifier for one simulation run: {scenario}_{YYYYMMDD_HHMMSS}. Tag on all InfluxDB data points and CSV rows. Used to isolate and filter data from a specific run.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">Scenario</div>
+                    <div class="glossary-def">A named line configuration in line_models.yaml defining machines, buffers, failures, quality, shifts, historian, and maintainer for one simulation run.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">scrap_sink</div>
+                    <div class="glossary-def">A named collection point for defective parts. Parts diverted to a scrap sink leave the production line permanently and are counted in TotalScrap.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">Simantha</div>
+                    <div class="glossary-def">NIST open-source Python library for discrete-event manufacturing simulation. Provides Machine, Buffer, Source, Sink, Maintainer primitives. This system wraps Simantha with OPC UA, SPC, quality routing, and historian layers.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">Sink</div>
+                    <div class="glossary-def">Simantha object representing the end of the line. Receives good parts that have passed all machines. sink.level is the per-step part count used to track throughput.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">SPC</div>
+                    <div class="glossary-def">Statistical Process Control. Uses X-bar/R control charts to monitor process stability. Detects special-cause variation via Western Electric rules. Calculates Cp/Cpk capability.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">STARVED</div>
+                    <div class="glossary-def">Machine state: ready to process but the upstream buffer is empty. No parts available. Causes throughput loss.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">target_ppm</div>
+                    <div class="glossary-def">Alternatively specify machine speed as parts-per-minute instead of cycle_time. Derives cycle_time = 60 / target_ppm. Takes precedence if both are given.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">Telegraf</div>
+                    <div class="glossary-def">InfluxData metrics collection agent. Configured to poll OPC UA nodes every second and write to InfluxDB. Config auto-generated per scenario by generate_telegraf_conf.py.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">UNDER_REPAIR</div>
+                    <div class="glossary-def">Machine state: repair is in progress. machine_repair_remaining counts down from the sampled MTTR. Machine returns to IDLE when countdown reaches zero.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">warm_up_time</div>
+                    <div class="glossary-def">Number of simulation steps (seconds) before KPI collection begins. During warm-up the line fills to steady state but metrics are not incremented.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">Weibull</div>
+                    <div class="glossary-def">Probability distribution with shape parameter β. β&gt;1 = increasing failure rate (wearout). β=1 = exponential (random). β&lt;1 = decreasing (infant mortality). Used for MTTF modelling.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">Western Electric rules</div>
+                    <div class="glossary-def">Set of out-of-control detection rules for SPC control charts. Four rules detect patterns suggesting the process mean or variance has shifted. Triggers SPC_VIOLATION events.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">WIP</div>
+                    <div class="glossary-def">Work In Progress. Total parts currently in the system (in machines + in buffers). High WIP can indicate a bottleneck. Tracked in TotalWIP OPC UA variable.</div>
+                </div>
+                <div class="glossary-item">
+                    <div class="glossary-term">X-bar / R chart</div>
+                    <div class="glossary-def">Control chart pair: X-bar monitors subgroup means (process average), R monitors subgroup ranges (process variability). Both must be in control for a stable process.</div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── Active TOC highlighting ──
+(function () {
+    var sections = document.querySelectorAll('.docs-section, h2, h3');
+    var links = document.querySelectorAll('.toc-link');
+
+    function getAnchor(el) {
+        return el.id || (el.closest('.docs-section') && el.closest('.docs-section').id);
+    }
+
+    function onScroll() {
+        var scrollY = window.scrollY + 80;
+        var current = null;
+        document.querySelectorAll('[id]').forEach(function (el) {
+            if (el.offsetTop <= scrollY) current = el.id;
+        });
+        links.forEach(function (l) {
+            l.classList.remove('active');
+            if (l.getAttribute('href') === '#' + current) l.classList.add('active');
+        });
+    }
+
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+
+    // Smooth scroll
+    links.forEach(function (l) {
+        l.addEventListener('click', function (e) {
+            var href = l.getAttribute('href');
+            if (href.startsWith('#')) {
+                e.preventDefault();
+                var target = document.querySelector(href);
+                if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        });
+    });
+})();
+
+// ── Glossary filter ──
+document.getElementById('glossary-search').addEventListener('input', function () {
+    var q = this.value.toLowerCase();
+    document.querySelectorAll('.glossary-item').forEach(function (item) {
+        var text = item.textContent.toLowerCase();
+        item.style.display = text.includes(q) ? '' : 'none';
+    });
+});
+</script>
+{% endblock %}

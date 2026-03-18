@@ -1154,6 +1154,12 @@ def validation_page():
     return render_template("validation.html")
 
 
+@app.route("/docs")
+def docs_page():
+    """Documentation page."""
+    return render_template("docs.html")
+
+
 @app.route("/api/reports/files")
 def api_report_files():
     """List historian CSV files available for analysis."""
