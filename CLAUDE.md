@@ -32,9 +32,8 @@ pytest tests/test_quality_routing.py::test_scrap_routing_basic -v
 pytest tests/ --ignore=tests/test_advanced_scenarios.py --ignore=tests/test_opcua_integration.py --cov=src --cov-report=html
 
 # Lint (CI uses two passes: errors-only then warnings)
-# Exclude backup file: --exclude=src/opcua_server_backup_phase7.py
-flake8 src/ tests/ --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=src/opcua_server_backup_phase7.py
-flake8 src/ tests/ --count --exit-zero --max-complexity=10 --max-line-length=127 --exclude=src/opcua_server_backup_phase7.py
+flake8 src/ tests/ --count --select=E9,F63,F7,F82 --show-source --statistics
+flake8 src/ tests/ --count --exit-zero --max-complexity=10 --max-line-length=127
 
 # Run Flask web UI locally (no Docker needed)
 python docker/webui/app.py
