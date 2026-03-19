@@ -77,7 +77,7 @@
       },
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"LineOEE\")\n  |> last()\n  |> map(fn: (r) => ({r with _value: r._value * 100.0}))"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"LineOEE\")\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> last()\n  |> map(fn: (r) => ({r with _value: r._value * 100.0}))"
         }
       ],
       "title": "Line OEE",
@@ -122,7 +122,7 @@
       },
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"Throughput\")\n  |> last()"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"Throughput\")\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> last()"
         }
       ],
       "title": "Throughput",
@@ -175,7 +175,7 @@
       },
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"TotalWIP\")\n  |> last()"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"TotalWIP\")\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> last()"
         }
       ],
       "title": "Total WIP",
@@ -228,7 +228,7 @@
       },
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"TotalScrap\")\n  |> last()"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"TotalScrap\")\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> last()"
         }
       ],
       "title": "Total Scrap",
@@ -267,7 +267,7 @@
       "id": 5,
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"LineOEE\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> map(fn: (r) => ({r with _value: r._value * 100.0}))"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"LineOEE\")\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> map(fn: (r) => ({r with _value: r._value * 100.0}))"
         }
       ],
       "title": "OEE Trend",
@@ -294,7 +294,7 @@
       "id": 6,
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"Throughput\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"Throughput\")\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)"
         }
       ],
       "title": "Throughput Over Time",
@@ -321,7 +321,7 @@
       "id": 9,
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"ScrapRate\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> map(fn: (r) => ({r with _value: r._value * 100.0}))"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"ScrapRate\")\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> map(fn: (r) => ({r with _value: r._value * 100.0}))"
         }
       ],
       "title": "Scrap Rate Trend",

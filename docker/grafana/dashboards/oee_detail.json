@@ -82,7 +82,7 @@
       },
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"LineOEE\")\n  |> last()\n  |> map(fn: (r) => ({r with _value: r._value * 100.0, _field: \"OEE\"}))"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"LineOEE\")\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> last()\n  |> map(fn: (r) => ({r with _value: r._value * 100.0, _field: \"OEE\"}))"
         }
       ],
       "title": "Line OEE",
@@ -136,7 +136,7 @@
       },
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"LineAvailability\")\n  |> last()\n  |> map(fn: (r) => ({r with _value: r._value * 100.0, _field: \"Availability\"}))"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"LineAvailability\")\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> last()\n  |> map(fn: (r) => ({r with _value: r._value * 100.0, _field: \"Availability\"}))"
         }
       ],
       "title": "Availability",
@@ -190,7 +190,7 @@
       },
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"LinePerformance\")\n  |> last()\n  |> map(fn: (r) => ({r with _value: r._value * 100.0, _field: \"Performance\"}))"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"LinePerformance\")\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> last()\n  |> map(fn: (r) => ({r with _value: r._value * 100.0, _field: \"Performance\"}))"
         }
       ],
       "title": "Performance",
@@ -244,7 +244,7 @@
       },
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"LineQuality\")\n  |> last()\n  |> map(fn: (r) => ({r with _value: r._value * 100.0, _field: \"Quality\"}))"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"LineQuality\")\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> last()\n  |> map(fn: (r) => ({r with _value: r._value * 100.0, _field: \"Quality\"}))"
         }
       ],
       "title": "Quality",
@@ -368,7 +368,7 @@
       "id": 5,
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"LineOEE\" or r._field == \"LineAvailability\" or r._field == \"LinePerformance\" or r._field == \"LineQuality\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> map(fn: (r) => ({r with _value: r._value * 100.0}))"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"LineOEE\" or r._field == \"LineAvailability\" or r._field == \"LinePerformance\" or r._field == \"LineQuality\")\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> map(fn: (r) => ({r with _value: r._value * 100.0}))"
         }
       ],
       "title": "Line OEE Components Over Time",
@@ -437,7 +437,7 @@
       },
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_OEE$/)\n  |> last()\n  |> map(fn: (r) => ({r with _value: r._value * 100.0}))"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_OEE$/)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> last()\n  |> map(fn: (r) => ({r with _value: r._value * 100.0}))"
         }
       ],
       "title": "OEE per Machine",
@@ -490,7 +490,7 @@
       },
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_Availability$/)\n  |> last()\n  |> map(fn: (r) => ({r with _value: r._value * 100.0}))"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_Availability$/)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> last()\n  |> map(fn: (r) => ({r with _value: r._value * 100.0}))"
         }
       ],
       "title": "Availability per Machine",
@@ -543,7 +543,7 @@
       },
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_Performance$/)\n  |> last()\n  |> map(fn: (r) => ({r with _value: r._value * 100.0}))"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_Performance$/)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> last()\n  |> map(fn: (r) => ({r with _value: r._value * 100.0}))"
         }
       ],
       "title": "Performance per Machine",
@@ -596,7 +596,7 @@
       },
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_Quality$/)\n  |> last()\n  |> map(fn: (r) => ({r with _value: r._value * 100.0}))"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_Quality$/)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> last()\n  |> map(fn: (r) => ({r with _value: r._value * 100.0}))"
         }
       ],
       "title": "Quality per Machine",
@@ -638,7 +638,7 @@
       "id": 10,
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_OEE$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> map(fn: (r) => ({r with _value: r._value * 100.0}))"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_OEE$/)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> map(fn: (r) => ({r with _value: r._value * 100.0}))"
         }
       ],
       "title": "OEE Trend per Machine",
@@ -668,7 +668,7 @@
       "id": 11,
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_Availability$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> map(fn: (r) => ({r with _value: r._value * 100.0}))"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_Availability$/)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> map(fn: (r) => ({r with _value: r._value * 100.0}))"
         }
       ],
       "title": "Availability Trend per Machine",
@@ -724,7 +724,7 @@
       },
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_GoodParts$/)\n  |> last()"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_GoodParts$/)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> last()"
         }
       ],
       "title": "Good Parts per Machine",
@@ -776,7 +776,7 @@
       },
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_DefectParts$/)\n  |> last()"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_DefectParts$/)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> last()"
         }
       ],
       "title": "Defective Parts per Machine",
@@ -810,7 +810,7 @@
       },
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_(TargetPPM|ActualPPM|PartCount|Utilisation)$/)\n  |> last()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_(TargetPPM|ActualPPM|PartCount|Utilisation)$/)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> last()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")"
         }
       ],
       "title": "Machine Performance Summary",
@@ -852,7 +852,7 @@
       "id": 15,
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_Performance$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> map(fn: (r) => ({r with _value: r._value * 100.0}))"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_Performance$/)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> map(fn: (r) => ({r with _value: r._value * 100.0}))"
         }
       ],
       "title": "Performance Trend per Machine",
@@ -882,7 +882,7 @@
       "id": 16,
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_Quality$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> map(fn: (r) => ({r with _value: r._value * 100.0}))"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_Quality$/)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> map(fn: (r) => ({r with _value: r._value * 100.0}))"
         }
       ],
       "title": "Quality Trend per Machine",

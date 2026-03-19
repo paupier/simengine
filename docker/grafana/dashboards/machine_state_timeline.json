@@ -139,7 +139,7 @@
       },
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sim_events\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r.event_type == \"STATE_CHANGE\")\n  |> filter(fn: (r) => r.source_type == \"machine\")\n  |> filter(fn: (r) => r._field == \"new_state\")\n  |> group(columns: [\"source\"])"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sim_events\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r.event_type == \"STATE_CHANGE\")\n  |> filter(fn: (r) => r.source_type == \"machine\")\n  |> filter(fn: (r) => r._field == \"new_state\")\n  |> keep(columns: [\"_time\", \"_value\", \"source\"])\n  |> group(columns: [\"source\"])"
         }
       ],
       "title": "Machine State Timeline",
@@ -288,7 +288,7 @@
       "id": 2,
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sim_events\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r.event_type == \"STATE_CHANGE\")\n  |> filter(fn: (r) => r.source_type == \"machine\")\n  |> filter(fn: (r) => r._field == \"new_state\")\n  |> group(columns: [\"source\", \"_value\"])\n  |> count()\n  |> group(columns: [\"source\"])\n  |> pivot(rowKey: [\"source\"], columnKey: [\"_value\"], valueColumn: \"_value\")"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sim_events\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r.event_type == \"STATE_CHANGE\")\n  |> filter(fn: (r) => r.source_type == \"machine\")\n  |> filter(fn: (r) => r._field == \"new_state\")\n  |> map(fn: (r) => ({r with state: r._value}))\n  |> keep(columns: [\"_time\", \"_value\", \"source\", \"state\"])\n  |> group(columns: [\"source\", \"state\"])\n  |> count()\n  |> group(columns: [\"source\"])\n  |> pivot(rowKey: [\"source\"], columnKey: [\"state\"], valueColumn: \"_value\")"
         }
       ],
       "title": "State Transition Counts by Machine",
@@ -315,7 +315,7 @@
       "id": 3,
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_Utilisation$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> map(fn: (r) => ({r with _value: r._value * 100.0}))"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_Utilisation$/)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> map(fn: (r) => ({r with _value: r._value * 100.0}))"
         }
       ],
       "title": "Machine Utilization Trend",
@@ -354,7 +354,7 @@
       "id": 4,
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^B\\d+_Level$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^B\\d+_Level$/)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)"
         }
       ],
       "title": "Buffer Levels Over Time",

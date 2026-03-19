@@ -77,7 +77,7 @@
       },
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"${machine}_SPC_Cpk\")\n  |> last()"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"${machine}_SPC_Cpk\")\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> last()"
         }
       ],
       "title": "Cpk",
@@ -130,7 +130,7 @@
       },
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"${machine}_SPC_SigmaLevel\")\n  |> last()"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"${machine}_SPC_SigmaLevel\")\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> last()"
         }
       ],
       "title": "Sigma Level",
@@ -198,7 +198,7 @@
       },
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"${machine}_SPC_InControl\")\n  |> last()"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"${machine}_SPC_InControl\")\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> last()"
         }
       ],
       "title": "Control Status",
@@ -250,7 +250,7 @@
       },
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"${machine}_SPC_Violations\")\n  |> last()"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"${machine}_SPC_Violations\")\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> last()"
         }
       ],
       "title": "Violations",
@@ -403,7 +403,7 @@
       "id": 5,
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"${machine}_SPC_XBar\" or r._field == \"${machine}_SPC_XBar_UCL\" or r._field == \"${machine}_SPC_XBar_CL\" or r._field == \"${machine}_SPC_XBar_LCL\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"${machine}_SPC_XBar\" or r._field == \"${machine}_SPC_XBar_UCL\" or r._field == \"${machine}_SPC_XBar_CL\" or r._field == \"${machine}_SPC_XBar_LCL\")\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)"
         }
       ],
       "title": "X-bar Chart",
@@ -544,7 +544,7 @@
       "id": 6,
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"${machine}_SPC_Range\" or r._field == \"${machine}_SPC_Range_UCL\" or r._field == \"${machine}_SPC_Range_CL\" or r._field == \"${machine}_SPC_Range_LCL\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"${machine}_SPC_Range\" or r._field == \"${machine}_SPC_Range_UCL\" or r._field == \"${machine}_SPC_Range_CL\" or r._field == \"${machine}_SPC_Range_LCL\")\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)"
         }
       ],
       "title": "R Chart",
@@ -583,7 +583,7 @@
       "id": 7,
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"${machine}_SPC_Cp\" or r._field == \"${machine}_SPC_Cpk\" or r._field == \"${machine}_SPC_Pp\" or r._field == \"${machine}_SPC_Ppk\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field == \"${machine}_SPC_Cp\" or r._field == \"${machine}_SPC_Cpk\" or r._field == \"${machine}_SPC_Pp\" or r._field == \"${machine}_SPC_Ppk\")\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)"
         }
       ],
       "title": "Capability Indices Trend",
@@ -637,7 +637,7 @@
       },
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_SPC_Cpk$/)\n  |> last()"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_SPC_Cpk$/)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> last()"
         }
       ],
       "title": "All Machines Cpk Comparison",
