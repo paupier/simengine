@@ -288,7 +288,7 @@
       "id": 2,
       "targets": [
         {
-          "query": "import \"strings\"\n\nfrom(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_State$/)\n  |> map(fn: (r) => ({_time: r._time, machine: strings.trimSuffix(v: r._field, suffix: \"_State\"), state: r._value, _value: 1}))\n  |> group(columns: [\"machine\", \"state\"])\n  |> sum()\n  |> group(columns: [\"machine\"])\n  |> pivot(rowKey: [\"machine\"], columnKey: [\"state\"], valueColumn: \"_value\")"
+          "query": "import \"strings\"\n\nfrom(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_State$/)\n  |> map(fn: (r) => ({_time: r._time, machine: strings.trimSuffix(v: r._field, suffix: \"_State\"), state: r._value, _value: 1}))\n  |> group(columns: [\"machine\", \"state\"])\n  |> sum()\n  |> group(columns: [])\n  |> pivot(rowKey: [\"machine\"], columnKey: [\"state\"], valueColumn: \"_value\")"
         }
       ],
       "title": "State Time by Machine (seconds)",
