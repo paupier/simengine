@@ -19,7 +19,7 @@ import re
 from ruamel.yaml import YAML
 
 from datetime import datetime as dt
-from flask import Flask, jsonify, render_template, request, send_from_directory
+from flask import Flask, Response, jsonify, render_template, request, send_from_directory
 
 _ryaml = YAML()
 _ryaml.preserve_quotes = True
@@ -938,27 +938,84 @@ def list_historian_files():
     ]})
 
 
+def _merge_csv_files(file_paths):
+    """Merge multiple CSV rotation files into a single in-memory CSV string.
+
+    Keeps the header from the first file only, concatenates data rows from all
+    files in order. Returns (csv_string, download_filename).
+    """
+    buf = StringIO()
+    header_written = False
+    for path in file_paths:
+        with open(path, encoding="utf-8") as f:
+            for i, line in enumerate(f):
+                if i == 0:
+                    if not header_written:
+                        buf.write(line)
+                        header_written = True
+                else:
+                    buf.write(line)
+    # Use the base filename (no rotation suffix) as download name
+    base = file_paths[0]
+    stem = base.stem
+    run_id = stem.rsplit("_events", 1)[0] if "_events" in stem else stem
+    download_name = f"{run_id}_events_merged.csv"
+    return buf.getvalue(), download_name
+
+
+def _get_run_files(filename, hist_dir):
+    """Return sorted rotation files for the run_id implied by *filename*."""
+    stem = Path(filename).stem
+    run_id = stem.rsplit("_events", 1)[0] if "_events" in stem else stem
+    import re as _re
+    def _sort_key(p):
+        m = _re.search(r"_events_(\d+)$", p.stem)
+        return int(m.group(1)) if m else -1
+    files = sorted(hist_dir.glob(f"{run_id}_events*.csv"), key=_sort_key)
+    return files if files else []
+
+
 @app.route("/api/historian/download/<filename>")
 def download_historian_file(filename):
-    """Serve a specific historian CSV file as an attachment."""
+    """Serve historian CSV(s) for the given run as an attachment.
+
+    If the run has multiple rotation files they are merged into one download.
+    """
     hist_dir = _PROJECT_ROOT / "results" / "historian"
     if ".." in filename or not filename.endswith(".csv"):
         return jsonify({"error": "Invalid filename"}), 400
     if not (hist_dir / filename).exists():
         return jsonify({"error": "File not found"}), 404
-    return send_from_directory(str(hist_dir), filename, as_attachment=True)
+    run_files = _get_run_files(filename, hist_dir)
+    if len(run_files) <= 1:
+        return send_from_directory(str(hist_dir), filename, as_attachment=True)
+    csv_data, download_name = _merge_csv_files(run_files)
+    return Response(
+        csv_data,
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={download_name}"},
+    )
 
 
 @app.route("/api/historian/download")
 def download_latest_historian():
-    """Download the most recent historian CSV file."""
+    """Download the most recent historian run as a single merged CSV."""
     hist_dir = _PROJECT_ROOT / "results" / "historian"
     if not hist_dir.exists():
         return jsonify({"error": "No historian files found"}), 404
     files = sorted(hist_dir.glob("*_events*.csv"), key=os.path.getmtime)
     if not files:
         return jsonify({"error": "No historian files found"}), 404
-    return send_from_directory(str(hist_dir), files[-1].name, as_attachment=True)
+    # Use the most recent file to identify the run, then merge all its parts
+    run_files = _get_run_files(files[-1].name, hist_dir)
+    if len(run_files) <= 1:
+        return send_from_directory(str(hist_dir), files[-1].name, as_attachment=True)
+    csv_data, download_name = _merge_csv_files(run_files)
+    return Response(
+        csv_data,
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={download_name}"},
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1247,7 +1304,7 @@ def api_validation_run():
         sys.path.insert(0, str(_PROJECT_ROOT / "tools"))
         from analyze_historian import query_influxdb_telegraf
 
-        df = re_mod.load_historian_csv(str(filepath))
+        df = re_mod.load_merged_historian_csv(str(filepath))
 
         # Extract run_id and time range from CSV for scoped queries
         csv_run_id = None

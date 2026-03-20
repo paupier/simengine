@@ -39,6 +39,27 @@ def find_latest_csv(directory):
     return str(csvs[-1])
 
 
+def _rotation_sort_key(p):
+    """Sort rotation files: base file (_events.csv) first, then _events_001, _002, ..."""
+    stem = Path(p).stem
+    import re as _re
+    m = _re.search(r"_events_(\d+)$", stem)
+    return int(m.group(1)) if m else -1
+
+
+def find_run_csv_files(path):
+    """Return all rotation CSV files for the same run_id as *path*, sorted in order.
+
+    Given any one file in a rotation set (e.g. events.csv or events_001.csv),
+    finds all sibling files in the same directory that share the same run_id prefix.
+    """
+    path = Path(path)
+    stem = path.stem  # e.g. "full_feature_8_machine_line_20260318_211446_events_001"
+    run_id = stem.rsplit("_events", 1)[0] if "_events" in stem else stem
+    files = sorted(path.parent.glob(f"{run_id}_events*.csv"), key=_rotation_sort_key)
+    return files if files else [path]
+
+
 def load_historian_csv(path):
     """Load historian CSV with appropriate dtypes.
 
@@ -69,6 +90,22 @@ def load_historian_csv(path):
     if "run_id" not in df.columns:
         df.insert(0, "run_id", "")
     return df
+
+
+def load_merged_historian_csv(path):
+    """Load and merge all rotation files for the same run_id as *path*.
+
+    Returns a single concatenated DataFrame sorted by timestamp, covering the
+    full run regardless of how many 50 MB rotation files were created.
+    """
+    _require_pandas()
+    files = find_run_csv_files(path)
+    dfs = [load_historian_csv(str(f)) for f in files]
+    if len(dfs) == 1:
+        return dfs[0]
+    merged = pd.concat(dfs, ignore_index=True)
+    merged.sort_values("timestamp", inplace=True, ignore_index=True)
+    return merged
 
 
 def parse_extra_json(series):
