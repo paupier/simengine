@@ -11,13 +11,13 @@ A real-time **digital twin** of a manufacturing production line using [Simantha]
 ## 📋 Project Status
 
 **Status:** Feature-complete manufacturing digital twin
-**Last Updated:** 2026-02-28
+**Last Updated:** 2026-03-20
 
 ### Key Capabilities
 
 | Area | Features |
 |------|----------|
-| **Simulation** | N-machine serial lines (2-10+), config-driven topologies, 20 built-in scenarios, run recipes, per-step real-time architecture (O(1)/step, sim clock locked to wall clock) |
+| **Simulation** | N-machine serial lines (2-10+), config-driven topologies, 21 built-in scenarios, run recipes, per-step real-time architecture (O(1)/step, sim clock locked to wall clock) |
 | **OPC UA** | ISA-95/ISO 23247 aligned address space; `SetInterarrivalTime` configurable at run start |
 | **Reliability** | Multi-state health degradation, advanced failure modes (Weibull, exponential, lognormal), competing risks |
 | **Maintenance** | Corrective/preventive/predictive strategies, priority maintainer (FIFO, SPT, priority, bottleneck) |
@@ -38,7 +38,7 @@ This project creates a **realistic manufacturing digital twin** that:
 - **Routes** defective parts to scrap sinks or attempts virtual rework before scrapping
 - **Tracks** shift-based production with automatic rotation and per-shift OEE
 - **Logs** events to CSV, InfluxDB, and Neo4j with Grafana visualization
-- **Responds** to external control inputs (pause/resume, arrival rate adjustment)
+- **Responds** to external control inputs (arrival rate adjustment configurable at run start)
 - **Schedules** multi-segment production recipes with stochastic changeover analysis
 - **Demonstrates** buffer dynamics, bottlenecks, failure impacts, and SPC analytics
 
@@ -53,10 +53,10 @@ This project creates a **realistic manufacturing digital twin** that:
 - ✅ **SPC Analytics** - X-bar/R control charts, Cp/Cpk capability, Western Electric rules
 - ✅ **Shift Management** - Configurable shift rotation with per-shift metrics and OEE
 - ✅ **Alarms & Events** - Machine failure, quality, maintenance, and buffer alerts
-- ✅ **Enhanced State Detection** - 8 states: IDLE, PROCESSING, BLOCKED, STARVED, PAUSED, FAILED, UNDER_REPAIR, DEGRADED
+- ✅ **Enhanced State Detection** - 7 states: IDLE, PROCESSING, BLOCKED, STARVED, DEGRADED, FAILED, UNDER_REPAIR
 - ✅ **Time Tracking** - Per-step time accumulation by machine state (see [How KPIs Are Derived](#how-kpis-are-derived))
 - ✅ **Event Historian** - CSV, InfluxDB 2.x, Neo4j backends with edge-detection logging
-- ✅ **Grafana Dashboards** - Manufacturing overview, state timeline, alarm log, shift comparison
+- ✅ **Grafana Dashboards** - Manufacturing overview, OEE detail, machine KPIs, state timeline, downtime/reliability, SPC, shift comparison, alarm log, line balance/bottleneck, SPC machine detail (10 dashboards)
 - ✅ **Scrap & Rework Routing** - Defective parts routed to scrap sinks, virtual rework at machine
 - ✅ **Quality Routing** - Per-part defect decisions inside simulation with health correlation
 
@@ -205,8 +205,8 @@ Under the Equipment node:
 ┌──────────────────────────────────────┐
 │         OPC UA Server (ISA-95)       │  (python-opcua)
 │  Enterprise/Site/Area/Line hierarchy │
-│  Writable: cmdPauseLine,             │
-│            setInterarrivalTime       │
+│  All variables read-only during run  │
+│  (SetInterarrivalTime set at start)  │
 └────────────────┬─────────────────────┘
                  │ Python API
                  ▼
@@ -275,21 +275,17 @@ MachineN/
   └─ SPC/                     XBarChart/, RChart/, Capability/, Status/                     (if SPC)
 ```
 
-**Machine States (8):** IDLE, PROCESSING, BLOCKED, STARVED, PAUSED, FAILED, UNDER_REPAIR, DEGRADED
+**Machine States (7):** IDLE, PROCESSING, BLOCKED, STARVED, DEGRADED, FAILED, UNDER_REPAIR
 
-### Writable Variables (Control)
+### Read-Only Operation
 
-Only two variables accept writes from OPC UA clients:
-- `OperationsState/Controls/cmdPauseLine` (Boolean) - Pause/resume entire line
-- `OperationsState/Controls/setInterarrivalTime` (Double) - Part arrival delay (0 = fast as possible)
-
-All other variables are read-only.
+All OPC UA variables are **read-only** during a run. `SetInterarrivalTime` (under `OperationsState/Controls/`) reflects the value set when the run started and cannot be changed via OPC UA clients at runtime. Use the Web UI Stop button to end a run.
 
 ---
 
 ## 🧪 Testing & Scenarios
 
-### Available Scenarios (20 total)
+### Available Scenarios (21 total)
 
 | Scenario | Machines | Features | Complexity |
 |----------|----------|----------|------------|
@@ -308,7 +304,8 @@ All other variables are read-only.
 | `scrap_line` | 2 | Scrap sinks + health-correlated routing | Intermediate |
 | `rework_line` | 2 | Virtual rework before scrapping | Intermediate |
 | `full_feature_line` | 2 | **All features combined** (failures, SPC, shifts, historian, scrap/rework) | Expert |
-| `full_feature_8_machine_line` | 8 | Max-scale: all features on 8 machines | Expert |
+| `full_feature_8_machine_line` | 8 | Max-scale: all features on 8 machines with CBM | Expert |
+| `full_feature_8_machine_line_rtf` | 8 | Same as above but run-to-failure (no CBM) — for MTTR/downtime analysis | Expert |
 | `warm_up_line` | 2 | Warm-up period for steady-state metrics | Intermediate |
 | `priority_maintenance_line` | 3 | Priority maintainer with bottleneck-first strategy | Advanced |
 | `priority_user_line` | 3 | Priority maintainer with user-defined priorities | Advanced |
@@ -338,9 +335,9 @@ pytest tests/test_opcua_integration.py -v     # OPC UA integration (long-running
 
 1. **Start server:** `python src/opcua_server.py --scenario failure_line`
 2. **Connect UA Expert** to `opc.tcp://localhost:4840/simantha/`
-3. **Test controls:**
-   - Set `cmdPauseLine = True` → Simulation freezes
-   - Set `setInterarrivalTime = 5.0` → Parts arrive every 5 seconds (slower)
+3. **Observe read-only variables:**
+   - All OPC UA variables are read-only during a run
+   - `SetInterarrivalTime` reflects the value configured at run start
 4. **Observe failures:**
    - Watch `Machine1/HealthPercent` drop to 0 when M1 fails
    - See `Maintenance/MaintenanceActive = True` during repair
@@ -418,7 +415,7 @@ Each simulation step, the main loop calls `accumulate_time(metrics, prev_state, 
 | `BlockedTime` | `blocked_time` | BLOCKED |
 | `StarvedTime` | `starved_time` | STARVED |
 | `DownTime` | `down_time` | FAILED or UNDER_REPAIR |
-| `IdleTime` | `idle_time` | IDLE or PAUSED |
+| `IdleTime` | `idle_time` | IDLE |
 
 These accumulators are local to the main loop (not from Simantha internals). They naturally **exclude warm-up time** because the loop only runs after warm-up completes. `Utilisation = ProcessingTime / (ProcessingTime + BlockedTime + StarvedTime + DownTime + IdleTime)`.
 
@@ -543,9 +540,9 @@ simantha-opcua/
 
 ### Simulation freezes/doesn't advance
 
-**Cause:** `cmdPauseLine = True` in OPC UA, or time not incrementing in loop.
+**Cause:** Time not incrementing in loop.
 
-**Fix:** Set `cmdPauseLine = False` via OPC UA client, or check loop logic.
+**Fix:** Use the Web UI Stop button to end the run, then restart. Check loop logic if running from CLI.
 
 ### MemoryError during long simulation runs
 

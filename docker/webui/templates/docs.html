@@ -1346,7 +1346,7 @@ else:
         <div class="docs-section" id="grafana-dashboards">
             <h2>Grafana Dashboards</h2>
             <p>
-                Eight pre-provisioned dashboards are available in the Grafana footer bar on the
+                Ten pre-provisioned dashboards are available in the Grafana footer bar on the
                 <a href="/">Dashboard</a> page. All dashboards share a <code>run_id</code> template variable —
                 select a run from the drop-down to scope every panel to that run's data.
             </p>
@@ -1398,6 +1398,11 @@ else:
                         <td>Line Balance &amp; Bottleneck</td>
                         <td>simantha-line-balance</td>
                         <td>Cross-machine comparison for identifying the production constraint: Actual vs Target PPM, Blocked/Starved time, OEE components, buffer fill levels, and quality output per machine.</td>
+                    </tr>
+                    <tr>
+                        <td>SPC Machine Detail</td>
+                        <td>simantha-spc-machine-detail</td>
+                        <td>Deep-dive SPC view for a single machine: X-bar and R control charts with violation highlighting, capability indices (Cp, Cpk, Pp, Ppk), sigma level, and violation count trend.</td>
                     </tr>
                 </tbody>
             </table>
