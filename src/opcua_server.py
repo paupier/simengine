@@ -449,8 +449,12 @@ def create_spc_node(parent_node, opcua_idx: int, machine_prefix: str = "",
     # Status sub-node
     stat_p = f"{np_}.Status"
     status_node = spc_node.add_object(_nid(stat_p, opcua_idx), _qn("Status", opcua_idx))
-    vars_dict["in_control"] = _add_prefixed_var(status_node, opcua_idx, "InControl", True, p, f"{stat_p}.InControl")
+    # InControl stored as int (1/0) so Telegraf/InfluxDB receives a numeric field.
+    # Boolean OPC UA variables are silently dropped by the Telegraf OPC UA plugin.
+    vars_dict["in_control"] = _add_prefixed_var(status_node, opcua_idx, "InControl", 1, p, f"{stat_p}.InControl")
     vars_dict["violations"] = _add_prefixed_var(status_node, opcua_idx, "Violations", "", p, f"{stat_p}.Violations")
+    # ViolationCount is an integer version of the violations count, readable by Telegraf/InfluxDB.
+    vars_dict["violation_count"] = _add_prefixed_var(status_node, opcua_idx, "ViolationCount", 0, p, f"{stat_p}.ViolationCount")
     vars_dict["total_samples"] = _add_prefixed_var(status_node, opcua_idx, "TotalSamples", 0, p, f"{stat_p}.TotalSamples")
     vars_dict["num_subgroups"] = _add_prefixed_var(status_node, opcua_idx, "NumSubgroups", 0, p, f"{stat_p}.NumSubgroups")
 
@@ -1303,9 +1307,10 @@ def write_machine_opcua_vars(machine_vars, machine_obj, current_state, metrics,
         machine_vars["spc_ppk"].set_value(spc_metrics.ppk)
         machine_vars["spc_sigma_level"].set_value(spc_metrics.sigma_level)
 
-        machine_vars["spc_in_control"].set_value(spc_metrics.in_control)
+        machine_vars["spc_in_control"].set_value(1 if spc_metrics.in_control else 0)
         violations_str = ", ".join(spc_metrics.violations) if spc_metrics.violations else ""
         machine_vars["spc_violations"].set_value(violations_str)
+        machine_vars["spc_violation_count"].set_value(len(spc_metrics.violations) if spc_metrics.violations else 0)
         machine_vars["spc_total_samples"].set_value(spc_metrics.total_samples)
         machine_vars["spc_num_subgroups"].set_value(spc_metrics.num_subgroups)
 

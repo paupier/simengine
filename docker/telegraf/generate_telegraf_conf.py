@@ -279,9 +279,9 @@ def generate_telegraf_conf(config,
             lines.append(_node(f"{mp}_SPC_Pp", f"{p}.SPC.Capability.Pp", tags))
             lines.append(_node(f"{mp}_SPC_Ppk", f"{p}.SPC.Capability.Ppk", tags))
             lines.append(_node(f"{mp}_SPC_SigmaLevel", f"{p}.SPC.Capability.SigmaLevel", tags))
-            lines.append("    # SPC - Status")
+            lines.append("    # SPC - Status (InControl=int 1/0; ViolationCount=int; Violations=string skipped by Telegraf)")
             lines.append(_node(f"{mp}_SPC_InControl", f"{p}.SPC.Status.InControl", tags))
-            lines.append(_node(f"{mp}_SPC_Violations", f"{p}.SPC.Status.Violations", tags))
+            lines.append(_node(f"{mp}_SPC_ViolationCount", f"{p}.SPC.Status.ViolationCount", tags))
             lines.append(_node(f"{mp}_SPC_TotalSamples", f"{p}.SPC.Status.TotalSamples", tags))
             lines.append(_node(f"{mp}_SPC_NumSubgroups", f"{p}.SPC.Status.NumSubgroups", tags))
 
