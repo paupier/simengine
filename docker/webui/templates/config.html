@@ -147,6 +147,7 @@
                         <!-- Actions -->
                         <div class="d-flex gap-2 align-items-center">
                             <button class="btn btn-primary" id="btn-save" onclick="saveScenario()">Save</button>
+                            <button class="btn btn-outline-info" id="btn-save-as" onclick="showSaveAs()" style="display:none;">Save As…</button>
                             <button class="btn btn-outline-secondary" onclick="previewYaml()">Preview YAML</button>
                             <span id="save-status" style="font-size:0.85rem; display:none;"></span>
                         </div>
@@ -160,6 +161,27 @@
                     <div class="card-header"><strong>YAML Preview</strong></div>
                     <div class="card-body">
                         <div class="yaml-preview" id="yaml-preview">Select a scenario or click "Preview YAML" to see the config.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Save As modal -->
+        <div class="modal fade" id="saveAsModal" tabindex="-1">
+            <div class="modal-dialog modal-sm">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Save As New Scenario</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <label class="form-label small">New scenario name</label>
+                        <input type="text" id="save-as-name" class="form-control" placeholder="my_custom_line">
+                        <div id="save-as-error" class="text-danger small mt-1" style="display:none;"></div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                        <button type="button" class="btn btn-primary btn-sm" onclick="confirmSaveAs()">Save As</button>
                     </div>
                 </div>
             </div>
@@ -224,6 +246,7 @@
             isNewScenario = false;
             currentScenario = name;
             document.getElementById('name-group').style.display = 'none';
+            document.getElementById('btn-save-as').style.display = '';
 
             const meta = scenarioMeta[name];
             document.getElementById('scenario-description').textContent =
@@ -239,6 +262,7 @@
             isNewScenario = true;
             currentScenario = null;
             document.getElementById('name-group').style.display = '';
+            document.getElementById('btn-save-as').style.display = 'none';
             document.getElementById('scenario-name').value = '';
             document.getElementById('scenario-select').value = '';
             document.getElementById('scenario-description').textContent = '';
@@ -658,6 +682,50 @@
                 showToast(`✗ Save error: ${e.message}`, 'error');
                 btn.textContent = 'Save';
                 btn.disabled = false;
+            }
+        }
+
+        // --- Save As ---
+        function showSaveAs() {
+            const input = document.getElementById('save-as-name');
+            input.value = currentScenario ? currentScenario + '_copy' : '';
+            document.getElementById('save-as-error').style.display = 'none';
+            new bootstrap.Modal(document.getElementById('saveAsModal')).show();
+            setTimeout(() => { input.select(); }, 300);
+        }
+
+        async function confirmSaveAs() {
+            const name = document.getElementById('save-as-name').value.trim();
+            const errEl = document.getElementById('save-as-error');
+            if (!name) {
+                errEl.textContent = 'Please enter a name.';
+                errEl.style.display = '';
+                return;
+            }
+            const cfg = collectFormData();
+            cfg._name = name;
+            try {
+                const resp = await fetch('/api/scenario', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(cfg)
+                });
+                const result = await resp.json();
+                if (resp.ok) {
+                    bootstrap.Modal.getInstance(document.getElementById('saveAsModal')).hide();
+                    await loadScenarioList();
+                    document.getElementById('scenario-select').value = name;
+                    currentScenario = name;
+                    isNewScenario = false;
+                    showToast(`✓ Saved as "${name}"`, 'success');
+                    await loadYamlPreview(name);
+                } else {
+                    errEl.textContent = result.error || 'Save failed.';
+                    errEl.style.display = '';
+                }
+            } catch (e) {
+                errEl.textContent = `Error: ${e.message}`;
+                errEl.style.display = '';
             }
         }
 
