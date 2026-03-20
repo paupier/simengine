@@ -1494,7 +1494,8 @@ def record_historian_events(historian, neo4j_hist, sim_time, machines, machine_m
                             shift_rotated, spc_monitors, historian_state, config,
                             total_parts_produced, total_wip, line_oee, delta_parts,
                             production_summary_counter, production_summary_interval, sim_step,
-                            line_availability=0.0, line_performance=0.0, line_quality=0.0):
+                            line_availability=0.0, line_performance=0.0, line_quality=0.0,
+                            machine_totals=None):
     """Collect and record historian events. Returns updated production_summary_counter."""
     if not historian:
         return production_summary_counter
@@ -1511,6 +1512,7 @@ def record_historian_events(historian, neo4j_hist, sim_time, machines, machine_m
         spc_monitors=spc_monitors,
         historian_state=historian_state,
         config=config,
+        machine_totals=machine_totals,
     )
 
     if config.get("historian", {}).get("events", {}).get("production_summary", True):
@@ -2476,7 +2478,7 @@ def run_segment(
             total_parts_produced, total_wip, line_oee, delta_parts,
             production_summary_counter, production_summary_interval, sim_step,
             line_availability=line_avail, line_performance=line_perf,
-            line_quality=line_qual)
+            line_quality=line_qual, machine_totals=line_state.machines)
 
     return sim_time, total_parts_produced, stop_reason, line_oee
 

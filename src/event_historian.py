@@ -442,6 +442,7 @@ def collect_step_events(
     spc_monitors: dict,
     historian_state: dict,
     config: dict,
+    machine_totals: dict = None,
 ) -> List[SimEvent]:
     """Collect all historian events for one simulation step.
 
@@ -560,8 +561,11 @@ def collect_step_events(
                 historian_state[f"{machine_name}_spc_in_control"] = spc_metrics.in_control
 
         # SCRAP events (quality routing)
+        # Use machine_totals (LineState accumulated values) when available — _scrap_count
+        # on the machine object resets to 0 every step via initialize_addon_process().
         if event_cfg.get("state_changes", True):
-            scrap_count = getattr(machines[machine_name], '_scrap_count', None)
+            mt = machine_totals.get(machine_name) if machine_totals else None
+            scrap_count = mt.scrap_count if mt is not None else getattr(machines[machine_name], '_scrap_count', None)
             if isinstance(scrap_count, (int, float)):
                 prev_scrap = historian_state.get(f"{machine_name}_scrap_count", 0)
                 if scrap_count > prev_scrap:
@@ -585,7 +589,7 @@ def collect_step_events(
                     historian_state[f"{machine_name}_scrap_count"] = scrap_count
 
             # REWORK events
-            rework_count = getattr(machines[machine_name], '_rework_count', None)
+            rework_count = mt.rework_count if mt is not None else getattr(machines[machine_name], '_rework_count', None)
             if isinstance(rework_count, (int, float)):
                 prev_rework = historian_state.get(f"{machine_name}_rework_count", 0)
                 if rework_count > prev_rework:
