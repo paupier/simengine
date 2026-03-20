@@ -83,6 +83,20 @@
                 </div>
             </div>
 
+            <!-- Telegraf Interruptions (shown only when gaps exist) -->
+            <div id="gaps-section" class="card section-card" style="display:none;">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <strong id="gaps-section-title">Telegraf Interruptions</strong>
+                    <span class="badge badge-fail" id="gaps-badge"></span>
+                </div>
+                <div class="card-body p-0">
+                    <table class="table table-sm mb-0" id="gaps-table">
+                        <thead><tr><th>Wall Clock (UTC)</th><th>Gap Duration</th></tr></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+
             <!-- Verdict Banner -->
             <div id="verdict-banner" class="section-card"></div>
         </div>
@@ -183,6 +197,27 @@
                     <td><code>${check.telegraf_value}</code></td>
                     <td><span class="badge ${badgeClass}">${check.status}</span></td>
                 </tr>`;
+            }
+
+            // Telegraf interruptions
+            const gaps = v.telegraf_gap_details || [];
+            const gapsSection = document.getElementById('gaps-section');
+            if (gaps.length > 0) {
+                gapsSection.style.display = '';
+                document.getElementById('gaps-badge').textContent = `${gaps.length} interruption${gaps.length > 1 ? 's' : ''}`;
+                document.getElementById('gaps-section-title').textContent =
+                    `Telegraf Interruptions — data gaps that may explain InfluxDB vs CSV differences`;
+                const gtbody = document.querySelector('#gaps-table tbody');
+                gtbody.innerHTML = '';
+                for (const g of gaps) {
+                    const mins = Math.floor(g.gap_s / 60);
+                    const secs = g.gap_s % 60;
+                    const dur = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+                    const ts = g.wall_clock ? g.wall_clock.replace('T', ' ').replace(/\.\d+Z$/, ' UTC') : '-';
+                    gtbody.innerHTML += `<tr><td>${ts}</td><td><strong>${dur}</strong></td></tr>`;
+                }
+            } else {
+                gapsSection.style.display = 'none';
             }
 
             // Verdict banner

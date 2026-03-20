@@ -485,17 +485,24 @@ def query_influxdb_telegraf(influx_url, influx_token, influx_org, influx_bucket,
     '''
     tables = query_api.query(flux_rate, org=influx_org)
     intervals = []
+    gap_details = []
     for table in tables:
         for record in table.records:
             elapsed_val = record.values.get("elapsed", None)
             if elapsed_val is not None and elapsed_val > 0:
                 intervals.append(elapsed_val)
+                if elapsed_val > 5:
+                    ts = record.get_time()
+                    gap_details.append({
+                        "wall_clock": ts.isoformat() if ts else None,
+                        "gap_s": int(elapsed_val),
+                    })
     result["update_intervals"] = intervals
     result["avg_update_rate"] = (sum(intervals) / len(intervals)) if intervals else None
 
     # 8. Data gaps
-    gaps = [i for i in intervals if i > 5]
-    result["gaps_over_5s"] = len(gaps)
+    result["gaps_over_5s"] = len(gap_details)
+    result["gap_details"] = gap_details
 
     client.close()
     return result

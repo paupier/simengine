@@ -1322,6 +1322,7 @@ def validate_pipeline(df, influx_data):
         "telegraf_last_simtime": influx_data.get("last_simtime"),
         "telegraf_avg_update_rate": influx_data.get("avg_update_rate"),
         "telegraf_gaps_over_5s": gaps,
+        "telegraf_gap_details": influx_data.get("gap_details", []),
     }
 
 
