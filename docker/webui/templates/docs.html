@@ -462,6 +462,10 @@
             <a class="toc-link" href="#opcua">OPC UA Address Space</a>
         </div>
         <div class="toc-section">
+            <div class="toc-header">Grafana</div>
+            <a class="toc-link" href="#grafana-dashboards">Dashboards</a>
+        </div>
+        <div class="toc-section">
             <div class="toc-header">Reference</div>
             <a class="toc-link" href="#glossary">Glossary</a>
         </div>
@@ -1338,12 +1342,100 @@ else:
             </p>
         </div>
 
+        <!-- ═══════════════════════ GRAFANA DASHBOARDS ═══════════════════════ -->
+        <div class="docs-section" id="grafana-dashboards">
+            <h2>Grafana Dashboards</h2>
+            <p>
+                Eight pre-provisioned dashboards are available in the Grafana footer bar on the
+                <a href="/">Dashboard</a> page. All dashboards share a <code>run_id</code> template variable —
+                select a run from the drop-down to scope every panel to that run's data.
+            </p>
+
+            <table class="param-table">
+                <thead><tr><th>Dashboard</th><th>UID</th><th>Purpose</th></tr></thead>
+                <tbody>
+                    <tr>
+                        <td>Manufacturing Overview</td>
+                        <td>simantha-overview</td>
+                        <td>High-level line KPIs: throughput, OEE, scrap rate, WIP.</td>
+                    </tr>
+                    <tr>
+                        <td>OEE Detail</td>
+                        <td>simantha-oee-detail</td>
+                        <td>OEE waterfall and trend per machine. Availability, Performance, and Quality loss breakdown.</td>
+                    </tr>
+                    <tr>
+                        <td>Machine KPIs</td>
+                        <td>simantha-machine-kpis</td>
+                        <td>Per-machine PPM, utilisation, part counts, and SPC capability indices.</td>
+                    </tr>
+                    <tr>
+                        <td>State Timeline</td>
+                        <td>simantha-state-timeline</td>
+                        <td>Gantt-style state timeline per machine (PROCESSING, BLOCKED, STARVED, FAILED, UNDER_REPAIR…). Buffer levels and machine utilisation trend.</td>
+                    </tr>
+                    <tr>
+                        <td>Downtime &amp; Reliability</td>
+                        <td>simantha-downtime-reliability</td>
+                        <td>MTTR, MTTF, failure counts, and downtime analysis per machine and failure mode.</td>
+                    </tr>
+                    <tr>
+                        <td>SPC Control Charts</td>
+                        <td>simantha-spc</td>
+                        <td>X-bar/R control charts, Cp/Cpk capability indices, SPC violation counts per machine.</td>
+                    </tr>
+                    <tr>
+                        <td>Shift Comparison</td>
+                        <td>simantha-shift-comparison</td>
+                        <td>Per-shift throughput, OEE, and quality side-by-side for shift-performance benchmarking.</td>
+                    </tr>
+                    <tr>
+                        <td>Alarm Event Log</td>
+                        <td>simantha-alarm-log</td>
+                        <td>Timestamped alarm log filtered by machine, event type, and severity.</td>
+                    </tr>
+                    <tr>
+                        <td>Line Balance &amp; Bottleneck</td>
+                        <td>simantha-line-balance</td>
+                        <td>Cross-machine comparison for identifying the production constraint: Actual vs Target PPM, Blocked/Starved time, OEE components, buffer fill levels, and quality output per machine.</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h3>Reading the Line Balance dashboard</h3>
+            <p>
+                The <strong>Blocked vs Starved Time</strong> panel is the primary bottleneck locator.
+                A machine with high <em>BlockedTime</em> (orange) cannot move parts forward because the
+                <em>next</em> machine is too slow — the bottleneck is downstream.
+                A machine with high <em>StarvedTime</em> (blue) is waiting for parts because the
+                <em>previous</em> machine is too slow — the bottleneck is upstream.
+                Corroborate with the <strong>Buffer Levels</strong> panel: a buffer that stays full confirms
+                its downstream machine is the constraint.
+            </p>
+
+            <h3>Generating MTTR data</h3>
+            <p>
+                The Downtime &amp; Reliability dashboard requires machines to reach the <code>FAILED</code> state.
+                With CBM enabled (default on most scenarios), machines are serviced before failing and the
+                <code>FAILED / UNDER_REPAIR</code> states may rarely appear. To generate clear failure and repair
+                data, run the <code>full_feature_8_machine_line_rtf</code> scenario — it disables CBM so all
+                machines run to failure, producing frequent <code>FAILED → UNDER_REPAIR → PROCESSING</code>
+                transitions and realistic MTTR readings.
+            </p>
+        </div>
+
         <!-- ═══════════════════════ SCENARIOS ═══════════════════════ -->
         <div class="docs-section" id="scenarios">
             <h2>Scenarios</h2>
             <p>
                 Scenarios are named line configurations defined in <code>config/line_models.yaml</code>. Select a
                 scenario from the <a href="/">Dashboard</a> or edit it on the <a href="/config">Config</a> page.
+            </p>
+            <p>
+                On the Config page, use <strong>Save</strong> to update the current scenario in place, or
+                <strong>Save As…</strong> to clone the current scenario under a new name without touching the
+                original. Save As is useful for experimenting with parameter changes (e.g. disabling CBM, adjusting
+                failure rates) while keeping the reference scenario intact.
             </p>
 
             <div class="scenario-grid">
@@ -1440,8 +1532,14 @@ else:
                 <div class="scenario-card">
                     <div class="scenario-key">full_feature_8_machine_line</div>
                     <div class="scenario-name">8-Machine Full Feature</div>
-                    <div class="scenario-desc">Maximum-scale stress test: 8 machines, all features enabled per machine. Multi-state degradation (h_max 3–5), bottleneck maintainer strategy, 2 repair teams, 120s warm-up.</div>
-                    <div class="scenario-tags"><span class="stag">8 machines</span><span class="stag stag-fail">failures</span><span class="stag stag-spc">SPC</span><span class="stag stag-qr">quality</span><span class="stag stag-deg">multi-state</span><span class="stag stag-maint">bottleneck</span></div>
+                    <div class="scenario-desc">Maximum-scale stress test: 8 machines, all features enabled per machine. Multi-state degradation (h_max 3–5), CBM enabled, bottleneck maintainer strategy, 2 repair teams, 120s warm-up. Machines are serviced before reaching <code>FAILED</code>.</div>
+                    <div class="scenario-tags"><span class="stag">8 machines</span><span class="stag stag-fail">failures</span><span class="stag stag-spc">SPC</span><span class="stag stag-qr">quality</span><span class="stag stag-deg">multi-state</span><span class="stag stag-cbm">CBM</span><span class="stag stag-maint">bottleneck</span></div>
+                </div>
+                <div class="scenario-card">
+                    <div class="scenario-key">full_feature_8_machine_line_rtf</div>
+                    <div class="scenario-name">8-Machine Run-to-Failure</div>
+                    <div class="scenario-desc">Identical to the 8-machine full-feature line but with <strong>CBM disabled</strong> (<code>cbm_threshold == h_max</code> for every machine). Machines degrade all the way to <code>FAILED</code> before repair is triggered, producing clear <code>FAILED → UNDER_REPAIR → PROCESSING</code> transitions. Use this scenario to generate realistic MTTR, downtime, and reliability data for Grafana dashboard testing.</div>
+                    <div class="scenario-tags"><span class="stag">8 machines</span><span class="stag stag-fail">run-to-failure</span><span class="stag stag-spc">SPC</span><span class="stag stag-qr">quality</span><span class="stag stag-deg">multi-state</span><span class="stag stag-maint">bottleneck</span><span class="stag stag-hist">historian</span></div>
                 </div>
                 <div class="scenario-card">
                     <div class="scenario-key">warm_up_line</div>
