@@ -288,10 +288,10 @@
       "id": 2,
       "targets": [
         {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sim_events\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r.event_type == \"STATE_CHANGE\")\n  |> filter(fn: (r) => r.source_type == \"machine\")\n  |> filter(fn: (r) => r._field == \"new_state\")\n  |> map(fn: (r) => ({r with state: r._value}))\n  |> keep(columns: [\"_time\", \"_value\", \"source\", \"state\"])\n  |> group(columns: [\"source\", \"state\"])\n  |> count()\n  |> group(columns: [\"source\"])\n  |> pivot(rowKey: [\"source\"], columnKey: [\"state\"], valueColumn: \"_value\")"
+          "query": "import \"strings\"\n\nfrom(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_State$/)\n  |> map(fn: (r) => ({_time: r._time, machine: strings.trimSuffix(v: r._field, suffix: \"_State\"), state: r._value, _value: 1}))\n  |> group(columns: [\"machine\", \"state\"])\n  |> sum()\n  |> group(columns: [\"machine\"])\n  |> pivot(rowKey: [\"machine\"], columnKey: [\"state\"], valueColumn: \"_value\")"
         }
       ],
-      "title": "State Transition Counts by Machine",
+      "title": "State Time by Machine (seconds)",
       "type": "barchart"
     },
     {
