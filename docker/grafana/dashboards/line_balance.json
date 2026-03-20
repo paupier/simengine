@@ -32,20 +32,21 @@
     },
     {
       "datasource": "InfluxDB",
-      "description": "Actual vs Target PPM per machine over time. A machine consistently running below its TargetPPM is a capacity constraint.",
+      "description": "Actual PPM per machine over time. The machine with the lowest and most variable output is the likely bottleneck.",
       "fieldConfig": {
         "defaults": {
           "custom": {
             "drawStyle": "line",
             "lineInterpolation": "linear",
-            "fillOpacity": 10
+            "fillOpacity": 0,
+            "lineWidth": 2
           },
           "unit": "short"
         }
       },
       "gridPos": {
         "h": 8,
-        "w": 24,
+        "w": 12,
         "x": 0,
         "y": 1
       },
@@ -59,14 +60,70 @@
         {
           "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_ActualPPM$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
           "refId": "A"
-        },
-        {
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_TargetPPM$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
-          "refId": "B"
         }
       ],
-      "title": "Actual vs Target PPM per Machine",
+      "title": "Actual PPM per Machine (trend)",
       "type": "timeseries"
+    },
+    {
+      "datasource": "InfluxDB",
+      "description": "Current Actual PPM vs Target PPM per machine. A machine falling short of target is a capacity constraint.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80
+          },
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ActualPPM"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "TargetPPM"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "semi-dark-orange",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 1
+      },
+      "id": 9,
+      "targets": [
+        {
+          "query": "import \"strings\"\n\nfrom(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_(ActualPPM|TargetPPM)$/)\n  |> last()\n  |> map(fn: (r) => ({\n      machine: strings.trimSuffix(v: strings.trimSuffix(v: r._field, suffix: \"_ActualPPM\"), suffix: \"_TargetPPM\"),\n      metric: if strings.hasSuffix(v: r._field, suffix: \"_ActualPPM\") then \"ActualPPM\" else \"TargetPPM\",\n      _value: r._value\n  }))\n  |> group(columns: [])\n  |> pivot(rowKey: [\"machine\"], columnKey: [\"metric\"], valueColumn: \"_value\")"
+        }
+      ],
+      "title": "Actual vs Target PPM per Machine (snapshot)",
+      "type": "barchart"
     },
     {
       "collapsed": false,
@@ -133,7 +190,7 @@
       "id": 2,
       "targets": [
         {
-          "query": "import \"strings\"\n\nfrom(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_(BlockedTime|StarvedTime)$/)\n  |> last()\n  |> map(fn: (r) => ({\n      machine: strings.trimSuffix(v: strings.trimSuffix(v: r._field, suffix: \"_BlockedTime\"), suffix: \"_StarvedTime\"),\n      metric: if strings.hasSuffix(v: r._field, suffix: \"_BlockedTime\") then \"BlockedTime\" else \"StarvedTime\",\n      _value: r._value\n  }))\n  |> group(columns: [\"machine\"])\n  |> pivot(rowKey: [\"machine\"], columnKey: [\"metric\"], valueColumn: \"_value\")"
+          "query": "import \"strings\"\n\nfrom(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_(BlockedTime|StarvedTime)$/)\n  |> last()\n  |> map(fn: (r) => ({\n      machine: strings.trimSuffix(v: strings.trimSuffix(v: r._field, suffix: \"_BlockedTime\"), suffix: \"_StarvedTime\"),\n      metric: if strings.hasSuffix(v: r._field, suffix: \"_BlockedTime\") then \"BlockedTime\" else \"StarvedTime\",\n      _value: r._value\n  }))\n  |> group(columns: [])\n  |> pivot(rowKey: [\"machine\"], columnKey: [\"metric\"], valueColumn: \"_value\")"
         }
       ],
       "title": "Blocked vs Starved Time per Machine (seconds)",
@@ -181,7 +238,7 @@
     },
     {
       "datasource": "InfluxDB",
-      "description": "Overall Equipment Effectiveness (%) per machine at the end of the selected time range. World-class benchmark is 85%+.",
+      "description": "Overall Equipment Effectiveness (%) per machine at end of selected range. World-class benchmark is 85%+.",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -226,7 +283,7 @@
     },
     {
       "datasource": "InfluxDB",
-      "description": "OEE loss breakdown per machine: Availability (unplanned downtime), Performance (speed losses), Quality (defect yield). All shown as % at the end of the selected range.",
+      "description": "OEE loss decomposition per machine: Availability (downtime losses), Performance (speed losses), Quality (defect losses). All shown as % at end of selected range.",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -294,7 +351,7 @@
       "id": 5,
       "targets": [
         {
-          "query": "import \"strings\"\n\nfrom(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_(Availability|Performance|Quality)$/)\n  |> last()\n  |> map(fn: (r) => ({\n      machine: strings.trimSuffix(v: strings.trimSuffix(v: strings.trimSuffix(v: r._field, suffix: \"_Availability\"), suffix: \"_Performance\"), suffix: \"_Quality\"),\n      metric: if strings.hasSuffix(v: r._field, suffix: \"_Availability\") then \"Availability\"\n              else if strings.hasSuffix(v: r._field, suffix: \"_Performance\") then \"Performance\"\n              else \"Quality\",\n      _value: r._value * 100.0\n  }))\n  |> group(columns: [\"machine\"])\n  |> pivot(rowKey: [\"machine\"], columnKey: [\"metric\"], valueColumn: \"_value\")"
+          "query": "import \"strings\"\n\nfrom(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_(Availability|Performance|Quality)$/)\n  |> last()\n  |> map(fn: (r) => ({\n      machine: strings.trimSuffix(v: strings.trimSuffix(v: strings.trimSuffix(v: r._field, suffix: \"_Availability\"), suffix: \"_Performance\"), suffix: \"_Quality\"),\n      metric: if strings.hasSuffix(v: r._field, suffix: \"_Availability\") then \"Availability\"\n              else if strings.hasSuffix(v: r._field, suffix: \"_Performance\") then \"Performance\"\n              else \"Quality\",\n      _value: r._value * 100.0\n  }))\n  |> group(columns: [])\n  |> pivot(rowKey: [\"machine\"], columnKey: [\"metric\"], valueColumn: \"_value\")"
         }
       ],
       "title": "OEE Components per Machine (Availability / Performance / Quality %)",
@@ -354,7 +411,7 @@
     },
     {
       "datasource": "InfluxDB",
-      "description": "Cumulative good vs defective parts per machine at the end of the selected range. Machines with high defect counts are quality loss points that reduce downstream yield.",
+      "description": "Cumulative good vs defective parts per machine at end of selected range. Machines with high defect counts are quality loss points that reduce downstream yield.",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -405,7 +462,7 @@
       "id": 7,
       "targets": [
         {
-          "query": "import \"strings\"\n\nfrom(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_(GoodParts|DefectParts)$/)\n  |> last()\n  |> map(fn: (r) => ({\n      machine: strings.trimSuffix(v: strings.trimSuffix(v: r._field, suffix: \"_GoodParts\"), suffix: \"_DefectParts\"),\n      metric: if strings.hasSuffix(v: r._field, suffix: \"_GoodParts\") then \"GoodParts\" else \"DefectParts\",\n      _value: r._value\n  }))\n  |> group(columns: [\"machine\"])\n  |> pivot(rowKey: [\"machine\"], columnKey: [\"metric\"], valueColumn: \"_value\")"
+          "query": "import \"strings\"\n\nfrom(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"opcua\")\n  |> filter(fn: (r) => r.run_id =~ /^${run_id}$/)\n  |> filter(fn: (r) => r._field =~ /^M\\d+_(GoodParts|DefectParts)$/)\n  |> last()\n  |> map(fn: (r) => ({\n      machine: strings.trimSuffix(v: strings.trimSuffix(v: r._field, suffix: \"_GoodParts\"), suffix: \"_DefectParts\"),\n      metric: if strings.hasSuffix(v: r._field, suffix: \"_GoodParts\") then \"GoodParts\" else \"DefectParts\",\n      _value: r._value\n  }))\n  |> group(columns: [])\n  |> pivot(rowKey: [\"machine\"], columnKey: [\"metric\"], valueColumn: \"_value\")"
         }
       ],
       "title": "Good vs Defective Parts per Machine",
@@ -474,5 +531,5 @@
   "timezone": "browser",
   "title": "Line Balance & Bottleneck Analysis",
   "uid": "simantha-line-balance",
-  "version": 1
+  "version": 2
 }
