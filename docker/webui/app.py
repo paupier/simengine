@@ -1513,7 +1513,9 @@ def _query_neo4j_node_events(run_id: str, node_name: str) -> list:
             """,
             run_id=run_id, node_name=node_name,
         )
-        return [dict(r) for r in result]
+        rows = [dict(r) for r in result]
+    driver.close()
+    return rows
 
 
 # ---------------------------------------------------------------------------
