@@ -1540,15 +1540,6 @@ def record_historian_events(historian, neo4j_hist, sim_time, machines, machine_m
         if neo4j_hist:
             neo4j_hist.record_events(step_events)
 
-    if neo4j_hist and delta_parts > 0:
-        machine_name_list = list(machines.keys())
-        neo4j_hist.record_parts(
-            delta_parts=delta_parts,
-            machine_names=machine_name_list,
-            defective_count=0,
-            sim_time=sim_time,
-        )
-
     return production_summary_counter
 
 
@@ -2662,7 +2653,7 @@ def main(argv=None):
             print(f"Event historian closed ({historian.get_event_count()} events recorded)")
         if neo4j_hist:
             neo4j_hist.close()
-            print(f"Neo4j historian closed ({neo4j_hist.get_event_count()} events, {neo4j_hist._part_counter} parts)")
+            print("Neo4j historian closed.")
         server.stop()
         print("Server stopped.")
 
