@@ -210,8 +210,8 @@ class TestCausalEngine:
         """SPC_VIOLATION on M1 → SCRAP on M1 within 30s → spc_quality_impact edge."""
         h, mock_driver, mock_session = _make_historian()
         self._add_event_to_recent(h, "M1", "SPC_VIOLATION", event_type="SPC_VIOLATION", sim_time=100.0)
-        target = make_event(source="M1", event_type="STATE_CHANGE",
-                            new_state="SCRAP", old_state="PROCESSING", timestamp=120.0)
+        target = make_event(source="M1", event_type="SCRAP",
+                            new_state="", old_state="PROCESSING", timestamp=120.0)
 
         h._check_causal_rules(mock_session, target, "eid_M1_120.0")
 
@@ -347,3 +347,31 @@ class TestFactoryFunction:
             mock_gdb.driver.side_effect = Exception("connection refused")
             with pytest.raises(ConnectionError, match="Neo4j"):
                 create_neo4j_historian_from_config(config, "test", "run_001")
+
+
+# ---------------------------------------------------------------------------
+# FOLLOWED_BY relationship
+# ---------------------------------------------------------------------------
+
+class TestFollowedBy:
+    def test_followed_by_written_for_sequential_events_same_machine(self):
+        """Two STATE_CHANGE events from M1 in one batch → FOLLOWED_BY edge written."""
+        h, mock_driver, mock_session = _make_historian()
+        # First event — sim_time=10.0
+        e1 = make_event(source="M1", event_type="STATE_CHANGE",
+                        new_state="DEGRADED", old_state="PROCESSING", timestamp=10.0)
+        # Second event — sim_time=11.0
+        e2 = make_event(source="M1", event_type="STATE_CHANGE",
+                        new_state="FAILED", old_state="DEGRADED", timestamp=11.0)
+        # Simulate elementId results: UNWIND returns two records
+        eid_records = [
+            {"eid": "eid_M1_10", "source": "M1", "sim_time": 10.0, "event_type": "STATE_CHANGE"},
+            {"eid": "eid_M1_11", "source": "M1", "sim_time": 11.0, "event_type": "STATE_CHANGE"},
+        ]
+        mock_session.run.return_value = iter(eid_records)
+
+        h._buffer = [e1, e2]
+        h._flush_batch()
+
+        calls = [str(c) for c in mock_session.run.call_args_list]
+        assert any("FOLLOWED_BY" in c for c in calls)

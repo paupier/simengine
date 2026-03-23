@@ -223,7 +223,7 @@ class Neo4jHistorian:
 
                 # UNWIND batch write — shift_number stored per-event to handle mid-batch SHIFT_CHANGE
                 event_dicts = [self._event_to_dict(e) for e in batch]
-                results = session.run(
+                results = list(session.run(
                     """
                     UNWIND $events AS e
                     MATCH (src {name: e.source, run_id: $run_id})
@@ -243,19 +243,21 @@ class Neo4jHistorian:
                     FOREACH (_ IN CASE WHEN sh IS NOT NULL THEN [1] ELSE [] END |
                         CREATE (ev)-[:OCCURRED_IN]->(sh)
                     )
-                    RETURN elementId(ev) AS eid, e.source AS source, e.sim_time AS sim_time
+                    RETURN elementId(ev) AS eid, e.source AS source, e.sim_time AS sim_time,
+                           e.event_type AS event_type
                     """,
                     events=event_dicts,
                     run_id=self._run_id,
-                )
+                ))
 
-                # Build eid map: (source, sim_time) -> elementId
+                # Build eid map: (source, sim_time, event_type) -> elementId
                 eid_map: dict = {}
                 for record in results:
                     eid = record["eid"]
                     source = record["source"]
                     sim_time = record["sim_time"]
-                    eid_map[(source, sim_time)] = eid
+                    event_type = record["event_type"]
+                    eid_map[(source, sim_time, event_type)] = eid
                     if source in self._last_event_eid:
                         session.run(
                             """
@@ -273,10 +275,10 @@ class Neo4jHistorian:
                     if src:
                         if src not in self._recent_events:
                             self._recent_events[src] = deque(maxlen=_MAX_RECENT)
-                        event_eid = eid_map.get((src, event.timestamp))
+                        event_eid = eid_map.get((src, event.timestamp, event.event_type))
                         self._recent_events[src].append((event, event_eid))
                     try:
-                        target_eid = eid_map.get((src, event.timestamp)) if src else None
+                        target_eid = eid_map.get((src, event.timestamp, event.event_type)) if src else None
                         self._check_causal_rules(session, event, target_eid)
                     except Exception as exc:
                         logger.warning("Neo4j causal engine error (skipping edge): %s", exc)
@@ -315,7 +317,7 @@ class Neo4jHistorian:
 
         # Standard rules from _CAUSAL_RULES table
         for (target_val, trigger_field, trigger_values, window, edge_type, direction) in _CAUSAL_RULES:
-            if target_event.new_state != target_val:
+            if target_event.new_state != target_val and target_event.event_type != target_val:
                 continue
 
             if direction == "upstream":
