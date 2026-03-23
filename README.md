@@ -630,6 +630,61 @@ New event types: `SEGMENT_START`, `SEGMENT_END`, `CHANGEOVER`, `RECIPE_COMPLETE`
 
 ---
 
+## Neo4j Graph Analytics (Optional)
+
+Neo4j stores manufacturing events as a causal graph alongside InfluxDB. Where InfluxDB answers "what happened and when", Neo4j answers "what caused what" — tracing failure cascades, starvation propagation, and SPC-to-quality chains.
+
+### Setup
+
+Enabled by default in `docker-compose.yml`. Access points:
+- **Neo4j Browser**: http://localhost:7474 (login: neo4j / simantha)
+- **NeoDash dashboards**: http://localhost:5005
+- **Flask Graph tab**: http://localhost:8080/graph
+
+### Enabling for a scenario
+
+In the web UI config editor, scenarios with a `historian:` block show a **Neo4j Historian** checkbox.
+Toggle it on to insert the `neo4j:` historian block into the scenario YAML. Toggle off to remove it.
+
+Or edit the scenario YAML directly:
+
+```yaml
+historian:
+  csv:
+    output_dir: results/historian
+    rotate_on_shift: true
+  neo4j:
+    uri: ${NEO4J_URI}
+    user: ${NEO4J_USER}
+    password: ${NEO4J_PASSWORD}
+```
+
+Environment variables (`NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`) are set in `.env` and injected into the simantha container.
+
+### NeoDash Dashboards
+
+Five pre-built dashboards seeded into Neo4j on first start:
+
+| Dashboard | Purpose |
+|---|---|
+| Causal Chain Explorer | Browse CAUSED paths up to 6 hops deep |
+| Failure Pattern Finder | Which machines fail most, in which shifts |
+| SPC → Quality Impact | SPC violations to scrap/rework chains |
+| Shift Breakdown | Events and counts per shift |
+| Cross-Run Comparison | Structural stats across multiple runs |
+
+### Future Extensions
+
+The following are identified for future phases (out of scope for current implementation):
+
+- **Part-level traceability** — `:Part` nodes linked via `:PROCESSED_BY`, tracking each part's line journey including rework attempts
+- **Neo4j Bloom** — richer graph exploration with saved perspectives and visual query building (requires Enterprise or AuraDB)
+- **Grafana → Neo4j panels** — community plugin to surface Cypher results in Grafana dashboards alongside InfluxDB panels
+- **Anomaly pattern library** — store known failure subgraph signatures and query new runs for structural similarity
+- **Multi-line topology** — extend schema for converging/diverging topologies (parallel lines feeding shared assembly)
+
+---
+
 ## 🗺️ Roadmap
 
 ### Recent Changes (2026-03-17)

@@ -1140,6 +1140,11 @@ full_feature_8_machine_line:
       output_dir: results/historian
       max_file_size_mb: 50
       rotate_on_shift: true
+    # Neo4j graph historian (enable via web UI config editor or uncomment below):
+    # neo4j:
+    #   uri: ${NEO4J_URI}
+    #   user: ${NEO4J_USER}
+    #   password: ${NEO4J_PASSWORD}
     influxdb:
       enabled: false
       url: http://localhost:8086
@@ -1591,6 +1596,11 @@ full_feature_8_machine_line_rtf:
       output_dir: results/historian
       max_file_size_mb: 50
       rotate_on_shift: true
+    # Neo4j graph historian (enable via web UI config editor or uncomment below):
+    # neo4j:
+    #   uri: ${NEO4J_URI}
+    #   user: ${NEO4J_USER}
+    #   password: ${NEO4J_PASSWORD}
     influxdb:
       enabled: false
       url: http://localhost:8086
