@@ -127,7 +127,7 @@ services:
       - "7474:7474"   # Browser UI
       - "7687:7687"   # Bolt protocol
     environment:
-      - NEO4J_AUTH=${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-simantha}
+      - NEO4J_AUTH=${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-simantha123}
       - NEO4J_PLUGINS=["apoc"]
       - NEO4J_dbms_security_procedures_unrestricted=apoc.*
     volumes:
@@ -136,7 +136,7 @@ services:
     networks:
       - simantha-net
     healthcheck:
-      test: ["CMD", "cypher-shell", "-u", "${NEO4J_USER:-neo4j}", "-p", "${NEO4J_PASSWORD:-simantha}", "RETURN 1"]
+      test: ["CMD", "cypher-shell", "-u", "${NEO4J_USER:-neo4j}", "-p", "${NEO4J_PASSWORD:-simantha123}", "RETURN 1"]
       interval: 15s
       timeout: 10s
       retries: 5
