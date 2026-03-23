@@ -727,7 +727,7 @@ full_feature_8_machine_line:
       enable_degradation: true
       health_states:
         h_max: 4
-        p_degrade: 0.008
+        p_degrade: 0.003
         cbm_threshold: 2
       enable_advanced_failures: true
       failure_modes:
@@ -776,7 +776,7 @@ full_feature_8_machine_line:
       enable_degradation: true
       health_states:
         h_max: 4
-        p_degrade: 0.01
+        p_degrade: 0.004
         cbm_threshold: 2
       enable_advanced_failures: true
       failure_modes:
@@ -821,7 +821,7 @@ full_feature_8_machine_line:
       enable_degradation: true
       health_states:
         h_max: 3
-        p_degrade: 0.012
+        p_degrade: 0.002
         cbm_threshold: 2
       enable_advanced_failures: true
       failure_modes:
@@ -870,7 +870,7 @@ full_feature_8_machine_line:
       enable_degradation: true
       health_states:
         h_max: 5
-        p_degrade: 0.009
+        p_degrade: 0.003
         cbm_threshold: 3
       enable_advanced_failures: true
       failure_modes:
@@ -915,7 +915,7 @@ full_feature_8_machine_line:
       enable_degradation: true
       health_states:
         h_max: 4
-        p_degrade: 0.01
+        p_degrade: 0.004
         cbm_threshold: 2
       enable_advanced_failures: true
       failure_modes:
@@ -964,7 +964,7 @@ full_feature_8_machine_line:
       enable_degradation: true
       health_states:
         h_max: 3
-        p_degrade: 0.015
+        p_degrade: 0.002
         cbm_threshold: 2
       enable_advanced_failures: true
       failure_modes:
@@ -1009,7 +1009,7 @@ full_feature_8_machine_line:
       enable_degradation: true
       health_states:
         h_max: 4
-        p_degrade: 0.011
+        p_degrade: 0.003
         cbm_threshold: 3
       enable_advanced_failures: true
       failure_modes:
@@ -1058,7 +1058,7 @@ full_feature_8_machine_line:
       enable_degradation: true
       health_states:
         h_max: 5
-        p_degrade: 0.008
+        p_degrade: 0.003
         cbm_threshold: 3
       enable_advanced_failures: true
       failure_modes:
@@ -1186,7 +1186,7 @@ full_feature_8_machine_line_rtf:
       enable_degradation: true
       health_states:
         h_max: 4
-        p_degrade: 0.008
+        p_degrade: 0.003
         cbm_threshold: 4
       enable_advanced_failures: true
       failure_modes:
@@ -1234,7 +1234,7 @@ full_feature_8_machine_line_rtf:
       enable_degradation: true
       health_states:
         h_max: 4
-        p_degrade: 0.01
+        p_degrade: 0.004
         cbm_threshold: 4
       enable_advanced_failures: true
       failure_modes:
@@ -1278,7 +1278,7 @@ full_feature_8_machine_line_rtf:
       enable_degradation: true
       health_states:
         h_max: 3
-        p_degrade: 0.012
+        p_degrade: 0.002
         cbm_threshold: 3
       enable_advanced_failures: true
       failure_modes:
@@ -1326,7 +1326,7 @@ full_feature_8_machine_line_rtf:
       enable_degradation: true
       health_states:
         h_max: 5
-        p_degrade: 0.009
+        p_degrade: 0.003
         cbm_threshold: 5
       enable_advanced_failures: true
       failure_modes:
@@ -1370,7 +1370,7 @@ full_feature_8_machine_line_rtf:
       enable_degradation: true
       health_states:
         h_max: 4
-        p_degrade: 0.01
+        p_degrade: 0.004
         cbm_threshold: 4
       enable_advanced_failures: true
       failure_modes:
@@ -1418,7 +1418,7 @@ full_feature_8_machine_line_rtf:
       enable_degradation: true
       health_states:
         h_max: 3
-        p_degrade: 0.015
+        p_degrade: 0.002
         cbm_threshold: 3
       enable_advanced_failures: true
       failure_modes:
@@ -1462,7 +1462,7 @@ full_feature_8_machine_line_rtf:
       enable_degradation: true
       health_states:
         h_max: 4
-        p_degrade: 0.011
+        p_degrade: 0.003
         cbm_threshold: 4
       enable_advanced_failures: true
       failure_modes:
@@ -1510,7 +1510,7 @@ full_feature_8_machine_line_rtf:
       enable_degradation: true
       health_states:
         h_max: 5
-        p_degrade: 0.008
+        p_degrade: 0.003
         cbm_threshold: 5
       enable_advanced_failures: true
       failure_modes:
