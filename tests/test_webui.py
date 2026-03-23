@@ -112,3 +112,21 @@ class TestGraphApiNodeEvents:
         monkeypatch.setattr("app._query_neo4j_node_events", lambda run_id, node: (_ for _ in ()).throw(Exception("down")))
         resp = client.get("/api/graph/node_events?run_id=test_run&node=M1")
         assert resp.status_code == 503
+
+
+class TestNeo4jHistorianToggle:
+    def test_scenario_without_historian_has_no_neo4j_checkbox(self, client):
+        """Neo4j wrapper is always in the DOM but hidden by default (display:none).
+        The ?scenario= param is consumed client-side; the /config route is a static SPA page.
+        We verify the wrapper element is present and starts hidden."""
+        resp = client.get("/config?scenario=balanced_line")
+        assert resp.status_code == 200
+        # feat-neo4j-wrapper is always in the HTML, toggled by JS; starts hidden
+        assert b"feat-neo4j-wrapper" in resp.data
+        assert b'style="display:none;"' in resp.data
+
+    def test_8_machine_scenario_has_neo4j_checkbox(self, client):
+        """The config page always contains the feat-neo4j checkbox element (shown/hidden by JS)."""
+        resp = client.get("/config?scenario=full_feature_8_machine_line")
+        assert resp.status_code == 200
+        assert b"feat-neo4j" in resp.data
