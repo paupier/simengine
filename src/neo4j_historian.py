@@ -31,12 +31,12 @@ _MAX_RECENT = 100  # per-machine sliding window depth
 # Causal rule definitions:
 # (target_new_state, trigger_field, trigger_values, window_s, edge_type, neighbour_dir)
 # neighbour_dir: "upstream" = trigger is upstream of target, "downstream" = downstream, "self" = same machine
-_CAUSAL_RULES = [
+_CAUSAL_RULES = (
     ("STARVED", "new_state",   {"FAILED", "UNDER_REPAIR"}, 5.0,  "starvation_cascade", "upstream"),
     ("BLOCKED", "new_state",   {"BLOCKED"},                5.0,  "blocking_cascade",   "downstream"),
     ("SCRAP",   "event_type",  {"SPC_VIOLATION"},          30.0, "spc_quality_impact", "self"),
     ("REWORK",  "event_type",  {"SPC_VIOLATION"},          30.0, "spc_quality_impact", "self"),
-]
+)
 _REPAIR_RECOVERY_WINDOW = 10.0
 
 
