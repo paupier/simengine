@@ -37,12 +37,15 @@ services:
       - INFLUXDB_ORG=simantha
       - INFLUXDB_BUCKET=manufacturing
       - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
       - NEO4J_PASSWORD=simantha123
     volumes:
       - sim-data:/app/results
       - telegraf-conf:/etc/telegraf
     depends_on:
       influxdb:
+        condition: service_healthy
+      neo4j:
         condition: service_healthy
     networks:
       - simantha-net
@@ -115,21 +118,45 @@ services:
     restart: unless-stopped
 
   # -------------------------------------------------------------------------
-  # Neo4j - Graph Database (OPTIONAL - uncomment to enable)
+  # Neo4j - Graph Database (causal analytics)
   # -------------------------------------------------------------------------
-  # neo4j:
-  #   image: neo4j:5-community
-  #   container_name: simantha-neo4j
-  #   ports:
-  #     - "7474:7474"   # Browser UI
-  #     - "7687:7687"   # Bolt protocol
-  #   environment:
-  #     - NEO4J_AUTH=neo4j/simantha123
-  #   volumes:
-  #     - neo4j-data:/data
-  #   networks:
-  #     - simantha-net
-  #   restart: unless-stopped
+  neo4j:
+    image: neo4j:5-community
+    container_name: simantha-neo4j
+    ports:
+      - "7474:7474"   # Browser UI
+      - "7687:7687"   # Bolt protocol
+    environment:
+      - NEO4J_AUTH=${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-simantha}
+      - NEO4J_PLUGINS=["apoc"]
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.*
+    volumes:
+      - neo4j-data:/data
+      - neo4j-logs:/logs
+    networks:
+      - simantha-net
+    healthcheck:
+      test: ["CMD", "cypher-shell", "-u", "${NEO4J_USER:-neo4j}", "-p", "${NEO4J_PASSWORD:-simantha}", "RETURN 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+  # -------------------------------------------------------------------------
+  # NeoDash - Graph Dashboard Builder
+  # -------------------------------------------------------------------------
+  neodash:
+    image: neo4j/neodash:latest
+    container_name: simantha-neodash
+    ports:
+      - "5005:5005"
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    networks:
+      - simantha-net
+    restart: unless-stopped
 
 volumes:
   sim-data:
@@ -140,8 +167,10 @@ volumes:
     name: simantha-grafana-data
   telegraf-conf:
     name: simantha-telegraf-conf
-  # neo4j-data:
-  #   name: simantha-neo4j-data
+  neo4j-data:
+    name: simantha-neo4j-data
+  neo4j-logs:
+    name: simantha-neo4j-logs
 
 networks:
   simantha-net:
