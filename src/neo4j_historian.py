@@ -29,13 +29,16 @@ BATCH_SIZE = 50
 _MAX_RECENT = 100  # per-machine sliding window depth
 
 # Causal rule definitions:
-# (target_new_state, trigger_field, trigger_values, window_s, edge_type, neighbour_dir)
+# (target_val, target_field, trigger_field, trigger_values, window_s, edge_type, neighbour_dir)
+# target_val:    value to match on the target event
+# target_field:  which field of the target event to check ("new_state" or "event_type")
+# trigger_field: which field of the trigger event to check
 # neighbour_dir: "upstream" = trigger is upstream of target, "downstream" = downstream, "self" = same machine
 _CAUSAL_RULES = (
-    ("STARVED", "new_state",   {"FAILED", "UNDER_REPAIR"}, 5.0,  "starvation_cascade", "upstream"),
-    ("BLOCKED", "new_state",   {"BLOCKED"},                5.0,  "blocking_cascade",   "downstream"),
-    ("SCRAP",   "event_type",  {"SPC_VIOLATION"},          30.0, "spc_quality_impact", "self"),
-    ("REWORK",  "event_type",  {"SPC_VIOLATION"},          30.0, "spc_quality_impact", "self"),
+    ("STARVED", "new_state",  "new_state",   {"FAILED", "UNDER_REPAIR"}, 5.0,  "starvation_cascade", "upstream"),
+    ("BLOCKED", "new_state",  "new_state",   {"BLOCKED"},                5.0,  "blocking_cascade",   "downstream"),
+    ("SCRAP",   "event_type", "event_type",  {"SPC_VIOLATION"},          30.0, "spc_quality_impact", "self"),
+    ("REWORK",  "event_type", "event_type",  {"SPC_VIOLATION"},          30.0, "spc_quality_impact", "self"),
 )
 _REPAIR_RECOVERY_WINDOW = 10.0
 
@@ -226,7 +229,7 @@ class Neo4jHistorian:
                 results = list(session.run(
                     """
                     UNWIND $events AS e
-                    MATCH (src {name: e.source, run_id: $run_id})
+                    OPTIONAL MATCH (src {name: e.source, run_id: $run_id})
                     CREATE (ev:Event {
                         type:        e.event_type,
                         sim_time:    e.sim_time,
@@ -237,7 +240,9 @@ class Neo4jHistorian:
                         severity:    e.severity,
                         run_id:      $run_id
                     })
-                    CREATE (src)-[:HAD_EVENT]->(ev)
+                    FOREACH (_ IN CASE WHEN src IS NOT NULL THEN [1] ELSE [] END |
+                        CREATE (src)-[:HAD_EVENT]->(ev)
+                    )
                     WITH ev, e
                     OPTIONAL MATCH (sh:Shift {run_id: $run_id, number: e.shift_number})
                     FOREACH (_ IN CASE WHEN sh IS NOT NULL THEN [1] ELSE [] END |
@@ -316,8 +321,8 @@ class Neo4jHistorian:
         source = target_event.source
 
         # Standard rules from _CAUSAL_RULES table
-        for (target_val, trigger_field, trigger_values, window, edge_type, direction) in _CAUSAL_RULES:
-            if target_event.new_state != target_val and target_event.event_type != target_val:
+        for (target_val, target_field, trigger_field, trigger_values, window, edge_type, direction) in _CAUSAL_RULES:
+            if getattr(target_event, target_field, None) != target_val:
                 continue
 
             if direction == "upstream":

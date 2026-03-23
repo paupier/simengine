@@ -1389,81 +1389,85 @@ def _query_neo4j_causal(run_id: str) -> dict:
     driver = _get_neo4j_driver()
     if not driver:
         raise RuntimeError("Neo4j not configured")
-    with driver.session() as session:
-        result = session.run(
-            """
-            MATCH (src)-[:HAD_EVENT]->(start:Event {run_id: $run_id, new_state: 'UNDER_REPAIR'})
-            WITH start ORDER BY start.sim_time DESC LIMIT 1
-            MATCH path = (start)-[:CAUSED*1..8]->(end:Event)
-            UNWIND relationships(path) AS rel
-            WITH startNode(rel) AS n1, endNode(rel) AS n2, rel
-            MATCH (eq1)-[:HAD_EVENT]->(n1)
-            MATCH (eq2)-[:HAD_EVENT]->(n2)
-            RETURN DISTINCT
-              elementId(n1) AS from_id, eq1.name AS from_name, n1.new_state AS from_state,
-              elementId(n2) AS to_id,   eq2.name AS to_name,   n2.new_state AS to_state,
-              rel.type AS cause_type,   rel.lag_s AS lag_s
-            LIMIT 100
-            """,
-            run_id=run_id,
-        )
-        nodes, edges, seen_nodes = [], [], set()
-        for row in result:
-            for nid, nname, nstate in [
-                (row["from_id"], row["from_name"], row["from_state"]),
-                (row["to_id"],   row["to_name"],   row["to_state"]),
-            ]:
-                if nid not in seen_nodes:
-                    seen_nodes.add(nid)
-                    nodes.append({
-                        "id": nid, "label": f"{nname}\n{nstate or ''}",
-                        "color": _STATE_COLOURS.get(nstate, "#7f8c8d"),
-                    })
-            edges.append({
-                "from": row["from_id"], "to": row["to_id"],
-                "label": f"{row['cause_type']} ({row['lag_s']}s)",
-                "arrows": "to",
-            })
-    driver.close()
-    return {"nodes": nodes, "edges": edges}
+    try:
+        with driver.session() as session:
+            result = session.run(
+                """
+                MATCH (src)-[:HAD_EVENT]->(start:Event {run_id: $run_id, new_state: 'UNDER_REPAIR'})
+                WITH start ORDER BY start.sim_time DESC LIMIT 1
+                MATCH path = (start)-[:CAUSED*1..8]->(end:Event)
+                UNWIND relationships(path) AS rel
+                WITH startNode(rel) AS n1, endNode(rel) AS n2, rel
+                MATCH (eq1)-[:HAD_EVENT]->(n1)
+                MATCH (eq2)-[:HAD_EVENT]->(n2)
+                RETURN DISTINCT
+                  elementId(n1) AS from_id, eq1.name AS from_name, n1.new_state AS from_state,
+                  elementId(n2) AS to_id,   eq2.name AS to_name,   n2.new_state AS to_state,
+                  rel.type AS cause_type,   rel.lag_s AS lag_s
+                LIMIT 100
+                """,
+                run_id=run_id,
+            )
+            nodes, edges, seen_nodes = [], [], set()
+            for row in result:
+                for nid, nname, nstate in [
+                    (row["from_id"], row["from_name"], row["from_state"]),
+                    (row["to_id"],   row["to_name"],   row["to_state"]),
+                ]:
+                    if nid not in seen_nodes:
+                        seen_nodes.add(nid)
+                        nodes.append({
+                            "id": nid, "label": f"{nname}\n{nstate or ''}",
+                            "color": _STATE_COLOURS.get(nstate, "#7f8c8d"),
+                        })
+                edges.append({
+                    "from": row["from_id"], "to": row["to_id"],
+                    "label": f"{row['cause_type']} ({row['lag_s']}s)",
+                    "arrows": "to",
+                })
+        return {"nodes": nodes, "edges": edges}
+    finally:
+        driver.close()
 
 
 def _query_neo4j_topology(run_id: str) -> dict:
     driver = _get_neo4j_driver()
     if not driver:
         raise RuntimeError("Neo4j not configured")
-    with driver.session() as session:
-        eq_result = session.run(
-            """
-            MATCH (eq {run_id: $run_id})-[:HAD_EVENT]->(e:Event)
-            WHERE eq:Machine OR eq:Buffer
-            WITH eq, e ORDER BY e.sim_time DESC
-            WITH eq, collect(e)[0] AS latest
-            RETURN eq.name AS name, labels(eq)[0] AS type,
-                   latest.new_state AS state
-            """,
-            run_id=run_id,
-        )
-        nodes, seen = [], set()
-        for row in eq_result:
-            if row["name"] not in seen:
-                seen.add(row["name"])
-                nodes.append({
-                    "id": row["name"], "label": row["name"],
-                    "color": _STATE_COLOURS.get(row["state"], "#95a5a6"),
-                    "shape": "box" if row["type"] == "Buffer" else "ellipse",
-                })
-        feeds_result = session.run(
-            """
-            MATCH (a {run_id: $run_id})-[:FEEDS]->(b {run_id: $run_id})
-            WHERE (a:Machine OR a:Buffer) AND (b:Machine OR b:Buffer)
-            RETURN a.name AS from_name, b.name AS to_name
-            """,
-            run_id=run_id,
-        )
-        edges = [{"from": r["from_name"], "to": r["to_name"], "arrows": "to"} for r in feeds_result]
-    driver.close()
-    return {"nodes": nodes, "edges": edges}
+    try:
+        with driver.session() as session:
+            eq_result = session.run(
+                """
+                MATCH (eq {run_id: $run_id})-[:HAD_EVENT]->(e:Event)
+                WHERE eq:Machine OR eq:Buffer
+                WITH eq, e ORDER BY e.sim_time DESC
+                WITH eq, collect(e)[0] AS latest
+                RETURN eq.name AS name, labels(eq)[0] AS type,
+                       latest.new_state AS state
+                """,
+                run_id=run_id,
+            )
+            nodes, seen = [], set()
+            for row in eq_result:
+                if row["name"] not in seen:
+                    seen.add(row["name"])
+                    nodes.append({
+                        "id": row["name"], "label": row["name"],
+                        "color": _STATE_COLOURS.get(row["state"], "#95a5a6"),
+                        "shape": "box" if row["type"] == "Buffer" else "ellipse",
+                    })
+            feeds_result = session.run(
+                """
+                MATCH (a {run_id: $run_id})-[:FEEDS]->(b {run_id: $run_id})
+                WHERE (a:Machine OR a:Buffer) AND (b:Machine OR b:Buffer)
+                RETURN a.name AS from_name, b.name AS to_name
+                """,
+                run_id=run_id,
+            )
+            edges = [{"from": r["from_name"], "to": r["to_name"], "arrows": "to"} for r in feeds_result]
+        return {"nodes": nodes, "edges": edges}
+    finally:
+        driver.close()
 
 
 def _query_neo4j_compare(run_a: str, run_b: str) -> dict:
@@ -1471,51 +1475,55 @@ def _query_neo4j_compare(run_a: str, run_b: str) -> dict:
     if not driver:
         raise RuntimeError("Neo4j not configured")
     stats = {}
-    with driver.session() as session:
-        for run_id, key in [(run_a, "run_a"), (run_b, "run_b")]:
-            result = session.run(
-                """
-                MATCH (r:Run {run_id: $run_id})
-                OPTIONAL MATCH (r)-[:INCLUDES]->(m:Machine)-[:HAD_EVENT]->(e:Event)-[:CAUSED*]->(e2:Event)
-                WITH r, count(DISTINCT e) AS caused_count
-                OPTIONAL MATCH path = (e1:Event {run_id: $run_id})-[:CAUSED*]->(e2:Event)
-                WITH caused_count, max(length(path)) AS max_depth
-                OPTIONAL MATCH (m:Machine {run_id: $run_id})-[:HAD_EVENT]->(e:Event {new_state: 'UNDER_REPAIR'})
-                WITH caused_count, max_depth, count(e) AS repair_count, m.name AS mname
-                ORDER BY repair_count DESC LIMIT 1
-                RETURN caused_count, max_depth, repair_count, mname AS top_node
-                """,
-                run_id=run_id,
-            )
-            row = result.single()
-            stats[key] = {
-                "run_id":       run_id,
-                "total_caused": row["caused_count"] or 0,
-                "max_depth":    row["max_depth"] or 0,
-                "repair_count": row["repair_count"] or 0,
-                "top_node":     row["top_node"] or "—",
-            } if row else {"run_id": run_id, "total_caused": 0, "max_depth": 0, "repair_count": 0, "top_node": "—"}
-    driver.close()
-    return stats
+    try:
+        with driver.session() as session:
+            for run_id, key in [(run_a, "run_a"), (run_b, "run_b")]:
+                result = session.run(
+                    """
+                    MATCH (r:Run {run_id: $run_id})
+                    OPTIONAL MATCH (r)-[:INCLUDES]->(m:Machine)-[:HAD_EVENT]->(e:Event)-[:CAUSED*]->(e2:Event)
+                    WITH r, count(DISTINCT e) AS caused_count
+                    OPTIONAL MATCH path = (e1:Event {run_id: $run_id})-[:CAUSED*]->(e2:Event)
+                    WITH caused_count, max(length(path)) AS max_depth
+                    OPTIONAL MATCH (m:Machine {run_id: $run_id})-[:HAD_EVENT]->(e:Event {new_state: 'UNDER_REPAIR'})
+                    WITH caused_count, max_depth, count(e) AS repair_count, m.name AS mname
+                    ORDER BY repair_count DESC LIMIT 1
+                    RETURN caused_count, max_depth, repair_count, mname AS top_node
+                    """,
+                    run_id=run_id,
+                )
+                row = result.single()
+                stats[key] = {
+                    "run_id":       run_id,
+                    "total_caused": row["caused_count"] or 0,
+                    "max_depth":    row["max_depth"] or 0,
+                    "repair_count": row["repair_count"] or 0,
+                    "top_node":     row["top_node"] or "—",
+                } if row else {"run_id": run_id, "total_caused": 0, "max_depth": 0, "repair_count": 0, "top_node": "—"}
+        return stats
+    finally:
+        driver.close()
 
 
 def _query_neo4j_node_events(run_id: str, node_name: str) -> list:
     driver = _get_neo4j_driver()
     if not driver:
         raise RuntimeError("Neo4j not configured")
-    with driver.session() as session:
-        result = session.run(
-            """
-            MATCH (eq {name: $node_name, run_id: $run_id})-[:HAD_EVENT]->(e:Event)
-            RETURN e.sim_time AS sim_time, e.type AS type, e.new_state AS new_state,
-                   e.old_state AS old_state, e.oee AS oee
-            ORDER BY e.sim_time DESC LIMIT 5
-            """,
-            run_id=run_id, node_name=node_name,
-        )
-        rows = [dict(r) for r in result]
-    driver.close()
-    return rows
+    try:
+        with driver.session() as session:
+            result = session.run(
+                """
+                MATCH (eq {name: $node_name, run_id: $run_id})-[:HAD_EVENT]->(e:Event)
+                RETURN e.sim_time AS sim_time, e.type AS type, e.new_state AS new_state,
+                       e.old_state AS old_state, e.oee AS oee
+                ORDER BY e.sim_time DESC LIMIT 5
+                """,
+                run_id=run_id, node_name=node_name,
+            )
+            rows = [dict(r) for r in result]
+        return rows
+    finally:
+        driver.close()
 
 
 # ---------------------------------------------------------------------------
