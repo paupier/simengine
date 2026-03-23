@@ -1,0 +1,74 @@
+{
+  "title": "Manufacturing Causal Analysis",
+  "version": "2.4",
+  "settings": {
+    "pagenumber": 0,
+    "editable": true,
+    "fullscreenEnabled": false,
+    "parameters": {
+      "neodash_run_id": ""
+    }
+  },
+  "pages": [
+    {
+      "title": "Causal Chain Explorer",
+      "reports": [
+        {
+          "title": "Causal Chain (last 6 hops)",
+          "query": "MATCH path=(e1:Event {run_id: $neodash_run_id})-[:CAUSED*1..6]->(e2:Event) WHERE NOT ()-[:CAUSED]->(e1) RETURN path LIMIT 50",
+          "type": "graph",
+          "width": 12,
+          "height": 4
+        }
+      ]
+    },
+    {
+      "title": "Failure Pattern Finder",
+      "reports": [
+        {
+          "title": "Machines by Failure Count",
+          "query": "MATCH (m:Machine {run_id: $neodash_run_id})-[:HAD_EVENT]->(e:Event) WHERE e.new_state IN ['FAILED','UNDER_REPAIR'] RETURN m.name AS Machine, count(e) AS Failures ORDER BY Failures DESC",
+          "type": "bar",
+          "width": 6,
+          "height": 3
+        }
+      ]
+    },
+    {
+      "title": "SPC → Quality Impact",
+      "reports": [
+        {
+          "title": "SPC Violation Chains",
+          "query": "MATCH (e1:Event {run_id: $neodash_run_id})-[:CAUSED {type:'spc_quality_impact'}]->(e2:Event) RETURN e1.sim_time AS ViolationTime, e2.sim_time AS ImpactTime, e2.new_state AS Outcome LIMIT 100",
+          "type": "table",
+          "width": 12,
+          "height": 3
+        }
+      ]
+    },
+    {
+      "title": "Shift Breakdown",
+      "reports": [
+        {
+          "title": "Events per Shift",
+          "query": "MATCH (r:Run {run_id: $neodash_run_id})-[:HAD_SHIFT]->(s:Shift)<-[:OCCURRED_IN]-(e:Event) RETURN s.name AS Shift, count(e) AS Events ORDER BY s.number",
+          "type": "bar",
+          "width": 12,
+          "height": 3
+        }
+      ]
+    },
+    {
+      "title": "Cross-Run Comparison",
+      "reports": [
+        {
+          "title": "Runs",
+          "query": "MATCH (r:Run) RETURN r.run_id AS RunID, r.scenario AS Scenario, size((r)-[:INCLUDES]->()) AS Nodes ORDER BY r.start_wall_clock DESC",
+          "type": "table",
+          "width": 12,
+          "height": 3
+        }
+      ]
+    }
+  ]
+}

@@ -133,6 +133,7 @@ services:
     volumes:
       - neo4j-data:/data
       - neo4j-logs:/logs
+      - ./neo4j/dashboards:/var/lib/neo4j/dashboards:ro
     networks:
       - simantha-net
     healthcheck:
