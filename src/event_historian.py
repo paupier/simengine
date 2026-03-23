@@ -128,9 +128,13 @@ class CSVHistorian(EventHistorian):
         # Ensure output directory exists
         os.makedirs(output_dir, exist_ok=True)
 
-        # Generate base filename with timestamp
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self._base_name = f"{scenario_name}_{ts}_events"
+        # Generate base filename — use run_id directly if provided so that the
+        # CSV filename matches the run_id Flask tracks via SIMANTHA_RUN_ID.
+        if run_id:
+            self._base_name = f"{run_id}_events"
+        else:
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            self._base_name = f"{scenario_name}_{ts}_events"
 
         # Open initial file
         self._file_handle = None
