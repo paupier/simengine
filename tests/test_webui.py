@@ -95,20 +95,20 @@ class TestGraphApiCompare:
 
 
 class TestGraphApiNodeEvents:
-    def test_node_events_no_eid_returns_400(self, client):
-        resp = client.get("/api/graph/node_events")
+    def test_node_events_missing_params_returns_400(self, client):
+        resp = client.get("/api/graph/node_events?run_id=x")  # missing node
         assert resp.status_code == 400
 
     def test_node_events_returns_list(self, client, monkeypatch):
-        monkeypatch.setattr("app._query_neo4j_node_events", lambda eid: [
+        monkeypatch.setattr("app._query_neo4j_node_events", lambda run_id, node: [
             {"sim_time": 10.0, "event_type": "STATE_CHANGE", "old_state": "PROCESSING", "new_state": "FAILED"},
         ])
-        resp = client.get("/api/graph/node_events?eid=some_eid")
+        resp = client.get("/api/graph/node_events?run_id=test_run&node=M1")
         assert resp.status_code == 200
         data = resp.get_json()
         assert isinstance(data, list)
 
     def test_node_events_neo4j_unavailable_returns_503(self, client, monkeypatch):
-        monkeypatch.setattr("app._query_neo4j_node_events", lambda eid: (_ for _ in ()).throw(Exception("down")))
-        resp = client.get("/api/graph/node_events?eid=some_eid")
+        monkeypatch.setattr("app._query_neo4j_node_events", lambda run_id, node: (_ for _ in ()).throw(Exception("down")))
+        resp = client.get("/api/graph/node_events?run_id=test_run&node=M1")
         assert resp.status_code == 503
