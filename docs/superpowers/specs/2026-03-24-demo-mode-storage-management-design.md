@@ -46,7 +46,7 @@ dashboard (index.html)
 ```
 
 - Read by Flask at startup and on each `/api/settings` GET
-- Written atomically (write to `.tmp`, rename) to avoid corruption on crash
+- Written atomically using `os.replace()` (write to `.tmp`, then `os.replace(tmp, dest)`) — `os.replace()` is used rather than `os.rename()` because on Windows `os.rename()` raises `FileExistsError` if the destination exists; `os.replace()` is atomic and overwrites on both POSIX and Windows
 - Gitignored — runtime state, not committed
 - Persisted via the existing `sim-data` Docker volume mount at `/app`
 
@@ -57,7 +57,9 @@ dashboard (index.html)
 | `/api/settings` | GET | — | `{demo_mode, retention_days}` |
 | `/api/settings` | POST | `{demo_mode, retention_days}` | updated settings |
 | `/api/settings/storage` | GET | — | `{influx, neo4j, total, daily_rate_mb, days_of_data}` |
-| `/api/settings/trim` | POST | — | `{influx_deleted_range, neo4j_runs_deleted}` |
+| `/api/settings/trim` | POST | — | `{influx_cutoff_date, neo4j_runs_deleted}` |
+
+**Validation on POST `/api/settings`:** `retention_days` must be an integer between 7 and 365 (inclusive). Values outside this range return HTTP 400 with a descriptive error message. Minimum of 7 prevents the hourly trim thread from deleting data from a run still in progress.
 
 ---
 
@@ -85,24 +87,36 @@ Flask starts a single daemon thread (`threading.Thread(daemon=True, name="retent
 POST /api/v2/delete
 {
   "start": "1970-01-01T00:00:00Z",
-  "stop": "<now - retention_days>",
-  "predicate": "_measurement=\"opcua\""
+  "stop": "<cutoff RFC3339 timestamp>",
 }
 ```
-Uses the InfluxDB 2.x native delete API. Targets only the `opcua` measurement to avoid touching internal InfluxDB metadata.
+No predicate — deletes all data in the `manufacturing` bucket older than the cutoff. A predicate scoped to `_measurement="opcua"` would miss any other measurements Telegraf writes to the same bucket. The `stop` value is formatted as a full RFC3339 timestamp (e.g. `2026-01-23T00:00:00Z`), not a relative expression, as required by the InfluxDB 2.x delete API.
+
+**Concurrent write safety:** The InfluxDB delete API is not transactional with concurrent writes. Deleting while a run is actively writing is safe in InfluxDB 2.x — no data corruption risk — but newly written points in the deleted range may be re-written before the next cycle. This is acceptable: the trim is best-effort housekeeping, not a hard guarantee.
 
 **Neo4j prune:**
+
+`:Machine` and `:Buffer` nodes in this graph schema are **per-run** — created fresh for each run via `create_topology()` and connected to their `:Run` node via `:INCLUDES`. They are not shared reference nodes across runs. `DETACH DELETE` on a `:Run` node is therefore safe and complete.
+
 ```cypher
 MATCH (r:Run)
 WHERE r.start_wall_clock < $cutoff_epoch
 DETACH DELETE r
 RETURN count(r) AS deleted
 ```
-Deletes entire `:Run` nodes and all connected `:Event`, `:Shift`, `:Machine`, `:Buffer` nodes via `DETACH DELETE`. Deleting at run level keeps the graph structurally consistent — no orphaned events.
+
+This removes the `:Run` node and all connected `:Event`, `:Shift`, `:Machine`, and `:Buffer` nodes. No orphaned nodes remain.
 
 **Error handling:** Any exception in a prune cycle is logged as a WARNING. The thread continues running and retries on the next hourly cycle. A failed trim never surfaces to the user as a hard error.
 
-**`POST /api/settings/trim`** runs the same prune logic synchronously (not via the thread) and returns a summary of what was deleted. Used by the "Trim Now" button in the modal.
+**`POST /api/settings/trim`** runs the same prune logic synchronously (not via the thread) and returns:
+```json
+{
+  "influx_cutoff_date": "2026-01-23",
+  "neo4j_runs_deleted": 2
+}
+```
+Used by the "Trim Now" button, which displays: `"Trimmed: InfluxDB data before 2026-01-23 · Neo4j: 2 runs deleted"`.
 
 ---
 
@@ -128,6 +142,7 @@ Clicking in either direction opens the modal rather than toggling directly, prev
 │            Takes effect on next run.    │
 │                                         │
 │  Retain data for  [__30__] days         │
+│  (min 7, max 365)                       │
 │                                         │
 │  Storage                                │
 │  InfluxDB   1.2 GB  (42 days of data)   │
@@ -144,7 +159,7 @@ Clicking in either direction opens the modal rather than toggling directly, prev
 - Storage rows populated by `GET /api/settings/storage` on modal open
 - Estimate line updates live as the user adjusts the days input (debounced 400 ms)
 - If a backend is unreachable, its row shows `N/A` and is excluded from the total
-- **Save** writes to `POST /api/settings` and closes the modal
+- **Save** validates `retention_days` in range 7–365 client-side before calling `POST /api/settings`; closes modal on success
 - **Trim Now** calls `POST /api/settings/trim` and shows a brief confirmation: `"Trimmed: InfluxDB data before 2026-01-23 · Neo4j: 2 runs deleted"`
 
 ---
@@ -155,17 +170,17 @@ Served by `GET /api/settings/storage`. InfluxDB and Neo4j are queried in paralle
 
 ### InfluxDB
 
-Query total data point count and oldest timestamp via Flux:
+Query total field-value count and oldest timestamp via Flux:
 ```flux
 from(bucket: "manufacturing")
   |> range(start: 1970-01-01T00:00:00Z)
-  |> filter(fn: (r) => r._measurement == "opcua")
   |> count()
 ```
-- `size_bytes ≈ point_count × 8` (InfluxDB compressed per-point average)
+- `size_bytes ≈ field_value_count × 8` (InfluxDB TSM compressed bytes per field value)
+- An 8-machine line at 1s poll interval writes ~30 fields per machine per second. After ~10:1 TSM compression, the actual daily rate is approximately **16 MB/day** (8 machines × 30 fields × 86400s × 8 bytes / 10)
 - `days_of_data = (now - oldest_point_timestamp) / 86400`
 - `daily_rate = size_bytes / days_of_data`
-- **Static fallback** (no data): **3 MB/day** (calibrated against 8-machine line at 1s poll interval)
+- **Static fallback** (no data): **16 MB/day**
 
 ### Neo4j
 
@@ -203,6 +218,7 @@ docker/webui/demo_settings.json
 | InfluxDB delete API (`/api/v2/delete`) | Yes — InfluxDB 2.7 |
 | Neo4j driver in Flask | Yes — added in Neo4j phase |
 | `threading` (stdlib) | Yes |
+| `os.replace()` (stdlib) | Yes |
 | `--no-csv` flag in opcua_server.py | No — new |
 
 ---
@@ -218,8 +234,8 @@ docker/webui/demo_settings.json
 
 ## 11. Implementation Sequence
 
-1. `demo_settings.json` file + atomic read/write helpers in `app.py`
-2. `GET/POST /api/settings` endpoints
+1. `demo_settings.json` file + atomic read/write helpers (`os.replace()`) in `app.py`
+2. `GET/POST /api/settings` endpoints with `retention_days` validation (7–365)
 3. `--no-csv` flag in `opcua_server.py`; Flask passes it on demo mode start
 4. `GET /api/settings/storage` — parallel InfluxDB + Neo4j size queries
 5. Background retention thread + `POST /api/settings/trim`
