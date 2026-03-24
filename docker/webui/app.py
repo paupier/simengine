@@ -353,6 +353,8 @@ def start_simulation(scenario, seed=None, interarrival_time=None):
             cmd += ["--seed", str(seed)]
         if interarrival_time is not None:
             cmd += ["--interarrival-time", str(interarrival_time)]
+        if _read_settings().get("demo_mode"):
+            cmd.append("--no-csv")
 
         env = os.environ.copy()
         env["SIMANTHA_CONFIG_PATH"] = str(CONFIG_PATH)
@@ -404,6 +406,8 @@ def start_simulation_recipe(recipe_name, seed=None, interarrival_time=None):
             cmd += ["--seed", str(seed)]
         if interarrival_time is not None:
             cmd += ["--interarrival-time", str(interarrival_time)]
+        if _read_settings().get("demo_mode"):
+            cmd.append("--no-csv")
 
         env = os.environ.copy()
         env["SIMANTHA_CONFIG_PATH"] = str(CONFIG_PATH)

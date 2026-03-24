@@ -293,3 +293,57 @@ class TestTrimApi:
         monkeypatch.setattr(flask_app_module, "_do_trim", fake_trim)
         client.post("/api/settings/trim")
         assert called_with["days"] == 60
+
+
+# ========== Demo Mode Subprocess Tests ==========
+
+class TestDemoModeSubprocess:
+    """Tests that --no-csv is appended to subprocess cmd when demo_mode is True."""
+
+    def _make_fake_popen(self, captured):
+        def fake_popen(cmd, **kwargs):
+            captured["cmd"] = list(cmd)
+            class FakeProc:
+                stdout = iter([])
+                pid = 999
+                def poll(self): return None
+            return FakeProc()
+        return fake_popen
+
+    def test_start_simulation_appends_no_csv_in_demo_mode(self, monkeypatch, tmp_path):
+        path = tmp_path / "demo_settings.json"
+        path.write_text('{"demo_mode": true, "retention_days": 30}')
+        monkeypatch.setattr(flask_app_module, "_SETTINGS_PATH", path)
+        captured = {}
+        monkeypatch.setattr(flask_app_module.subprocess, "Popen", self._make_fake_popen(captured))
+        monkeypatch.setattr(flask_app_module, "stop_simulation", lambda: None)
+        monkeypatch.setattr(flask_app_module, "_regenerate_telegraf_config", lambda *a, **kw: None)
+
+        flask_app_module.start_simulation("balanced_line")
+        assert "--no-csv" in captured["cmd"]
+
+    def test_start_simulation_no_csv_absent_when_demo_off(self, monkeypatch, tmp_path):
+        path = tmp_path / "demo_settings.json"
+        path.write_text('{"demo_mode": false, "retention_days": 30}')
+        monkeypatch.setattr(flask_app_module, "_SETTINGS_PATH", path)
+        captured = {}
+        monkeypatch.setattr(flask_app_module.subprocess, "Popen", self._make_fake_popen(captured))
+        monkeypatch.setattr(flask_app_module, "stop_simulation", lambda: None)
+        monkeypatch.setattr(flask_app_module, "_regenerate_telegraf_config", lambda *a, **kw: None)
+
+        flask_app_module.start_simulation("balanced_line")
+        assert "--no-csv" not in captured["cmd"]
+
+    def test_start_recipe_appends_no_csv_in_demo_mode(self, monkeypatch, tmp_path):
+        path = tmp_path / "demo_settings.json"
+        path.write_text('{"demo_mode": true, "retention_days": 30}')
+        monkeypatch.setattr(flask_app_module, "_SETTINGS_PATH", path)
+        captured = {}
+        monkeypatch.setattr(flask_app_module.subprocess, "Popen", self._make_fake_popen(captured))
+        monkeypatch.setattr(flask_app_module, "stop_simulation", lambda: None)
+        monkeypatch.setattr(flask_app_module, "_regenerate_telegraf_config", lambda *a, **kw: None)
+        monkeypatch.setattr(flask_app_module, "load_recipe",
+                            lambda name: {"base_scenario": "full_feature_8_machine_line"})
+
+        flask_app_module.start_simulation_recipe("monday_schedule")
+        assert "--no-csv" in captured["cmd"]
