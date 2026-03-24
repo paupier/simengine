@@ -1258,8 +1258,10 @@ def validate_pipeline(df, influx_data):
         telegraf_key = f"Machine{i + 1}"
         m_events = machine_events[machine_events["source"] == csv_m]
         csv_pc = None
-        if len(m_events) > 0 and pd.notna(m_events.iloc[-1]["partcount"]):
-            csv_pc = int(m_events.iloc[-1]["partcount"])
+        if len(m_events) > 0:
+            max_pc = m_events["partcount"].max()
+            if pd.notna(max_pc):
+                csv_pc = int(max_pc)
         telegraf_pc = machine_pcs.get(telegraf_key)
 
         pc_status = "SKIP"
