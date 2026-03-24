@@ -12,7 +12,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Install Docker-specific dependencies (Flask web UI + historian backends)
 COPY docker/webui/requirements.txt /tmp/webui-requirements.txt
 RUN pip install --no-cache-dir -r /tmp/webui-requirements.txt \
-    && pip install --no-cache-dir influxdb-client>=1.30.0 \
+    && pip install --no-cache-dir influxdb-client>=1.30.0 neo4j>=5.0.0 \
     && rm /tmp/webui-requirements.txt
 
 # Copy application source
