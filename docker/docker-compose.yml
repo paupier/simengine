@@ -148,7 +148,7 @@ services:
   # NeoDash - Graph Dashboard Builder
   # -------------------------------------------------------------------------
   neodash:
-    image: neo4j/neodash:latest
+    image: neo4jlabs/neodash:latest
     container_name: simantha-neodash
     ports:
       - "5005:5005"
