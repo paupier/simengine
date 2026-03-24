@@ -509,6 +509,61 @@
         ::-webkit-scrollbar-track { background: var(--bg-shell); }
         ::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 2px; }
         ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+        /* ── Demo Mode pill ── */
+        .demo-pill {
+            font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
+            padding: 2px 8px; border-radius: 10px; border: 1px solid var(--text-dim);
+            color: var(--text-dim); cursor: pointer; background: transparent;
+            transition: all 0.2s; flex-shrink: 0;
+        }
+        .demo-pill.active {
+            color: var(--warn); border-color: var(--warn);
+            box-shadow: 0 0 6px var(--warn);
+        }
+        /* ── Demo Mode modal ── */
+        .demo-modal-overlay {
+            display: none; position: fixed; inset: 0;
+            background: rgba(0,0,0,0.6); z-index: 1000;
+            align-items: center; justify-content: center;
+        }
+        .demo-modal-overlay.open { display: flex; }
+        .demo-modal {
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 6px; padding: 24px; min-width: 360px; max-width: 440px;
+            color: var(--text-primary);
+        }
+        .demo-modal h3 { margin: 0 0 16px; font-size: 14px; color: var(--cyan); }
+        .demo-modal-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+        .demo-modal-label { font-size: 12px; color: var(--text-secondary); }
+        .demo-modal-sublabel { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+        .demo-toggle { cursor: pointer; accent-color: var(--warn); width: 16px; height: 16px; }
+        .demo-days-input {
+            width: 70px; background: var(--bg-panel); border: 1px solid var(--border);
+            color: var(--text-primary); padding: 4px 8px; border-radius: 4px;
+            font-size: 13px; text-align: center;
+        }
+        .demo-storage-table { width: 100%; font-size: 12px; margin-bottom: 14px; border-collapse: collapse; }
+        .demo-storage-table td { padding: 4px 0; }
+        .demo-storage-table td:last-child { text-align: right; color: var(--cyan); }
+        .demo-estimate { font-size: 12px; color: var(--text-secondary); margin-bottom: 16px; min-height: 18px; }
+        .demo-modal-actions { display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
+        .demo-modal-actions .btn-trim {
+            margin-right: auto; font-size: 11px; padding: 4px 10px;
+            background: transparent; border: 1px solid var(--text-dim);
+            color: var(--text-dim); border-radius: 4px; cursor: pointer;
+        }
+        .demo-modal-actions .btn-trim:hover { border-color: var(--warn); color: var(--warn); }
+        .demo-modal-actions .btn-save {
+            font-size: 11px; padding: 4px 14px; background: var(--cyan);
+            border: none; border-radius: 4px; color: #000; cursor: pointer; font-weight: 600;
+        }
+        .demo-modal-actions .btn-close {
+            font-size: 11px; padding: 4px 10px; background: transparent;
+            border: 1px solid var(--border); color: var(--text-secondary);
+            border-radius: 4px; cursor: pointer;
+        }
+        .demo-trim-msg { font-size: 11px; color: var(--good); margin-top: 8px; min-height: 16px; }
     </style>
 </head>
 <body>
@@ -537,8 +592,43 @@
             <span class="hdr-scenario" id="hdr-scenario">—</span>
             <span class="hdr-uptime" id="hdr-uptime"></span>
             <span class="hdr-run-id" id="hdr-run-id" title="Click to copy run ID"></span>
+            <button class="demo-pill" id="demo-pill" onclick="openDemoModal()">Demo Mode</button>
         </div>
     </header>
+
+    <!-- ── Demo Mode Modal ── -->
+    <div class="demo-modal-overlay" id="demo-modal-overlay">
+      <div class="demo-modal">
+        <h3>Demo Mode Settings</h3>
+        <div class="demo-modal-row">
+          <div>
+            <div class="demo-modal-label">Demo Mode</div>
+            <div class="demo-modal-sublabel">Disables CSV logging. Takes effect on next run.</div>
+          </div>
+          <input type="checkbox" class="demo-toggle" id="demo-toggle">
+        </div>
+        <div class="demo-modal-row">
+          <div class="demo-modal-label">Retain data for</div>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <input type="number" class="demo-days-input" id="demo-days" min="7" max="365" value="30">
+            <span class="demo-modal-label">days</span>
+          </div>
+        </div>
+        <table class="demo-storage-table">
+          <tr><td class="demo-modal-label">InfluxDB</td><td id="demo-influx-size">—</td></tr>
+          <tr><td class="demo-modal-label">Neo4j</td><td id="demo-neo4j-size">—</td></tr>
+          <tr><td class="demo-modal-label" style="font-weight:600;">Total</td>
+              <td id="demo-total-size" style="font-weight:600;">—</td></tr>
+        </table>
+        <div class="demo-estimate" id="demo-estimate">—</div>
+        <div class="demo-trim-msg" id="demo-trim-msg"></div>
+        <div class="demo-modal-actions">
+          <button class="btn-trim" onclick="trimNow()">Trim Now</button>
+          <button class="btn-save" onclick="saveDemoSettings()">Save</button>
+          <button class="btn-close" onclick="closeDemoModal()">Close</button>
+        </div>
+      </div>
+    </div>
 
     <!-- ── KPI Strip ── -->
     <div class="kpi-strip">
@@ -1267,6 +1357,96 @@
         loadRecipes();
         setInterval(pollStatus, 2000);
         setInterval(pollLogs, 3000);
+
+        // ── Demo Mode Modal ──────────────────────────────────────────────────────────
+        let _demoStorageData = null;
+        let _demoEstimateTimer = null;
+
+        async function openDemoModal() {
+            const settings = await fetch('/api/settings').then(r => r.json()).catch(() => ({}));
+            document.getElementById('demo-toggle').checked = !!settings.demo_mode;
+            document.getElementById('demo-days').value = settings.retention_days || 30;
+            document.getElementById('demo-trim-msg').textContent = '';
+            document.getElementById('demo-modal-overlay').classList.add('open');
+            loadStorageInfo();
+        }
+
+        function closeDemoModal() {
+            document.getElementById('demo-modal-overlay').classList.remove('open');
+        }
+
+        async function loadStorageInfo() {
+            ['demo-influx-size','demo-neo4j-size','demo-total-size','demo-estimate'].forEach(id => {
+                document.getElementById(id).textContent = '…';
+            });
+            try {
+                const d = await fetch('/api/settings/storage').then(r => r.json());
+                _demoStorageData = d;
+                document.getElementById('demo-influx-size').textContent =
+                    d.influx.size_mb != null ? _fmtMb(d.influx.size_mb) : 'N/A';
+                document.getElementById('demo-neo4j-size').textContent =
+                    d.neo4j.size_mb != null ? _fmtMb(d.neo4j.size_mb) : 'N/A';
+                document.getElementById('demo-total-size').textContent =
+                    d.total_mb != null ? _fmtMb(d.total_mb) : 'N/A';
+                _updateDemoEstimate();
+            } catch (e) {
+                ['demo-influx-size','demo-neo4j-size','demo-total-size'].forEach(id => {
+                    document.getElementById(id).textContent = 'N/A';
+                });
+            }
+        }
+
+        function _fmtMb(mb) {
+            return mb >= 1024 ? (mb / 1024).toFixed(2) + ' GB' : mb.toFixed(0) + ' MB';
+        }
+
+        function _updateDemoEstimate() {
+            if (!_demoStorageData) return;
+            const days = parseInt(document.getElementById('demo-days').value) || 30;
+            const rate = _demoStorageData.daily_rate_mb || 0;
+            document.getElementById('demo-estimate').textContent =
+                `At ${days} days ≈ ${_fmtMb(rate * days)} (${rate.toFixed(1)} MB/day)`;
+        }
+
+        document.getElementById('demo-days').addEventListener('input', () => {
+            clearTimeout(_demoEstimateTimer);
+            _demoEstimateTimer = setTimeout(_updateDemoEstimate, 400);
+        });
+
+        async function saveDemoSettings() {
+            const demo_mode = document.getElementById('demo-toggle').checked;
+            const retention_days = parseInt(document.getElementById('demo-days').value);
+            if (retention_days < 7 || retention_days > 365 || isNaN(retention_days)) {
+                alert('Retention must be between 7 and 365 days.');
+                return;
+            }
+            const resp = await fetch('/api/settings', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({demo_mode, retention_days}),
+            });
+            if (resp.ok) {
+                document.getElementById('demo-pill').classList.toggle('active', demo_mode);
+                closeDemoModal();
+            }
+        }
+
+        async function trimNow() {
+            document.getElementById('demo-trim-msg').textContent = 'Trimming…';
+            try {
+                const d = await fetch('/api/settings/trim', {method: 'POST'}).then(r => r.json());
+                document.getElementById('demo-trim-msg').textContent =
+                    `Trimmed: InfluxDB data before ${d.influx_cutoff_date} · Neo4j: ${d.neo4j_runs_deleted} runs deleted`;
+                loadStorageInfo();
+            } catch (e) {
+                document.getElementById('demo-trim-msg').textContent = 'Trim failed.';
+            }
+        }
+
+        // Initialise pill state on page load
+        fetch('/api/settings').then(r => r.json()).then(s => {
+            if (s.demo_mode) document.getElementById('demo-pill').classList.add('active');
+        }).catch(() => {});
     </script>
 </body>
 </html>
