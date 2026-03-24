@@ -4,6 +4,7 @@ Flask Web UI for Simantha OPC UA Digital Twin.
 Manages the simulation subprocess and provides a browser-based interface
 for scenario selection, simulation control, and live KPI monitoring.
 """
+import json
 import os
 import signal
 import subprocess
@@ -144,6 +145,26 @@ TELEGRAF_CONF_PATH = os.environ.get(
 )
 
 sys.path.insert(0, str(_PROJECT_ROOT / "docker" / "telegraf"))
+
+# ── Demo mode settings ──────────────────────────────────────────────────────
+_SETTINGS_PATH = _SCRIPT_DIR / "demo_settings.json"
+_SETTINGS_DEFAULTS = {"demo_mode": False, "retention_days": 30}
+
+
+def _read_settings() -> dict:
+    """Read demo_settings.json, returning defaults if missing or corrupt."""
+    try:
+        return {**_SETTINGS_DEFAULTS, **json.loads(_SETTINGS_PATH.read_text())}
+    except (FileNotFoundError, json.JSONDecodeError):
+        return dict(_SETTINGS_DEFAULTS)
+
+
+def _write_settings(data: dict) -> None:
+    """Atomically write settings. Uses os.replace() — safe on Windows."""
+    tmp = _SETTINGS_PATH.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, indent=2))
+    os.replace(tmp, _SETTINGS_PATH)
+
 
 # OPC UA client (lazy-connected)
 _opcua_client = None
@@ -1579,6 +1600,23 @@ def api_graph_node_events():
         return jsonify(_query_neo4j_node_events(run_id, node_name))
     except Exception as exc:
         return jsonify({"error": str(exc)}), 503
+
+
+@app.route("/api/settings", methods=["GET"])
+def api_settings_get():
+    return jsonify(_read_settings())
+
+
+@app.route("/api/settings", methods=["POST"])
+def api_settings_post():
+    body = request.get_json(force=True) or {}
+    demo_mode = bool(body.get("demo_mode", False))
+    retention_days = body.get("retention_days", 30)
+    if not isinstance(retention_days, int) or not (7 <= retention_days <= 365):
+        return jsonify({"error": "retention_days must be an integer between 7 and 365"}), 400
+    settings = {"demo_mode": demo_mode, "retention_days": int(retention_days)}
+    _write_settings(settings)
+    return jsonify(settings)
 
 
 # ---------------------------------------------------------------------------

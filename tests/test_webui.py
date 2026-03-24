@@ -169,3 +169,52 @@ class TestNoCsvFlag:
         opcua_server._apply_demo_flags(config, no_csv=True)  # must not raise
         # no csv block, so nothing changes
         assert "csv" not in config["historian"]
+
+
+import json as _json
+
+# ========== Settings API Tests ==========
+
+class TestSettingsApi:
+    """Tests for GET/POST /api/settings."""
+
+    def test_get_settings_returns_defaults(self, client, tmp_path, monkeypatch):
+        monkeypatch.setattr(flask_app_module, "_SETTINGS_PATH", tmp_path / "demo_settings.json")
+        resp = client.get("/api/settings")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["demo_mode"] is False
+        assert data["retention_days"] == 30
+
+    def test_post_settings_saves_and_returns(self, client, tmp_path, monkeypatch):
+        monkeypatch.setattr(flask_app_module, "_SETTINGS_PATH", tmp_path / "demo_settings.json")
+        resp = client.post("/api/settings",
+                           json={"demo_mode": True, "retention_days": 60},
+                           content_type="application/json")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["demo_mode"] is True
+        assert data["retention_days"] == 60
+
+    def test_post_settings_retention_below_minimum_returns_400(self, client, tmp_path, monkeypatch):
+        monkeypatch.setattr(flask_app_module, "_SETTINGS_PATH", tmp_path / "demo_settings.json")
+        resp = client.post("/api/settings",
+                           json={"demo_mode": False, "retention_days": 3},
+                           content_type="application/json")
+        assert resp.status_code == 400
+
+    def test_post_settings_retention_above_maximum_returns_400(self, client, tmp_path, monkeypatch):
+        monkeypatch.setattr(flask_app_module, "_SETTINGS_PATH", tmp_path / "demo_settings.json")
+        resp = client.post("/api/settings",
+                           json={"demo_mode": False, "retention_days": 400},
+                           content_type="application/json")
+        assert resp.status_code == 400
+
+    def test_post_settings_persists_to_file(self, client, tmp_path, monkeypatch):
+        path = tmp_path / "demo_settings.json"
+        monkeypatch.setattr(flask_app_module, "_SETTINGS_PATH", path)
+        client.post("/api/settings",
+                    json={"demo_mode": True, "retention_days": 45},
+                    content_type="application/json")
+        saved = _json.loads(path.read_text())
+        assert saved["retention_days"] == 45
