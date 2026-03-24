@@ -162,3 +162,10 @@ class TestNoCsvFlag:
         config = {}
         opcua_server._apply_demo_flags(config, no_csv=True)  # must not raise
         assert config == {}
+
+    def test_apply_demo_flags_csv_key_absent_is_safe(self):
+        import opcua_server
+        config = {"historian": {"enabled": True, "influxdb": {"enabled": True}}}
+        opcua_server._apply_demo_flags(config, no_csv=True)  # must not raise
+        # no csv block, so nothing changes
+        assert "csv" not in config["historian"]

@@ -2488,8 +2488,9 @@ def _apply_demo_flags(config: dict, no_csv: bool) -> None:
     """
     if no_csv:
         hist_cfg = config.get("historian", {})
-        if hist_cfg.get("csv"):
-            hist_cfg["csv"]["enabled"] = False
+        csv_cfg = hist_cfg.get("csv")
+        if isinstance(csv_cfg, dict):
+            csv_cfg["enabled"] = False
 
 
 def main(argv=None):
