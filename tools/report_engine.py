@@ -1254,14 +1254,26 @@ def validate_pipeline(df, influx_data):
     machine_events = df[(df["source_type"] == "machine") & (df["event_type"] == "STATE_CHANGE")]
     csv_machines = sorted(machine_events["source"].unique())
 
+    # Prefer per-machine partcounts from the last PRODUCTION_SUMMARY extra_json — these
+    # capture the final value even when a machine never changes state near end of run.
+    # Falls back to max(STATE_CHANGE partcount) for older CSVs without this field.
+    csv_machine_partcounts = {}
+    if len(prod_summaries) > 0:
+        last_extra = parse_extra_json(prod_summaries["extra_json"]).iloc[-1]
+        if isinstance(last_extra, dict) and "machine_partcounts" in last_extra:
+            csv_machine_partcounts = last_extra["machine_partcounts"]
+
     for i, csv_m in enumerate(csv_machines):
         telegraf_key = f"Machine{i + 1}"
-        m_events = machine_events[machine_events["source"] == csv_m]
         csv_pc = None
-        if len(m_events) > 0:
-            max_pc = m_events["partcount"].max()
-            if pd.notna(max_pc):
-                csv_pc = int(max_pc)
+        if csv_m in csv_machine_partcounts:
+            csv_pc = int(csv_machine_partcounts[csv_m])
+        else:
+            m_events = machine_events[machine_events["source"] == csv_m]
+            if len(m_events) > 0:
+                max_pc = m_events["partcount"].max()
+                if pd.notna(max_pc):
+                    csv_pc = int(max_pc)
         telegraf_pc = machine_pcs.get(telegraf_key)
 
         pc_status = "SKIP"

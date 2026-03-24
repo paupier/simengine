@@ -1532,6 +1532,7 @@ def record_historian_events(historian, neo4j_hist, sim_time, machines, machine_m
                 line_availability=line_availability,
                 line_performance=line_performance,
                 line_quality=line_quality,
+                machine_metrics=machine_metrics,
             ))
             production_summary_counter = 0.0
 

@@ -76,9 +76,13 @@ def _make_full_df():
     t = 0.0
 
     # Production summaries (every 60s for 20 steps)
+    # Last entry includes machine_partcounts so validate_pipeline can use accurate final values
     for i in range(20):
         t += 60.0
-        extra = json.dumps({"line_oee": 0.78 + 0.005 * i})
+        extra_dict = {"line_oee": 0.78 + 0.005 * i}
+        if i == 19:  # Final summary includes per-machine partcounts
+            extra_dict["machine_partcounts"] = {"Machine1": 80, "Machine2": 80}
+        extra = json.dumps(extra_dict)
         rows.append({
             "timestamp": t,
             "event_type": "PRODUCTION_SUMMARY",

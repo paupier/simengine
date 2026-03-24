@@ -694,9 +694,21 @@ def collect_production_summary(
     line_availability: float = 0.0,
     line_performance: float = 0.0,
     line_quality: float = 0.0,
+    machine_metrics: dict = None,
 ) -> SimEvent:
     """Create a periodic production summary event."""
     shift_number, shift_name = _get_shift_info(shift_manager)
+    extra = {
+        "total_wip": total_wip,
+        "line_oee": round(line_oee, 4),
+        "line_availability": round(line_availability, 4),
+        "line_performance": round(line_performance, 4),
+        "line_quality": round(line_quality, 4),
+    }
+    if machine_metrics:
+        extra["machine_partcounts"] = {
+            name: int(m["partcount"]) for name, m in machine_metrics.items()
+        }
     return SimEvent(
         timestamp=sim_time,
         wall_clock=datetime.now().isoformat(),
@@ -710,11 +722,5 @@ def collect_production_summary(
         oee=round(line_oee, 4),
         shift_number=shift_number,
         shift_name=shift_name,
-        extra={
-            "total_wip": total_wip,
-            "line_oee": round(line_oee, 4),
-            "line_availability": round(line_availability, 4),
-            "line_performance": round(line_performance, 4),
-            "line_quality": round(line_quality, 4),
-        },
+        extra=extra,
     )
