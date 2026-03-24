@@ -1804,10 +1804,8 @@ _retention_thread.start()
 
 def _seed_neodash_dashboard():
     """Background thread: seed NeoDash dashboard into Neo4j on startup (idempotent MERGE)."""
-    dashboard_path = Path(__file__).parent.parent / "docker" / "neo4j" / "dashboards" / "manufacturing_causal.json"
-    # In Docker the Dockerfile copies it to /app/docker/neo4j/dashboards/
-    if not dashboard_path.exists():
-        dashboard_path = Path("/app/docker/neo4j/dashboards/manufacturing_causal.json")
+    # __file__ = /app/docker/webui/app.py  →  parent.parent = /app/docker
+    dashboard_path = Path(__file__).parent.parent / "neo4j" / "dashboards" / "manufacturing_causal.json"
     if not dashboard_path.exists():
         logging.info("[neodash-seed] Dashboard file not found, skipping.")
         return
