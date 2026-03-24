@@ -136,12 +136,6 @@ services:
       - ./neo4j/dashboards:/var/lib/neo4j/dashboards:ro
     networks:
       - simantha-net
-    healthcheck:
-      test: ["CMD-SHELL", "wget -O /dev/null -q http://localhost:7474 || exit 1"]
-      interval: 20s
-      timeout: 10s
-      retries: 10
-      start_period: 120s
     restart: unless-stopped
 
   # -------------------------------------------------------------------------
@@ -153,8 +147,7 @@ services:
     ports:
       - "5005:5005"
     depends_on:
-      neo4j:
-        condition: service_healthy
+      - neo4j
     networks:
       - simantha-net
     restart: unless-stopped
