@@ -29,6 +29,9 @@ COPY tools/ /app/tools/
 # Copy Grafana dashboards (for volume mount reference)
 COPY docker/grafana/dashboards/ /app/grafana/dashboards/
 
+# Copy NeoDash dashboard for auto-seeding
+COPY docker/neo4j/dashboards/ /app/docker/neo4j/dashboards/
+
 # Copy entrypoint
 COPY docker/entrypoint.sh /app/docker/entrypoint.sh
 RUN chmod +x /app/docker/entrypoint.sh

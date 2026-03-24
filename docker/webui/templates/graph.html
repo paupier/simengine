@@ -6,12 +6,12 @@
 
   <!-- Run selector (shared across panels) -->
   <div class="row mb-3">
-    <div class="col-md-4">
+    <div class="col-md-5">
       <div class="input-group input-group-sm">
         <span class="input-group-text">Run ID</span>
-        <input id="graph-run-id" type="text" class="form-control font-monospace"
-               placeholder="full_feature_8_machine_line_20260320_184557"
-               value="{{ run_id or '' }}">
+        <select id="graph-run-id" class="form-select font-monospace">
+          <option value="">— loading runs —</option>
+        </select>
         <button class="btn btn-primary" onclick="loadAllPanels()">Load</button>
       </div>
     </div>
@@ -45,6 +45,7 @@
         <span style="color:#f39c12" class="ms-2">&#9679; BLOCKED</span>
         <span style="color:#9b59b6" class="ms-2">&#9679; UNDER_REPAIR</span>
         <span style="color:#d4ac0d" class="ms-2">&#9679; DEGRADED</span>
+        <span style="color:#808080" class="ms-2">&#9679; IDLE</span>
       </span>
     </div>
     <div class="card-body p-0">
@@ -64,13 +65,17 @@
         <div class="col-md-4">
           <div class="input-group input-group-sm">
             <span class="input-group-text">Run A</span>
-            <input id="compare-run-a" type="text" class="form-control font-monospace" placeholder="run_id_1">
+            <select id="compare-run-a" class="form-select font-monospace">
+              <option value="">— select run —</option>
+            </select>
           </div>
         </div>
         <div class="col-md-4">
           <div class="input-group input-group-sm">
             <span class="input-group-text">Run B</span>
-            <input id="compare-run-b" type="text" class="form-control font-monospace" placeholder="run_id_2">
+            <select id="compare-run-b" class="form-select font-monospace">
+              <option value="">— select run —</option>
+            </select>
           </div>
         </div>
         <div class="col-md-2">
@@ -93,6 +98,31 @@ const VIS_OPTS = {
 };
 
 function getRunId() { return document.getElementById("graph-run-id").value.trim(); }
+
+function populateRunDropdowns() {
+  fetch("/api/runs")
+    .then(r => r.json())
+    .then(data => {
+      const runs = data.runs || [];
+      const ids = runs.map(r => r.run_id || r.id).filter(Boolean);
+      const selectors = ["graph-run-id", "compare-run-a", "compare-run-b"];
+      selectors.forEach(sid => {
+        const sel = document.getElementById(sid);
+        const placeholder = sid === "graph-run-id" ? "— select run —" : "— select run —";
+        sel.innerHTML = `<option value="">${placeholder}</option>` +
+          ids.map(id => `<option value="${id}">${id}</option>`).join("");
+      });
+      // Pre-select the server-rendered run_id or the most recent run
+      const preselect = "{{ run_id or '' }}" || (ids.length ? ids[0] : "");
+      if (preselect) {
+        document.getElementById("graph-run-id").value = preselect;
+        loadAllPanels();
+      }
+    })
+    .catch(() => {});
+}
+
+document.addEventListener("DOMContentLoaded", populateRunDropdowns);
 
 function loadAllPanels() {
   const rid = getRunId();

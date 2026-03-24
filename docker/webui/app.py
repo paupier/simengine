@@ -1802,6 +1802,54 @@ _retention_thread = threading.Thread(target=_retention_worker, daemon=True, name
 _retention_thread.start()
 
 
+def _seed_neodash_dashboard():
+    """Background thread: seed NeoDash dashboard into Neo4j on startup (idempotent MERGE)."""
+    dashboard_path = Path(__file__).parent.parent / "docker" / "neo4j" / "dashboards" / "manufacturing_causal.json"
+    # In Docker the Dockerfile copies it to /app/docker/neo4j/dashboards/
+    if not dashboard_path.exists():
+        dashboard_path = Path("/app/docker/neo4j/dashboards/manufacturing_causal.json")
+    if not dashboard_path.exists():
+        logging.info("[neodash-seed] Dashboard file not found, skipping.")
+        return
+
+    try:
+        content = dashboard_path.read_text(encoding="utf-8")
+        title = json.loads(content)["title"]
+    except Exception as exc:
+        logging.warning(f"[neodash-seed] Cannot read dashboard file: {exc}")
+        return
+
+    import time as _time
+    for attempt in range(30):  # wait up to ~5 minutes
+        try:
+            driver = _get_neo4j_driver()
+            if not driver:
+                logging.info("[neodash-seed] Neo4j not configured, skipping.")
+                return
+            driver.verify_connectivity()
+            with driver.session() as session:
+                result = session.run(
+                    "MERGE (d:_Neodash_Dashboard {title: $title}) "
+                    "ON CREATE SET d.content = $content, d.date = datetime() "
+                    "RETURN d.title, (d.date IS NOT NULL) AS created",
+                    title=title,
+                    content=content,
+                ).single()
+                action = "created" if result and result["created"] else "already exists"
+                logging.info(f"[neodash-seed] Dashboard '{title}' {action}.")
+            driver.close()
+            return
+        except Exception as exc:
+            logging.debug(f"[neodash-seed] Neo4j not ready (attempt {attempt + 1}): {exc}")
+            _time.sleep(10)
+
+    logging.warning("[neodash-seed] Neo4j never became ready; dashboard not seeded.")
+
+
+_neodash_seed_thread = threading.Thread(target=_seed_neodash_dashboard, daemon=True, name="neodash-seed")
+_neodash_seed_thread.start()
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("WEBUI_PORT", 8080))
     print(f"[WebUI] Starting on port {port}")
