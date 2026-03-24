@@ -261,3 +261,35 @@ class TestStorageApi:
         assert data["total_mb"] is None
         # daily_rate_mb still has fallback values
         assert data["daily_rate_mb"] == pytest.approx(17.0)
+
+
+# ========== Trim API Tests ==========
+
+class TestTrimApi:
+    """Tests for POST /api/settings/trim."""
+
+    def test_trim_returns_summary(self, client, monkeypatch, tmp_path):
+        path = tmp_path / "demo_settings.json"
+        path.write_text('{"demo_mode": true, "retention_days": 30}')
+        monkeypatch.setattr(flask_app_module, "_SETTINGS_PATH", path)
+        monkeypatch.setattr(flask_app_module, "_do_trim",
+                            lambda days: {"influx_cutoff_date": "2026-01-01", "neo4j_runs_deleted": 2})
+        resp = client.post("/api/settings/trim")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "influx_cutoff_date" in data
+        assert "neo4j_runs_deleted" in data
+
+    def test_trim_uses_configured_retention_days(self, client, monkeypatch, tmp_path):
+        called_with = {}
+
+        def fake_trim(days):
+            called_with["days"] = days
+            return {"influx_cutoff_date": "2026-01-01", "neo4j_runs_deleted": 0}
+
+        path = tmp_path / "demo_settings.json"
+        path.write_text('{"demo_mode": true, "retention_days": 60}')
+        monkeypatch.setattr(flask_app_module, "_SETTINGS_PATH", path)
+        monkeypatch.setattr(flask_app_module, "_do_trim", fake_trim)
+        client.post("/api/settings/trim")
+        assert called_with["days"] == 60

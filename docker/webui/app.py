@@ -19,7 +19,7 @@ import re
 
 from ruamel.yaml import YAML
 
-from datetime import datetime as dt
+from datetime import datetime as dt, timedelta, timezone
 from flask import Flask, Response, jsonify, render_template, request, send_from_directory
 
 _ryaml = YAML()
@@ -164,6 +164,59 @@ def _write_settings(data: dict) -> None:
     tmp = _SETTINGS_PATH.with_suffix(".tmp")
     tmp.write_text(json.dumps(data, indent=2))
     os.replace(tmp, _SETTINGS_PATH)
+
+
+def _do_trim(retention_days: int) -> dict:
+    """Prune InfluxDB and Neo4j data older than retention_days. Returns summary dict."""
+    import urllib.request
+    import urllib.error
+    import logging
+
+    cutoff_dt = dt.now(timezone.utc) - timedelta(days=retention_days)
+    cutoff_str = cutoff_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+    cutoff_date = cutoff_dt.strftime("%Y-%m-%d")
+
+    # --- InfluxDB delete (all data in bucket older than cutoff) ---
+    influx_url = os.environ.get("INFLUXDB_URL", "http://influxdb:8086")
+    influx_token = os.environ.get("INFLUXDB_TOKEN", "simantha-dev-token")
+    influx_org = os.environ.get("INFLUXDB_ORG", "simantha")
+    influx_bucket = os.environ.get("INFLUXDB_BUCKET", "manufacturing")
+    try:
+        payload = json.dumps({"start": "1970-01-01T00:00:00Z", "stop": cutoff_str}).encode()
+        req = urllib.request.Request(
+            f"{influx_url}/api/v2/delete?org={influx_org}&bucket={influx_bucket}",
+            data=payload,
+            method="POST",
+            headers={
+                "Authorization": f"Token {influx_token}",
+                "Content-Type": "application/json",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=30):
+            pass
+    except Exception as exc:
+        logging.warning(f"[retention] InfluxDB trim failed: {exc}")
+
+    # --- Neo4j delete (entire :Run nodes older than cutoff, DETACH removes all connected nodes) ---
+    neo4j_runs_deleted = 0
+    try:
+        driver = _get_neo4j_driver()
+        if driver:
+            try:
+                cutoff_epoch = cutoff_dt.timestamp()
+                with driver.session() as session:
+                    row = session.run(
+                        "MATCH (r:Run) WHERE r.start_wall_clock < $cutoff "
+                        "DETACH DELETE r RETURN count(r) AS deleted",
+                        cutoff=cutoff_epoch,
+                    ).single()
+                    neo4j_runs_deleted = row["deleted"] if row else 0
+            finally:
+                driver.close()
+    except Exception as exc:
+        logging.warning(f"[retention] Neo4j trim failed: {exc}")
+
+    return {"influx_cutoff_date": cutoff_date, "neo4j_runs_deleted": neo4j_runs_deleted}
 
 
 # OPC UA client (lazy-connected)
@@ -1714,9 +1767,37 @@ def api_settings_post():
     return jsonify(settings)
 
 
+@app.route("/api/settings/trim", methods=["POST"])
+def api_settings_trim():
+    """Immediately run a retention prune cycle."""
+    settings = _read_settings()
+    result = _do_trim(settings["retention_days"])
+    return jsonify(result)
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
+
+def _retention_worker():
+    """Daemon thread: prune InfluxDB + Neo4j hourly when demo_mode is True."""
+    import logging
+    while True:
+        time.sleep(3600)
+        try:
+            settings = _read_settings()
+            if settings.get("demo_mode"):
+                logging.info("[retention] Running scheduled trim (demo mode)...")
+                _do_trim(settings["retention_days"])
+        except Exception as exc:
+            logging.warning(f"[retention] Scheduled trim error: {exc}")
+
+
+_retention_thread = threading.Thread(target=_retention_worker, daemon=True, name="retention-worker")
+_retention_thread.start()
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("WEBUI_PORT", 8080))
     print(f"[WebUI] Starting on port {port}")
