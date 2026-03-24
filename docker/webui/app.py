@@ -1602,6 +1602,101 @@ def api_graph_node_events():
         return jsonify({"error": str(exc)}), 503
 
 
+_INFLUX_STATIC_DAILY_MB = 16.0   # 8-machine line, ~30 fields, 1s poll, 10:1 compression
+_NEO4J_STATIC_DAILY_MB = 1.0
+
+
+def _influx_storage_info() -> dict:
+    """Count field values over last 30 days. Returns size_mb, daily_mb, days_of_data."""
+    url = os.environ.get("INFLUXDB_URL", "http://influxdb:8086")
+    token = os.environ.get("INFLUXDB_TOKEN", "simantha-dev-token")
+    org = os.environ.get("INFLUXDB_ORG", "simantha")
+    bucket = os.environ.get("INFLUXDB_BUCKET", "manufacturing")
+    try:
+        from influxdb_client import InfluxDBClient
+        with InfluxDBClient(url=url, token=token, org=org) as client:
+            flux = f'''
+from(bucket: "{bucket}")
+  |> range(start: -30d)
+  |> count()
+  |> sum()
+'''
+            tables = client.query_api().query(flux)
+            total = sum(r.get_value() for table in tables for r in table.records)
+            if total == 0:
+                return {"size_mb": 0.0, "daily_mb": _INFLUX_STATIC_DAILY_MB, "days_of_data": None}
+            size_mb = round((total * 8) / (1024 * 1024), 1)
+            daily_mb = round(size_mb / 30, 2)
+            return {"size_mb": size_mb, "daily_mb": daily_mb, "days_of_data": 30}
+    except Exception:
+        return {"size_mb": None, "daily_mb": _INFLUX_STATIC_DAILY_MB, "days_of_data": None}
+
+
+def _neo4j_storage_info() -> dict:
+    """Count Neo4j nodes/rels and derive daily rate from oldest Run timestamp."""
+    try:
+        driver = _get_neo4j_driver()
+        if not driver:
+            return {"size_mb": None, "daily_mb": _NEO4J_STATIC_DAILY_MB, "days_of_data": None}
+        try:
+            with driver.session() as session:
+                row = session.run("""
+                    MATCH (n)
+                    WITH count(n) AS nodes
+                    OPTIONAL MATCH ()-[r]->()
+                    WITH nodes, count(r) AS rels
+                    OPTIONAL MATCH (run:Run)
+                    RETURN nodes, rels, min(run.start_wall_clock) AS oldest
+                """).single()
+            if not row:
+                return {"size_mb": None, "daily_mb": _NEO4J_STATIC_DAILY_MB, "days_of_data": None}
+            nodes, rels, oldest = row["nodes"], row["rels"], row["oldest"]
+            size_mb = round((nodes * 200 + rels * 50) / (1024 * 1024), 1)
+            days_of_data = None
+            daily_mb = _NEO4J_STATIC_DAILY_MB
+            if oldest and oldest > 0:
+                days = (time.time() - oldest) / 86400
+                if days > 0:
+                    days_of_data = round(days, 1)
+                    daily_mb = round(size_mb / days, 2)
+            return {"size_mb": size_mb, "daily_mb": daily_mb, "days_of_data": days_of_data}
+        finally:
+            driver.close()
+    except Exception:
+        return {"size_mb": None, "daily_mb": _NEO4J_STATIC_DAILY_MB, "days_of_data": None}
+
+
+@app.route("/api/settings/storage", methods=["GET"])
+def api_settings_storage():
+    """Return InfluxDB + Neo4j storage stats and daily rate estimates."""
+    results = {}
+
+    def fetch_influx():
+        results["influx"] = _influx_storage_info()
+
+    def fetch_neo4j():
+        results["neo4j"] = _neo4j_storage_info()
+
+    threads = [threading.Thread(target=fetch_influx), threading.Thread(target=fetch_neo4j)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=15)
+
+    influx = results.get("influx", {"size_mb": None, "daily_mb": _INFLUX_STATIC_DAILY_MB, "days_of_data": None})
+    neo4j = results.get("neo4j", {"size_mb": None, "daily_mb": _NEO4J_STATIC_DAILY_MB, "days_of_data": None})
+
+    i_mb = influx.get("size_mb")
+    n_mb = neo4j.get("size_mb")
+    total_mb = round(i_mb + n_mb, 1) if (i_mb is not None and n_mb is not None) else None
+    daily_rate_mb = round(
+        (influx.get("daily_mb") or _INFLUX_STATIC_DAILY_MB) +
+        (neo4j.get("daily_mb") or _NEO4J_STATIC_DAILY_MB), 2
+    )
+
+    return jsonify({"influx": influx, "neo4j": neo4j, "total_mb": total_mb, "daily_rate_mb": daily_rate_mb})
+
+
 @app.route("/api/settings", methods=["GET"])
 def api_settings_get():
     return jsonify(_read_settings())

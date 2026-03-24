@@ -218,3 +218,46 @@ class TestSettingsApi:
                     content_type="application/json")
         saved = _json.loads(path.read_text())
         assert saved["retention_days"] == 45
+
+
+# ========== Storage API Tests ==========
+
+class TestStorageApi:
+    """Tests for GET /api/settings/storage."""
+
+    def test_storage_returns_structure(self, client, monkeypatch):
+        monkeypatch.setattr(flask_app_module, "_influx_storage_info",
+                            lambda: {"size_mb": 100.0, "daily_mb": 3.3, "days_of_data": 30})
+        monkeypatch.setattr(flask_app_module, "_neo4j_storage_info",
+                            lambda: {"size_mb": 20.0, "daily_mb": 0.7, "days_of_data": 30})
+        resp = client.get("/api/settings/storage")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "influx" in data
+        assert "neo4j" in data
+        assert "total_mb" in data
+        assert "daily_rate_mb" in data
+
+    def test_storage_totals_correctly(self, client, monkeypatch):
+        import pytest
+        monkeypatch.setattr(flask_app_module, "_influx_storage_info",
+                            lambda: {"size_mb": 100.0, "daily_mb": 10.0, "days_of_data": 30})
+        monkeypatch.setattr(flask_app_module, "_neo4j_storage_info",
+                            lambda: {"size_mb": 50.0, "daily_mb": 5.0, "days_of_data": 30})
+        resp = client.get("/api/settings/storage")
+        data = resp.get_json()
+        assert data["total_mb"] == pytest.approx(150.0)
+        assert data["daily_rate_mb"] == pytest.approx(15.0)
+
+    def test_storage_handles_unavailable_backends(self, client, monkeypatch):
+        import pytest
+        monkeypatch.setattr(flask_app_module, "_influx_storage_info",
+                            lambda: {"size_mb": None, "daily_mb": 16.0, "days_of_data": None})
+        monkeypatch.setattr(flask_app_module, "_neo4j_storage_info",
+                            lambda: {"size_mb": None, "daily_mb": 1.0, "days_of_data": None})
+        resp = client.get("/api/settings/storage")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["total_mb"] is None
+        # daily_rate_mb still has fallback values
+        assert data["daily_rate_mb"] == pytest.approx(17.0)
