@@ -1574,9 +1574,7 @@ full_feature_8_machine_line_rtf:
       upstream: M7
       downstream: M8
   maintainer:
-    enabled: true
-    capacity: 2
-    strategy: bottleneck
+    enabled: false
   shifts:
     schedule:
       - name: Day Shift
