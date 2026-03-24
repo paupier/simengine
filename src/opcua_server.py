@@ -2479,6 +2479,19 @@ def run_segment(
     return sim_time, total_parts_produced, stop_reason, line_oee
 
 
+def _apply_demo_flags(config: dict, no_csv: bool) -> None:
+    """Mutate config in-place to apply demo-mode CLI flags.
+
+    Args:
+        config:  Loaded scenario config dict (mutated in-place).
+        no_csv:  When True, forces historian.csv.enabled = False.
+    """
+    if no_csv:
+        hist_cfg = config.get("historian", {})
+        if hist_cfg.get("csv"):
+            hist_cfg["csv"]["enabled"] = False
+
+
 def main(argv=None):
     import argparse
     import random
@@ -2494,6 +2507,8 @@ def main(argv=None):
                        help="Random seed for reproducible simulation")
     parser.add_argument("--trace", action="store_true",
                        help="Enable Simantha DES event trace (outputs pickle file)")
+    parser.add_argument("--no-csv", action="store_true", dest="no_csv",
+                        help="Disable CSV historian (demo/long-run mode)")
     parser.add_argument("--interarrival-time", type=float, default=None, dest="interarrival_time",
                        help="Override source interarrival time (seconds) at run start")
     args = parser.parse_args(argv)
@@ -2560,6 +2575,9 @@ def main(argv=None):
         print(f"  Shift tracking enabled: {len(shift_manager.shift_definitions)} shifts")
         for i, shift_def in enumerate(shift_manager.shift_definitions):
             print(f"    Shift {i+1}: {shift_def.name} ({shift_def.duration} time units)")
+
+    # Apply demo-mode CLI flags (mutates config in-place before historian creation)
+    _apply_demo_flags(config, no_csv=args.no_csv)
 
     # Create event historian if configured
     historian = create_historian_from_config(config, args.scenario, run_id=run_id)

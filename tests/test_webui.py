@@ -130,3 +130,35 @@ class TestNeo4jHistorianToggle:
         resp = client.get("/config?scenario=full_feature_8_machine_line")
         assert resp.status_code == 200
         assert b"feat-neo4j" in resp.data
+
+
+# ========== --no-csv flag Tests ==========
+
+class TestNoCsvFlag:
+    """Tests that _apply_demo_flags suppresses CSV historian in config."""
+
+    def test_apply_demo_flags_disables_csv(self):
+        import opcua_server
+        config = {
+            "historian": {
+                "enabled": True,
+                "csv": {"enabled": True, "output_dir": "results/historian"},
+                "influxdb": {"enabled": False},
+            }
+        }
+        opcua_server._apply_demo_flags(config, no_csv=True)
+        assert config["historian"]["csv"]["enabled"] is False
+        # InfluxDB unaffected
+        assert config["historian"]["influxdb"]["enabled"] is False
+
+    def test_apply_demo_flags_no_csv_false_leaves_csv_enabled(self):
+        import opcua_server
+        config = {"historian": {"enabled": True, "csv": {"enabled": True}}}
+        opcua_server._apply_demo_flags(config, no_csv=False)
+        assert config["historian"]["csv"]["enabled"] is True
+
+    def test_apply_demo_flags_no_historian_key_is_safe(self):
+        import opcua_server
+        config = {}
+        opcua_server._apply_demo_flags(config, no_csv=True)  # must not raise
+        assert config == {}
