@@ -413,6 +413,12 @@ def run_recipe(
 
     base_config = load_line_config(recipe.base_scenario)
 
+    # Apply --no-csv demo mode flag to suppress CSV historian
+    if getattr(args, 'no_csv', False):
+        csv_cfg = base_config.get("historian", {}).get("csv")
+        if isinstance(csv_cfg, dict):
+            csv_cfg["enabled"] = False
+
     # Build OPC UA server ONCE (topology doesn't change)
     server, opcua_vars, idx = build_opcua_server(base_config)
     opcua_vars["system"]["run_id"].set_value(run_id)
