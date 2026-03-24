@@ -527,6 +527,7 @@
             <a href="/recipes">Recipes</a>
             <a href="/validation">Validation</a>
             <a href="/docs">Docs</a>
+            <a href="/graph">Graph</a>
         </nav>
         <div class="hmi-header-right">
             <div class="hdr-status-group">
@@ -666,6 +667,10 @@
         <div class="gf-sep"></div>
         <a id="link-influxdb" href="#" target="_blank" class="gf-ext">InfluxDB :8086</a>
         <div class="gf-sep"></div>
+        <a id="link-neodash" href="#" target="_blank" class="gf-ext">NeoDash :5005</a>
+        <div class="gf-sep"></div>
+        <a id="link-neo4j" href="#" target="_blank" class="gf-ext">Neo4j :7474</a>
+        <div class="gf-sep"></div>
         <span class="gf-ext">opc.tcp://&lt;host&gt;:4840/simantha/</span>
     </footer>
 
@@ -677,6 +682,8 @@
         // --- External links ---
         const host = window.location.hostname;
         document.getElementById('link-influxdb').href = `http://${host}:8086`;
+        document.getElementById('link-neodash').href = `http://${host}:5005`;
+        document.getElementById('link-neo4j').href = `http://${host}:7474`;
 
         // --- Grafana deep links ---
         let _currentRunId = null;
