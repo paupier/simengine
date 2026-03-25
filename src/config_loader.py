@@ -341,7 +341,7 @@ def validate_maintenance_strategy(machine_cfg: dict) -> None:
     if "type" not in strategy:
         raise ValueError(f"Machine '{machine_cfg['name']}': maintenance_strategy missing 'type' field")
 
-    valid_types = ["corrective", "preventive", "predictive"]
+    valid_types = ["corrective", "reactive", "preventive", "predictive"]
     if strategy["type"] not in valid_types:
         raise ValueError(
             f"Machine '{machine_cfg['name']}': invalid maintenance strategy type '{strategy['type']}'. "
