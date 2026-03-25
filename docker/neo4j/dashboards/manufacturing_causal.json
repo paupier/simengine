@@ -23,6 +23,7 @@
           "height": 2,
           "x": 0,
           "y": 0,
+          "fields": [],
           "selection": {},
           "settings": {
             "parameterName": "neodash_run_id",
@@ -39,6 +40,7 @@
           "height": 4,
           "x": 0,
           "y": 2,
+          "fields": [],
           "selection": {
             "Event": "new_state",
             "Machine": "name"
@@ -68,12 +70,23 @@
           "height": 3,
           "x": 0,
           "y": 0,
+          "fields": [],
           "selection": {
             "index": "Machine",
             "value": "Failures",
             "key": "Failures"
           },
-          "settings": {}
+          "settings": {
+            "legend": false,
+            "animate": true,
+            "layout": "vertical",
+            "marginLeft": 50,
+            "marginRight": 24,
+            "marginTop": 24,
+            "marginBottom": 40,
+            "labelSkipWidth": 0,
+            "labelSkipHeight": 0
+          }
         },
         {
           "id": "a1b2c3d4-0002-0002-0002-000000000202",
@@ -84,8 +97,11 @@
           "height": 3,
           "x": 6,
           "y": 0,
+          "fields": [],
           "selection": {},
-          "settings": {}
+          "settings": {
+            "nodePositions": {}
+          }
         }
       ]
     },
@@ -102,8 +118,11 @@
           "height": 3,
           "x": 0,
           "y": 0,
+          "fields": [],
           "selection": {},
-          "settings": {}
+          "settings": {
+            "nodePositions": {}
+          }
         }
       ]
     },
@@ -120,12 +139,23 @@
           "height": 3,
           "x": 0,
           "y": 0,
+          "fields": [],
           "selection": {
             "index": "Shift",
             "value": "Events",
             "key": "Events"
           },
-          "settings": {}
+          "settings": {
+            "legend": false,
+            "animate": true,
+            "layout": "vertical",
+            "marginLeft": 50,
+            "marginRight": 24,
+            "marginTop": 24,
+            "marginBottom": 40,
+            "labelSkipWidth": 0,
+            "labelSkipHeight": 0
+          }
         }
       ]
     },
@@ -142,8 +172,11 @@
           "height": 3,
           "x": 0,
           "y": 0,
+          "fields": [],
           "selection": {},
-          "settings": {}
+          "settings": {
+            "nodePositions": {}
+          }
         }
       ]
     }
