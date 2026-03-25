@@ -2630,6 +2630,9 @@ def main(argv=None):
     np.random.seed(sim_seed)
     print(f"Using random seed: {sim_seed}")
 
+    # Shared MQTT publisher handle (set in whichever branch is active)
+    mqtt_pub = None
+
     # ---- Recipe mode ----
     if args.recipe:
         from recipe_runner import (
@@ -2645,7 +2648,19 @@ def main(argv=None):
         )
         print(f"RunID: {run_id}")
 
-        run_recipe(recipe, sim_seed, args, run_id)
+        if args.mqtt:
+            try:
+                from mqtt_publisher import MQTTPublisher, _parse_mqtt_url
+                host, port = _parse_mqtt_url(args.mqtt_broker)
+                mqtt_pub = MQTTPublisher(host, port, run_id)
+                mqtt_pub.connect()
+                print(f"  MQTT publisher enabled: {args.mqtt_broker}")
+            except Exception as e:
+                print(f"  MQTT publisher disabled: {e}")
+
+        run_recipe(recipe, sim_seed, args, run_id, mqtt_publisher=mqtt_pub)
+        if mqtt_pub:
+            mqtt_pub.close()
         return
 
     # ---- Single-scenario mode (default) ----
@@ -2694,7 +2709,6 @@ def main(argv=None):
         print(f"  Neo4j historian enabled: {neo4j_hist.describe()}")
 
     # Create MQTT publisher if --mqtt flag set
-    mqtt_pub = None
     if args.mqtt:
         try:
             from mqtt_publisher import MQTTPublisher, _parse_mqtt_url

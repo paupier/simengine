@@ -394,6 +394,7 @@ def run_recipe(
     sim_seed: int,
     args,
     run_id: str,
+    mqtt_publisher=None,
 ):
     """Orchestrate multi-segment recipe execution.
 
@@ -542,6 +543,7 @@ def run_recipe(
                     historian=historian,
                     neo4j_hist=neo4j_hist,
                     recipe_vars=recipe_vars,
+                    mqtt_publisher=mqtt_publisher,
                 )
 
             cumulative_sim_time = segment_start + final_sim_time
