@@ -51,7 +51,7 @@
       "reports": [
         {
           "title": "Events per Shift",
-          "query": "MATCH (r:Run {run_id: $neodash_run_id})-[:HAD_SHIFT]->(s:Shift)<-[:OCCURRED_IN]-(e:Event) RETURN s.name AS Shift, count(e) AS Events ORDER BY s.number",
+          "query": "MATCH (r:Run {run_id: $neodash_run_id})-[:HAD_SHIFT]->(s:Shift)<-[:OCCURRED_IN]-(e:Event) RETURN s.name AS Shift, s.number AS ShiftNum, count(e) AS Events ORDER BY ShiftNum",
           "type": "bar",
           "width": 12,
           "height": 3
