@@ -2480,6 +2480,89 @@ def run_segment(
     return sim_time, total_parts_produced, stop_reason, line_oee
 
 
+def _build_machine_snapshot(
+    machines: dict,
+    machine_metrics: dict,
+    machine_health: dict,
+) -> dict:
+    """Assemble per-machine field dict for MQTTPublisher.publish_step().
+
+    Reads from machine_metrics (accumulated per-step) and machine_health
+    (health state counter carried across steps).
+    """
+    snapshot = {}
+    for mname, mobj in machines.items():
+        mm = machine_metrics[mname]
+        health = machine_health.get(mname, 0)
+        failed_health = getattr(mobj, "failed_health", 1)
+        oee_c = mm.get("oee_cached", {})
+
+        # maint_active mirrors the logic in process_machine_step
+        maint_active = getattr(mobj, "under_repair", False)
+
+        # Utilisation: processing_time / total active time
+        total_time = (mm.get("processing_time", 0.0) + mm.get("blocked_time", 0.0) +
+                      mm.get("starved_time", 0.0) + mm.get("down_time", 0.0) +
+                      mm.get("idle_time", 0.0))
+        utilisation = mm.get("processing_time", 0.0) / total_time if total_time > 0 else 0.0
+
+        # ActualPPM: parts per minute over elapsed sim time
+        total_time_min = total_time / 60.0
+        actual_ppm = mm.get("partcount", 0) / total_time_min if total_time_min > 0 else 0.0
+
+        # HealthPct: 0=fully healthy, failed_health=failed; invert to percentage
+        health_pct = round((1.0 - health / max(failed_health, 1)) * 100.0, 1)
+        health_pct = max(0.0, min(100.0, health_pct))
+
+        snapshot[mname] = {
+            "State":          detect_machine_state(mobj, health, maint_active),
+            "OEE":            round(oee_c.get("oee", 0.0), 4),
+            "Availability":   round(oee_c.get("availability", 0.0), 4),
+            "Performance":    round(oee_c.get("performance", 0.0), 4),
+            "Quality":        round(oee_c.get("quality", 0.0), 4),
+            "PartCount":      int(mm.get("partcount", 0)),
+            "GoodParts":      int(mm.get("good_parts", 0)),
+            "DefectiveParts": int(mm.get("defective_parts", 0)),
+            "HealthPct":      health_pct,
+            "Utilisation":    round(utilisation, 4),
+            "ActualPPM":      round(actual_ppm, 2),
+            "TargetPPM":      round(mm.get("target_ppm", 0.0), 2),
+            "DownTime":       round(mm.get("down_time", 0.0), 1),
+            "BlockedTime":    round(mm.get("blocked_time", 0.0), 1),
+            "StarvedTime":    round(mm.get("starved_time", 0.0), 1),
+            "ProcessingTime": round(mm.get("processing_time", 0.0), 1),
+            "IdleTime":       round(mm.get("idle_time", 0.0), 1),
+        }
+    return snapshot
+
+
+def _build_system_kpis(
+    sim_time: float,
+    line_state,
+    total_parts_produced: int,
+    total_wip: int,
+    line_oee: float,
+    total_scrap: int,
+    scrap_rate: float,
+    maint_queue_len: int,
+) -> dict:
+    """Assemble system-level KPI dict for MQTTPublisher.publish_step()."""
+    total_time_min = sim_time / 60.0
+    throughput = round(total_parts_produced / total_time_min, 2) if total_time_min > 0 else 0.0
+    return {
+        "SimTime":                sim_time,
+        "LineState":              getattr(line_state, "state", "RUNNING"),
+        "Throughput":             throughput,
+        "TotalWIP":               int(total_wip),
+        "LineOEE":                round(line_oee, 4),
+        "GoodParts":              int(getattr(line_state, "good_parts", 0)),
+        "DefectiveParts":         int(getattr(line_state, "defective_parts", 0)),
+        "TotalScrap":             int(total_scrap) if total_scrap is not None else 0,
+        "ScrapRate":              round(scrap_rate, 4) if scrap_rate is not None else 0.0,
+        "MaintenanceQueueLength": int(maint_queue_len),
+    }
+
+
 def _apply_demo_flags(config: dict, no_csv: bool) -> None:
     """Mutate config in-place to apply demo-mode CLI flags.
 
