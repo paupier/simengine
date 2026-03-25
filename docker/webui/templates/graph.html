@@ -24,12 +24,14 @@
   <div class="card mb-3">
     <div class="card-header d-flex justify-content-between align-items-center">
       <span><strong>A — Live Causal Chain</strong>
-        <span class="text-muted small ms-2">Last failure cascade (up to 8 hops)</span>
+        <span class="text-muted small ms-2">Last 5 failure cascades — up to 8 hops each</span>
       </span>
       <span id="causal-last-updated" class="text-muted small"></span>
     </div>
     <div class="card-body p-0">
-      <div id="causal-graph" style="height:340px; background:#111;"></div>
+      <ul class="nav nav-tabs px-2 pt-1" id="causal-tabs"
+          style="border-bottom:1px solid #2a2a2a; min-height:34px;"></ul>
+      <div id="causal-graph" style="height:310px; background:#111;"></div>
     </div>
   </div>
 
@@ -90,6 +92,7 @@
 <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
 <script>
 let causalNetwork = null, causalNodes = null, causalEdges = null;
+let causalCascades = [], causalActiveIdx = 0;
 let topoNetwork = null;
 const VIS_OPTS = {
   nodes: { font: { color: "#fff", size: 13 }, borderWidth: 1 },
@@ -128,8 +131,10 @@ document.addEventListener("DOMContentLoaded", populateRunDropdowns);
 function loadAllPanels() {
   const rid = getRunId();
   if (!rid) return;
-  // Force full rebuild when switching runs
+  // Full reset when switching runs
   if (causalNetwork) { causalNetwork.destroy(); causalNetwork = null; causalNodes = null; causalEdges = null; }
+  causalCascades = []; causalActiveIdx = 0;
+  document.getElementById("causal-tabs").innerHTML = '';
   loadCausal(rid);
   loadTopology(rid);
 }
@@ -142,28 +147,57 @@ function loadCausal(rid) {
         document.getElementById("causal-graph").innerHTML = `<p class="text-danger m-3">${data.error}</p>`;
         return;
       }
-      const container = document.getElementById("causal-graph");
-      if (causalNetwork && causalNodes && causalEdges) {
-        // Update data in-place — preserves node positions, no physics restart
-        const newNodeIds = new Set(data.nodes.map(n => n.id));
-        const newEdgeIds = new Set(data.edges.map(e => e.id));
-        causalNodes.getIds().forEach(id => { if (!newNodeIds.has(id)) causalNodes.remove(id); });
-        causalEdges.getIds().forEach(id => { if (!newEdgeIds.has(id)) causalEdges.remove(id); });
-        causalNodes.update(data.nodes);
-        causalEdges.update(data.edges);
-      } else {
-        causalNodes = new vis.DataSet(data.nodes);
-        causalEdges = new vis.DataSet(data.edges);
-        if (causalNetwork) causalNetwork.destroy();
-        causalNetwork = new vis.Network(container, { nodes: causalNodes, edges: causalEdges }, VIS_OPTS);
-        // Lock layout once stabilised — prevents jitter on subsequent data updates
-        causalNetwork.once("stabilizationIterationsDone", () => {
-          causalNetwork.setOptions({ physics: false });
-        });
+      const cascades = data.cascades || [];
+      const tabsEl = document.getElementById("causal-tabs");
+
+      if (cascades.length === 0) {
+        tabsEl.innerHTML = '';
+        document.getElementById("causal-graph").innerHTML =
+          '<p class="text-muted m-3 small">No failure cascades recorded yet for this run.</p>';
+        causalCascades = [];
+        document.getElementById("causal-last-updated").textContent = "Updated: " + new Date().toLocaleTimeString();
+        return;
       }
+
+      // Rebuild tab strip only when cascade count changes (avoids flicker on 5s refresh)
+      if (cascades.length !== causalCascades.length) {
+        causalActiveIdx = Math.min(causalActiveIdx, cascades.length - 1);
+        tabsEl.innerHTML = cascades.map((c, i) =>
+          `<li class="nav-item">
+            <button class="nav-link causal-tab-btn${i === causalActiveIdx ? ' active' : ''} py-1 px-2 small font-monospace"
+                    onclick="selectCausalTab(${i})">${c.label}</button>
+          </li>`
+        ).join('');
+      } else {
+        // Just refresh labels in case sim_time text changed
+        tabsEl.querySelectorAll('.causal-tab-btn').forEach((b, i) => { b.textContent = cascades[i].label; });
+      }
+
+      causalCascades = cascades;
+      renderCausalTab(causalActiveIdx);
       document.getElementById("causal-last-updated").textContent = "Updated: " + new Date().toLocaleTimeString();
     })
     .catch(e => console.error("causal fetch failed", e));
+}
+
+function selectCausalTab(idx) {
+  causalActiveIdx = idx;
+  document.querySelectorAll('.causal-tab-btn').forEach((b, i) => b.classList.toggle('active', i === idx));
+  renderCausalTab(idx);
+}
+
+function renderCausalTab(idx) {
+  const cascade = causalCascades[idx];
+  if (!cascade) return;
+  if (causalNetwork) { causalNetwork.destroy(); causalNetwork = null; causalNodes = null; causalEdges = null; }
+  causalNodes = new vis.DataSet(cascade.nodes);
+  causalEdges = new vis.DataSet(cascade.edges);
+  causalNetwork = new vis.Network(
+    document.getElementById("causal-graph"),
+    { nodes: causalNodes, edges: causalEdges },
+    VIS_OPTS
+  );
+  causalNetwork.once("stabilizationIterationsDone", () => causalNetwork.setOptions({ physics: false }));
 }
 
 function loadTopology(rid) {

@@ -1464,46 +1464,77 @@ _STATE_COLOURS = {
 
 
 def _query_neo4j_causal(run_id: str) -> dict:
+    """Return last 5 failure cascades for the run, newest first."""
     driver = _get_neo4j_driver()
     if not driver:
         raise RuntimeError("Neo4j not configured")
     try:
         with driver.session() as session:
-            result = session.run(
+            starts = session.run(
                 """
                 MATCH (src)-[:HAD_EVENT]->(start:Event {run_id: $run_id, new_state: 'UNDER_REPAIR'})
-                WITH start ORDER BY start.sim_time DESC LIMIT 1
-                MATCH path = (start)-[:CAUSED*1..8]->(end:Event)
-                UNWIND relationships(path) AS rel
-                WITH startNode(rel) AS n1, endNode(rel) AS n2, rel
-                MATCH (eq1)-[:HAD_EVENT]->(n1)
-                MATCH (eq2)-[:HAD_EVENT]->(n2)
-                RETURN DISTINCT
-                  elementId(n1) AS from_id, eq1.name AS from_name, n1.new_state AS from_state,
-                  elementId(n2) AS to_id,   eq2.name AS to_name,   n2.new_state AS to_state,
-                  rel.type AS cause_type,   rel.lag_s AS lag_s
-                LIMIT 100
+                WITH start, src ORDER BY start.sim_time DESC LIMIT 5
+                RETURN elementId(start) AS start_id, start.sim_time AS sim_time,
+                       src.name AS src_name
                 """,
                 run_id=run_id,
-            )
-            nodes, edges, seen_nodes = [], [], set()
-            for row in result:
-                for nid, nname, nstate in [
-                    (row["from_id"], row["from_name"], row["from_state"]),
-                    (row["to_id"],   row["to_name"],   row["to_state"]),
-                ]:
-                    if nid not in seen_nodes:
-                        seen_nodes.add(nid)
-                        nodes.append({
-                            "id": nid, "label": f"{nname}\n{nstate or ''}",
-                            "color": _STATE_COLOURS.get(nstate, "#7f8c8d"),
-                        })
-                edges.append({
-                    "from": row["from_id"], "to": row["to_id"],
-                    "label": f"{row['cause_type']} ({row['lag_s']}s)",
-                    "arrows": "to",
+            ).data()
+
+            cascades = []
+            for i, s in enumerate(starts):
+                rows = session.run(
+                    """
+                    MATCH (start:Event) WHERE elementId(start) = $start_id
+                    MATCH path = (start)-[:CAUSED*1..8]->(end:Event)
+                    UNWIND relationships(path) AS rel
+                    WITH startNode(rel) AS n1, endNode(rel) AS n2, rel
+                    MATCH (eq1)-[:HAD_EVENT]->(n1)
+                    MATCH (eq2)-[:HAD_EVENT]->(n2)
+                    RETURN DISTINCT
+                      elementId(n1) AS from_id, eq1.name AS from_name, n1.new_state AS from_state,
+                      elementId(n2) AS to_id,   eq2.name AS to_name,   n2.new_state AS to_state,
+                      rel.type AS cause_type,   rel.lag_s AS lag_s
+                    LIMIT 100
+                    """,
+                    start_id=s["start_id"],
+                ).data()
+
+                nodes, edges, seen = [], [], set()
+                for row in rows:
+                    for nid, nname, nstate in [
+                        (row["from_id"], row["from_name"], row["from_state"]),
+                        (row["to_id"],   row["to_name"],   row["to_state"]),
+                    ]:
+                        if nid not in seen:
+                            seen.add(nid)
+                            nodes.append({
+                                "id": nid, "label": f"{nname}\n{nstate or ''}",
+                                "color": _STATE_COLOURS.get(nstate, "#7f8c8d"),
+                            })
+                    edges.append({
+                        "from": row["from_id"], "to": row["to_id"],
+                        "label": f"{row['cause_type']} ({row['lag_s']}s)",
+                        "arrows": "to",
+                    })
+
+                # If no chain found, show root node alone so the tab isn't empty
+                if not nodes:
+                    nodes.append({
+                        "id": s["start_id"],
+                        "label": f"{s['src_name']}\nUNDER_REPAIR",
+                        "color": _STATE_COLOURS.get("UNDER_REPAIR", "#9b59b6"),
+                    })
+
+                sim_time = int(s["sim_time"] or 0)
+                cascades.append({
+                    "id": f"cascade_{i}",
+                    "label": f"{s['src_name']}  t={sim_time}s",
+                    "sim_time": sim_time,
+                    "nodes": nodes,
+                    "edges": edges,
                 })
-        return {"nodes": nodes, "edges": edges}
+
+        return {"cascades": cascades}
     finally:
         driver.close()
 
