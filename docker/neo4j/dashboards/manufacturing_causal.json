@@ -63,7 +63,7 @@
       "reports": [
         {
           "title": "Runs",
-          "query": "MATCH (r:Run) RETURN r.run_id AS RunID, r.scenario AS Scenario, size((r)-[:INCLUDES]->()) AS Nodes ORDER BY r.start_wall_clock DESC",
+          "query": "MATCH (r:Run) RETURN r.run_id AS RunID, r.scenario AS Scenario, COUNT {(r)-[:INCLUDES]->()} AS Nodes ORDER BY r.start_wall_clock DESC",
           "type": "table",
           "width": 12,
           "height": 3
