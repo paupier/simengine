@@ -12,61 +12,136 @@
   "pages": [
     {
       "title": "Causal Chain Explorer",
+      "id": "a1b2c3d4-0001-0001-0001-000000000001",
       "reports": [
         {
+          "id": "a1b2c3d4-0001-0001-0001-000000000101",
+          "title": "Run ID",
+          "query": "RETURN $neodash_run_id AS run_id",
+          "type": "text",
+          "width": 12,
+          "height": 1,
+          "x": 0,
+          "y": 0,
+          "selection": {},
+          "settings": {
+            "nodePositions": {}
+          }
+        },
+        {
+          "id": "a1b2c3d4-0001-0001-0001-000000000102",
           "title": "Causal Chain (last 6 hops)",
-          "query": "MATCH path=(e1:Event {run_id: $neodash_run_id})-[:CAUSED*1..6]->(e2:Event) WHERE NOT ()-[:CAUSED]->(e1) RETURN path LIMIT 50",
+          "query": "MATCH path=(e1:Event {run_id: $neodash_run_id})-[:CAUSED*1..6]->(e2:Event) WHERE NOT ()-[:CAUSED]->(e1) RETURN path LIMIT 50\n",
           "type": "graph",
           "width": 12,
-          "height": 4
+          "height": 4,
+          "x": 0,
+          "y": 1,
+          "selection": {
+            "Event": "new_state",
+            "Machine": "name"
+          },
+          "settings": {
+            "nodePositions": {},
+            "defaultNodeSize": "medium",
+            "nodeSizeProp": "size",
+            "nodeColorProp": "color",
+            "showPropertiesOnHover": true,
+            "showPropertiesOnClick": true,
+            "layout": "force-directed"
+          }
         }
       ]
     },
     {
-      "title": "Failure Pattern Finder",
+      "title": "Failure Patterns",
+      "id": "a1b2c3d4-0002-0002-0002-000000000002",
       "reports": [
         {
+          "id": "a1b2c3d4-0002-0002-0002-000000000201",
           "title": "Machines by Failure Count",
-          "query": "MATCH (m:Machine {run_id: $neodash_run_id})-[:HAD_EVENT]->(e:Event) WHERE e.new_state IN ['FAILED','UNDER_REPAIR'] RETURN m.name AS Machine, count(e) AS Failures ORDER BY Failures DESC",
+          "query": "MATCH (m:Machine {run_id: $neodash_run_id})-[:HAD_EVENT]->(e:Event) WHERE e.new_state IN ['FAILED','UNDER_REPAIR'] RETURN m.name AS Machine, count(e) AS Failures ORDER BY Failures DESC\n",
           "type": "bar",
           "width": 6,
-          "height": 3
+          "height": 3,
+          "x": 0,
+          "y": 0,
+          "selection": {
+            "index": "Machine",
+            "value": "Failures",
+            "key": "Failures"
+          },
+          "settings": {}
+        },
+        {
+          "id": "a1b2c3d4-0002-0002-0002-000000000202",
+          "title": "Recent UNDER_REPAIR Events",
+          "query": "MATCH (m:Machine {run_id: $neodash_run_id})-[:HAD_EVENT]->(e:Event) WHERE e.new_state = 'UNDER_REPAIR' RETURN m.name AS Machine, e.sim_time AS SimTime, e.old_state AS From ORDER BY SimTime DESC LIMIT 20\n",
+          "type": "table",
+          "width": 6,
+          "height": 3,
+          "x": 6,
+          "y": 0,
+          "selection": {},
+          "settings": {}
         }
       ]
     },
     {
-      "title": "SPC → Quality Impact",
+      "title": "SPC Quality Impact",
+      "id": "a1b2c3d4-0003-0003-0003-000000000003",
       "reports": [
         {
+          "id": "a1b2c3d4-0003-0003-0003-000000000301",
           "title": "SPC Violation Chains",
-          "query": "MATCH (e1:Event {run_id: $neodash_run_id})-[:CAUSED {type:'spc_quality_impact'}]->(e2:Event) RETURN e1.sim_time AS ViolationTime, e2.sim_time AS ImpactTime, e2.new_state AS Outcome LIMIT 100",
+          "query": "MATCH (e1:Event {run_id: $neodash_run_id})-[:CAUSED {type:'spc_quality_impact'}]->(e2:Event) RETURN e1.sim_time AS ViolationTime, e2.sim_time AS ImpactTime, e2.new_state AS Outcome LIMIT 100\n",
           "type": "table",
           "width": 12,
-          "height": 3
+          "height": 3,
+          "x": 0,
+          "y": 0,
+          "selection": {},
+          "settings": {}
         }
       ]
     },
     {
       "title": "Shift Breakdown",
+      "id": "a1b2c3d4-0004-0004-0004-000000000004",
       "reports": [
         {
+          "id": "a1b2c3d4-0004-0004-0004-000000000401",
           "title": "Events per Shift",
-          "query": "MATCH (r:Run {run_id: $neodash_run_id})-[:HAD_SHIFT]->(s:Shift)<-[:OCCURRED_IN]-(e:Event) RETURN s.name AS Shift, s.number AS ShiftNum, count(e) AS Events ORDER BY ShiftNum",
+          "query": "MATCH (r:Run {run_id: $neodash_run_id})-[:HAD_SHIFT]->(s:Shift)<-[:OCCURRED_IN]-(e:Event) RETURN s.name AS Shift, s.number AS ShiftNum, count(e) AS Events ORDER BY ShiftNum\n",
           "type": "bar",
           "width": 12,
-          "height": 3
+          "height": 3,
+          "x": 0,
+          "y": 0,
+          "selection": {
+            "index": "Shift",
+            "value": "Events",
+            "key": "Events"
+          },
+          "settings": {}
         }
       ]
     },
     {
       "title": "Cross-Run Comparison",
+      "id": "a1b2c3d4-0005-0005-0005-000000000005",
       "reports": [
         {
-          "title": "Runs",
-          "query": "MATCH (r:Run) RETURN r.run_id AS RunID, r.scenario AS Scenario, COUNT {(r)-[:INCLUDES]->()} AS Nodes ORDER BY r.start_wall_clock DESC",
+          "id": "a1b2c3d4-0005-0005-0005-000000000501",
+          "title": "All Runs",
+          "query": "MATCH (r:Run) RETURN r.run_id AS RunID, r.scenario AS Scenario, COUNT {(r)-[:INCLUDES]->()} AS Nodes ORDER BY r.start_wall_clock DESC\n",
           "type": "table",
           "width": 12,
-          "height": 3
+          "height": 3,
+          "x": 0,
+          "y": 0,
+          "selection": {},
+          "settings": {}
         }
       ]
     }
