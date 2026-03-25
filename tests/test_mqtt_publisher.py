@@ -134,3 +134,71 @@ def test_topic_format_system():
     expected_flat = f"simantha/{RUN_ID}/system"
     assert pub._system_ua_topic() == expected_ua
     assert pub._system_flat_topic() == expected_flat
+
+
+# ---------------------------------------------------------------------------
+# publish_step tests
+# ---------------------------------------------------------------------------
+
+def test_publish_step_topic_count():
+    """publish() must be called 2 × (N_machines + 1) times per step."""
+    from mqtt_publisher import MQTTPublisher
+    with patch("mqtt_publisher.mqtt") as mock_mqtt_module, \
+         patch("mqtt_publisher._PAHO_AVAILABLE", True):
+        mock_client = MagicMock()
+        mock_mqtt_module.Client.return_value = mock_client
+        mock_mqtt_module.CallbackAPIVersion.VERSION2 = "v2"
+        mock_mqtt_module.MQTTv5 = 5
+
+        pub = MQTTPublisher("localhost", 1883, RUN_ID)
+        pub._client = mock_client
+        pub._connected = True
+
+        # Also mock Properties/PacketTypes so _publish doesn't blow up
+        with patch("mqtt_publisher.Properties"), patch("mqtt_publisher.PacketTypes"):
+            n = 3
+            pub.publish_step(_make_machine_snapshot(n), _make_system_kpis(),
+                             sim_time=120.0, step=5)
+
+        expected_calls = 2 * (n + 1)   # 2 formats × (3 machines + 1 system)
+        assert mock_client.publish.call_count == expected_calls
+
+
+def test_disconnected_no_raise():
+    """publish_step() when _connected=False must not raise."""
+    from mqtt_publisher import MQTTPublisher
+    pub = MQTTPublisher("localhost", 1883, RUN_ID)
+    pub._connected = False
+    # Should return silently
+    pub.publish_step(_make_machine_snapshot(2), _make_system_kpis(),
+                     sim_time=10.0, step=1)
+
+
+def test_dropped_steps_incremented():
+    """dropped_steps increments on each publish_step call when disconnected."""
+    from mqtt_publisher import MQTTPublisher
+    pub = MQTTPublisher("localhost", 1883, RUN_ID)
+    pub._connected = False
+    pub.publish_step(_make_machine_snapshot(2), _make_system_kpis(), 1.0, 1)
+    pub.publish_step(_make_machine_snapshot(2), _make_system_kpis(), 2.0, 2)
+    assert pub._dropped_steps == 2
+
+
+def test_reconnect_resets_counter():
+    """After _connected becomes True, publish_step does NOT increment dropped_steps."""
+    from mqtt_publisher import MQTTPublisher
+    pub = MQTTPublisher("localhost", 1883, RUN_ID)
+    pub._connected = False
+    pub._client = MagicMock()
+
+    pub.publish_step(_make_machine_snapshot(1), _make_system_kpis(), 1.0, 1)
+    assert pub._dropped_steps == 1
+
+    # Simulate reconnect
+    pub._connected = True
+    with patch("mqtt_publisher.Properties"), patch("mqtt_publisher.PacketTypes"), \
+         patch("mqtt_publisher._PAHO_AVAILABLE", True):
+        pub.publish_step(_make_machine_snapshot(1), _make_system_kpis(), 2.0, 2)
+
+    # Counter must NOT have changed
+    assert pub._dropped_steps == 1
