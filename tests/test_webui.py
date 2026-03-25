@@ -347,3 +347,55 @@ class TestDemoModeSubprocess:
 
         flask_app_module.start_simulation_recipe("monday_schedule")
         assert "--no-csv" in captured["cmd"]
+
+
+# ========== MQTT Subprocess Tests ==========
+
+class TestMQTTSubprocess:
+    """Tests that --mqtt and --mqtt-broker are forwarded to the subprocess cmd."""
+
+    def _make_fake_popen(self, captured):
+        def fake_popen(cmd, **kwargs):
+            captured["cmd"] = list(cmd)
+            class FakeProc:
+                stdout = iter([])
+                pid = 999
+                def poll(self): return None
+            return FakeProc()
+        return fake_popen
+
+    def test_api_start_forwards_mqtt_flag(self, client, monkeypatch, tmp_path):
+        """--mqtt and --mqtt-broker must appear in the subprocess cmd when mqtt=True."""
+        path = tmp_path / "settings.json"
+        path.write_text('{"demo_mode": false, "retention_days": 30}')
+        monkeypatch.setattr(flask_app_module, "_SETTINGS_PATH", path)
+        captured = {}
+        monkeypatch.setattr(flask_app_module.subprocess, "Popen", self._make_fake_popen(captured))
+        monkeypatch.setattr(flask_app_module, "stop_simulation", lambda: None)
+        monkeypatch.setattr(flask_app_module, "_regenerate_telegraf_config", lambda *a, **kw: None)
+
+        resp = client.post("/api/start", json={
+            "scenario": "balanced_line",
+            "mqtt": True,
+            "mqtt_broker": "mqtt://testbroker:1883",
+        })
+        assert resp.status_code == 200
+        cmd = captured["cmd"]
+        assert "--mqtt" in cmd
+        assert "--mqtt-broker" in cmd
+        assert "mqtt://testbroker:1883" in cmd
+
+    def test_api_start_no_mqtt_flag_by_default(self, client, monkeypatch, tmp_path):
+        """--mqtt must NOT appear in subprocess cmd when mqtt key absent."""
+        path = tmp_path / "settings.json"
+        path.write_text('{"demo_mode": false, "retention_days": 30}')
+        monkeypatch.setattr(flask_app_module, "_SETTINGS_PATH", path)
+        captured = {}
+        monkeypatch.setattr(flask_app_module.subprocess, "Popen", self._make_fake_popen(captured))
+        monkeypatch.setattr(flask_app_module, "stop_simulation", lambda: None)
+        monkeypatch.setattr(flask_app_module, "_regenerate_telegraf_config", lambda *a, **kw: None)
+
+        resp = client.post("/api/start", json={"scenario": "balanced_line"})
+        assert resp.status_code == 200
+        cmd = captured["cmd"]
+        assert "--mqtt" not in cmd

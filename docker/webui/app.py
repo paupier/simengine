@@ -334,7 +334,7 @@ def _regenerate_telegraf_config(scenario_name, run_id=""):
         print(f"[WebUI] Warning: Could not regenerate Telegraf config: {e}")
 
 
-def start_simulation(scenario, seed=None, interarrival_time=None):
+def start_simulation(scenario, seed=None, interarrival_time=None, mqtt=False, mqtt_broker=""):
     """Spawn opcua_server.py as a subprocess."""
     global sim_process, sim_scenario, sim_recipe
     global sim_start_time, sim_run_id, sim_seed, sim_interarrival_time
@@ -355,6 +355,10 @@ def start_simulation(scenario, seed=None, interarrival_time=None):
             cmd += ["--interarrival-time", str(interarrival_time)]
         if _read_settings().get("demo_mode"):
             cmd.append("--no-csv")
+        if mqtt:
+            cmd.append("--mqtt")
+            if mqtt_broker:
+                cmd += ["--mqtt-broker", mqtt_broker]
 
         env = os.environ.copy()
         env["SIMANTHA_CONFIG_PATH"] = str(CONFIG_PATH)
@@ -383,7 +387,7 @@ def start_simulation(scenario, seed=None, interarrival_time=None):
         t.start()
 
 
-def start_simulation_recipe(recipe_name, seed=None, interarrival_time=None):
+def start_simulation_recipe(recipe_name, seed=None, interarrival_time=None, mqtt=False, mqtt_broker=""):
     """Spawn opcua_server.py in recipe mode as a subprocess."""
     global sim_process, sim_scenario, sim_recipe
     global sim_start_time, sim_run_id, sim_seed, sim_interarrival_time
@@ -408,6 +412,10 @@ def start_simulation_recipe(recipe_name, seed=None, interarrival_time=None):
             cmd += ["--interarrival-time", str(interarrival_time)]
         if _read_settings().get("demo_mode"):
             cmd.append("--no-csv")
+        if mqtt:
+            cmd.append("--mqtt")
+            if mqtt_broker:
+                cmd += ["--mqtt-broker", mqtt_broker]
 
         env = os.environ.copy()
         env["SIMANTHA_CONFIG_PATH"] = str(CONFIG_PATH)
@@ -691,6 +699,8 @@ def api_start():
     scenario = data.get("scenario", "balanced_line")
     seed = data.get("seed")
     interarrival_time = data.get("interarrival_time")
+    mqtt = bool(data.get("mqtt", False))
+    mqtt_broker = data.get("mqtt_broker", "")
 
     # Validate scenario exists
     scenarios = list_scenarios()
@@ -711,7 +721,7 @@ def api_start():
         except (ValueError, TypeError):
             return jsonify({"error": "interarrival_time must be a number"}), 400
 
-    start_simulation(scenario, seed, interarrival_time)
+    start_simulation(scenario, seed, interarrival_time, mqtt=mqtt, mqtt_broker=mqtt_broker)
     return jsonify({"status": "started", "scenario": scenario, "seed": seed})
 
 
@@ -969,6 +979,8 @@ def api_start_recipe():
     recipe_name = data.get("recipe")
     seed = data.get("seed")
     interarrival_time = data.get("interarrival_time")
+    mqtt = bool(data.get("mqtt", False))
+    mqtt_broker = data.get("mqtt_broker", "")
 
     if not recipe_name:
         return jsonify({"error": "Missing 'recipe' field"}), 400
@@ -992,7 +1004,7 @@ def api_start_recipe():
         except (ValueError, TypeError):
             return jsonify({"error": "interarrival_time must be a number"}), 400
 
-    start_simulation_recipe(recipe_name, seed, interarrival_time)
+    start_simulation_recipe(recipe_name, seed, interarrival_time, mqtt=mqtt, mqtt_broker=mqtt_broker)
     return jsonify({"status": "started", "recipe": recipe_name, "seed": seed})
 
 
