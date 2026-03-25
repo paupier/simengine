@@ -2718,7 +2718,6 @@ def main(argv=None):
             print(f"  MQTT publisher enabled: {args.mqtt_broker}")
         except (ValueError, Exception) as e:
             print(f"  MQTT publisher disabled: {e}")
-            mqtt_pub = None
 
     server.start()
     print(f"OPC UA server started at opc.tcp://localhost:4840/simantha/")
