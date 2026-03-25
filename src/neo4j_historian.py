@@ -35,12 +35,18 @@ _MAX_RECENT = 100  # per-machine sliding window depth
 # trigger_field: which field of the trigger event to check
 # neighbour_dir: "upstream" = trigger is upstream of target, "downstream" = downstream, "self" = same machine
 _CAUSAL_RULES = (
-    ("STARVED", "new_state",  "new_state",   {"FAILED", "UNDER_REPAIR"}, 5.0,  "starvation_cascade", "upstream"),
-    ("BLOCKED", "new_state",  "new_state",   {"BLOCKED"},                5.0,  "blocking_cascade",   "downstream"),
+    # Starvation: downstream starves after upstream fails/goes under repair.
+    # Window must cover buffer drain time: max_buffer_capacity * max_cycle_time.
+    # With buffers up to 15 parts and cycle_times up to 1.3s → up to ~20s drain.
+    # 60s gives comfortable margin without creating spurious cross-failure links.
+    ("STARVED", "new_state",  "new_state",   {"FAILED", "UNDER_REPAIR"}, 60.0, "starvation_cascade", "upstream"),
+    # Blocking: upstream blocks after downstream blocks (buffer fills up).
+    # Propagation lag = (buffer_remaining_capacity * upstream_cycle_time) ≤ ~20s.
+    ("BLOCKED", "new_state",  "new_state",   {"BLOCKED"},                30.0, "blocking_cascade",   "downstream"),
     ("SCRAP",   "event_type", "event_type",  {"SPC_VIOLATION"},          30.0, "spc_quality_impact", "self"),
     ("REWORK",  "event_type", "event_type",  {"SPC_VIOLATION"},          30.0, "spc_quality_impact", "self"),
 )
-_REPAIR_RECOVERY_WINDOW = 10.0
+_REPAIR_RECOVERY_WINDOW = 30.0
 
 
 def _resolve_env_vars(value: str) -> str:

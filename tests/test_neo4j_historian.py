@@ -159,13 +159,13 @@ class TestCausalEngine:
         assert any("CAUSED" in c and "starvation_cascade" in c for c in calls)
 
     def test_starvation_cascade_outside_window_no_edge(self):
-        """M1 FAILED 6s before M2 STARVED → no edge (window=5s)."""
+        """M1 FAILED 61s before M2 STARVED → no edge (window=60s)."""
         h, mock_driver, mock_session = _make_historian()
         self._add_event_to_recent(h, "M1", "FAILED", sim_time=100.0)
         target = make_event(source="M2", event_type="STATE_CHANGE",
-                            new_state="STARVED", old_state="PROCESSING", timestamp=106.0)
+                            new_state="STARVED", old_state="PROCESSING", timestamp=161.0)
 
-        h._check_causal_rules(mock_session, target, "eid_M2_106.0")
+        h._check_causal_rules(mock_session, target, "eid_M2_161.0")
 
         calls = [str(c) for c in mock_session.run.call_args_list]
         assert not any("starvation_cascade" in c for c in calls)
