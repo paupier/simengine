@@ -92,7 +92,7 @@
 <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
 <script>
 let causalNetwork = null, causalNodes = null, causalEdges = null;
-let causalCascades = [], causalActiveIdx = 0;
+let causalCascades = [], causalActiveIdx = 0, causalActiveId = null, causalFingerprint = null;
 let topoNetwork = null;
 const VIS_OPTS = {
   nodes: { font: { color: "#fff", size: 13 }, borderWidth: 1 },
@@ -133,7 +133,7 @@ function loadAllPanels() {
   if (!rid) return;
   // Full reset when switching runs
   if (causalNetwork) { causalNetwork.destroy(); causalNetwork = null; causalNodes = null; causalEdges = null; }
-  causalCascades = []; causalActiveIdx = 0;
+  causalCascades = []; causalActiveIdx = 0; causalActiveId = null; causalFingerprint = null;
   document.getElementById("causal-tabs").innerHTML = '';
   loadCausal(rid);
   loadTopology(rid);
@@ -159,18 +159,22 @@ function loadCausal(rid) {
         return;
       }
 
-      // Rebuild tab strip only when cascade count changes (avoids flicker on 5s refresh)
-      if (cascades.length !== causalCascades.length) {
-        causalActiveIdx = Math.min(causalActiveIdx, cascades.length - 1);
+      // Determine which cascade to keep active — preserve by ID so index shifts don't jump
+      const prevId = causalActiveId || cascades[0].id;
+      const newIdx = cascades.findIndex(c => c.id === prevId);
+      causalActiveIdx = newIdx >= 0 ? newIdx : 0;
+      causalActiveId = cascades[causalActiveIdx].id;
+
+      // Rebuild tab strip only when the cascade list itself changes
+      const newIds = cascades.map(c => c.id).join(',');
+      const oldIds = causalCascades.map(c => c.id).join(',');
+      if (newIds !== oldIds) {
         tabsEl.innerHTML = cascades.map((c, i) =>
           `<li class="nav-item">
             <button class="nav-link causal-tab-btn${i === causalActiveIdx ? ' active' : ''} py-1 px-2 small font-monospace"
                     onclick="selectCausalTab(${i})">${c.label}</button>
           </li>`
         ).join('');
-      } else {
-        // Just refresh labels in case sim_time text changed
-        tabsEl.querySelectorAll('.causal-tab-btn').forEach((b, i) => { b.textContent = cascades[i].label; });
       }
 
       causalCascades = cascades;
@@ -182,6 +186,8 @@ function loadCausal(rid) {
 
 function selectCausalTab(idx) {
   causalActiveIdx = idx;
+  causalActiveId = (causalCascades[idx] || {}).id;
+  causalFingerprint = null;  // force redraw on explicit tab switch
   document.querySelectorAll('.causal-tab-btn').forEach((b, i) => b.classList.toggle('active', i === idx));
   renderCausalTab(idx);
 }
@@ -189,6 +195,13 @@ function selectCausalTab(idx) {
 function renderCausalTab(idx) {
   const cascade = causalCascades[idx];
   if (!cascade) return;
+
+  // Fingerprint nodes+edges — skip rebuild entirely if data unchanged
+  const fp = cascade.nodes.map(n => n.id + n.color).join('|') + '||' +
+             cascade.edges.map(e => `${e.from}->${e.to}:${e.label}`).join('|');
+  if (causalNetwork && fp === causalFingerprint) return;
+  causalFingerprint = fp;
+
   if (causalNetwork) { causalNetwork.destroy(); causalNetwork = null; causalNodes = null; causalEdges = null; }
   causalNodes = new vis.DataSet(cascade.nodes);
   causalEdges = new vis.DataSet(cascade.edges);
