@@ -16,16 +16,18 @@
       "reports": [
         {
           "id": "a1b2c3d4-0001-0001-0001-000000000101",
-          "title": "Run ID",
-          "query": "RETURN $neodash_run_id AS run_id",
-          "type": "text",
-          "width": 12,
-          "height": 1,
+          "title": "Select Run ID",
+          "query": "MATCH (r:Run) RETURN r.run_id AS value ORDER BY r.start_wall_clock DESC",
+          "type": "select",
+          "width": 6,
+          "height": 2,
           "x": 0,
           "y": 0,
           "selection": {},
           "settings": {
-            "nodePositions": {}
+            "parameterName": "neodash_run_id",
+            "type": "Free Text",
+            "defaultValue": ""
           }
         },
         {
@@ -36,7 +38,7 @@
           "width": 12,
           "height": 4,
           "x": 0,
-          "y": 1,
+          "y": 2,
           "selection": {
             "Event": "new_state",
             "Machine": "name"
