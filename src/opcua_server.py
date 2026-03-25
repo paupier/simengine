@@ -2115,6 +2115,7 @@ def run_segment(
     historian=None,
     neo4j_hist=None,
     recipe_vars=None,
+    mqtt_publisher=None,
 ):
     """Run simulation until time limit OR quantity target is reached.
 
@@ -2439,8 +2440,10 @@ def run_segment(
         buffer_alarms_map = update_buffers(buffers, opcua_vars)
 
         # Scrap tracking
-        update_scrap_tracking(scrap_sinks, total_parts_produced, opcua_vars,
-                              scrap_totals=scrap_totals)
+        total_scrap = update_scrap_tracking(scrap_sinks, total_parts_produced, opcua_vars,
+                                            scrap_totals=scrap_totals)
+        _total_output = total_parts_produced + total_scrap
+        scrap_rate = total_scrap / _total_output if _total_output > 0 else 0.0
 
         # Line-level OEE
         line_avail, line_perf, line_qual, line_oee = \
@@ -2458,6 +2461,15 @@ def run_segment(
 
         # Shift OPC UA updates
         update_shift_opcua_vars(shift_manager, opcua_vars, sim_time, delta_parts)
+
+        # MQTT PubSub — publish full snapshot if enabled
+        if mqtt_publisher is not None:
+            _machine_snap = _build_machine_snapshot(machines, machine_metrics, machine_health)
+            _sys_kpis = _build_system_kpis(
+                sim_time, line_state, total_parts_produced, total_wip, line_oee,
+                total_scrap, scrap_rate, maint_queue_length,
+            )
+            mqtt_publisher.publish_step(_machine_snap, _sys_kpis, sim_time, line_state.step_count)
 
         # Update recipe OPC UA vars
         if recipe_vars:
@@ -2596,6 +2608,11 @@ def main(argv=None):
                         help="Disable CSV historian (demo/long-run mode)")
     parser.add_argument("--interarrival-time", type=float, default=None, dest="interarrival_time",
                        help="Override source interarrival time (seconds) at run start")
+    parser.add_argument("--mqtt", action="store_true",
+                        help="Enable OPC UA PubSub over MQTT publisher")
+    parser.add_argument("--mqtt-broker", default="mqtt://mosquitto:1883",
+                        dest="mqtt_broker",
+                        help="MQTT broker URL (default: mqtt://mosquitto:1883)")
     args = parser.parse_args(argv)
 
     # Default to balanced_line if neither --scenario nor --recipe given
@@ -2676,6 +2693,19 @@ def main(argv=None):
         neo4j_hist.create_topology(config)
         print(f"  Neo4j historian enabled: {neo4j_hist.describe()}")
 
+    # Create MQTT publisher if --mqtt flag set
+    mqtt_pub = None
+    if args.mqtt:
+        try:
+            from mqtt_publisher import MQTTPublisher, _parse_mqtt_url
+            host, port = _parse_mqtt_url(args.mqtt_broker)
+            mqtt_pub = MQTTPublisher(host, port, run_id)
+            mqtt_pub.connect()
+            print(f"  MQTT publisher enabled: {args.mqtt_broker}")
+        except (ValueError, Exception) as e:
+            print(f"  MQTT publisher disabled: {e}")
+            mqtt_pub = None
+
     server.start()
     print(f"OPC UA server started at opc.tcp://localhost:4840/simantha/")
     print(f"Scenario: {args.scenario} ({len(machines)} machines, {len(buffers)} buffers)")
@@ -2698,6 +2728,7 @@ def main(argv=None):
             shift_manager=shift_manager,
             historian=historian,
             neo4j_hist=neo4j_hist,
+            mqtt_publisher=mqtt_pub,
         )
 
     except KeyboardInterrupt:
@@ -2757,6 +2788,8 @@ def main(argv=None):
         if neo4j_hist:
             neo4j_hist.close()
             print("Neo4j historian closed.")
+        if mqtt_pub:
+            mqtt_pub.close()
         server.stop()
         print("Server stopped.")
 
