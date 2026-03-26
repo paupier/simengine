@@ -164,10 +164,10 @@ class MQTTPublisher:
             def _on_disconnect(client, userdata, disconnect_flags, reason_code, properties):
                 self._connected = False
                 logger.warning("MQTT disconnected (reason=%s); auto-reconnecting…", reason_code)
-                client.reconnect_delay_set(min_delay=1, max_delay=30)
 
             client.on_connect = _on_connect
             client.on_disconnect = _on_disconnect
+            client.reconnect_delay_set(min_delay=1, max_delay=30)
             client.connect_async(self._host, self._port)
             client.loop_start()
             self._client = client
