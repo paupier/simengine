@@ -2,7 +2,7 @@
 
 **Namespace URI:** `http://simantha.nist.gov/`
 **Namespace Index:** `ns=2`
-**Last Updated:** 2026-02-28
+**Last Updated:** 2026-03-26
 
 > **Authoritative reference:** See the [User Manual, Section 9](user_manual.md#9-opc-ua-address-space-reference) for full tables with descriptions.
 
@@ -28,8 +28,7 @@ Objects/
          │  │  ├─ LineState                       (String, READ)
          │  │  ├─ LineMode                        (String, READ)
          │  │  ├─ Controls/
-         │  │  │  ├─ CmdPauseLine                 (Boolean, WRITE)
-         │  │  │  └─ SetInterarrivalTime          (Double, WRITE)
+         │  │  │  └─ SetInterarrivalTime          (Double, READ)   set at run start, read-only during run
          │  │  └─ Recipe/                          (populated when --recipe is used)
          │  │     ├─ RecipeName                    (String, READ)
          │  │     ├─ RecipeDescription             (String, READ)
@@ -188,14 +187,11 @@ BufferN/                                          (StorageUnit under Resources/)
 
 ## Access Rights
 
-**Writable (control inputs under `OperationsState/Controls/`):**
+All OPC UA variables are **read-only** during a run.
 
-| Variable | Type | Description |
-|----------|------|-------------|
-| `CmdPauseLine` | Boolean | Pause/resume entire line |
-| `SetInterarrivalTime` | Double | Part arrival delay (0 = fast as possible) |
+`SetInterarrivalTime` (under `OperationsState/Controls/`) reflects the inter-arrival delay set when the simulation was started. It cannot be changed via OPC UA clients at runtime. Set it via the Web UI before starting a run.
 
-All other variables are **read-only**.
+> **Removed in v2.6:** `CmdPauseLine` (runtime pause) was removed. Use the Web UI Stop button to end a run.
 
 ---
 
@@ -204,9 +200,8 @@ All other variables are **read-only**.
 Machine `State` values (checked in priority order):
 
 ```
-PAUSED ─────────────────────────────── (CmdPauseLine = true)
-FAILED ─────────────────────────────── (health >= failed_health, no maintainer)
-UNDER_REPAIR ───────────────────────── (health >= failed_health, maintainer active)
+FAILED ─────────────────────────────── (health >= failed_health, repair countdown started)
+UNDER_REPAIR ───────────────────────── (health >= failed_health, repair countdown active)
 BLOCKED ────────────────────────────── (downstream buffer full)
 STARVED ────────────────────────────── (upstream buffer empty)
 DEGRADED ───────────────────────────── (health > 0 but < failed_health)
@@ -215,6 +210,8 @@ IDLE ─────────────────────────
 ```
 
 With multi-state degradation, `failed_health = h_max` (the highest health state index). The DEGRADED state indicates the machine is operational but has begun degrading.
+
+> **Removed in v2.6:** `PAUSED` state and `CmdPauseLine` node were removed. There are exactly 7 states.
 
 ---
 

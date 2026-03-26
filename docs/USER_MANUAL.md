@@ -1,7 +1,7 @@
 # Simantha OPC UA - Complete User Manual
 
-**Version:** 2.6
-**Last Updated:** 2026-03-17
+**Version:** 2.7
+**Last Updated:** 2026-03-26
 **Difficulty:** Beginner to Advanced
 
 ---
@@ -282,10 +282,12 @@ Open `http://localhost:8080` in your browser. The dashboard provides:
 - **Reports page** at `/reports` for post-run analysis (OEE charts, throughput trends, time-in-state, anomaly detection, run comparison from CSV historian data)
 - **Validation page** at `/validation` for checking the data pipeline health (OPC UA → Telegraf → InfluxDB)
 
-**Docker mode (full stack with InfluxDB + Grafana):**
+**Docker mode (full stack):**
 ```bash
 docker compose -f docker/docker-compose.yml up --build -d
 ```
+
+The Docker stack includes: Web UI (:8080), OPC UA (:4840), InfluxDB (:8086), Grafana (:3000), Telegraf (OPC UA → InfluxDB pipeline), Mosquitto MQTT broker (:1883/:9001), Neo4j (:7474/:7687), and NeoDash (:5005).
 
 ### Quick Start with Recipes
 
@@ -1717,9 +1719,9 @@ Simantha's internal RNG (used for its Markov chain transitions) is not directly 
 - Omit `--seed` for realistic "random each time" behavior
 - Record the auto-generated seed from the console if you want to reproduce an interesting run
 
-### Feature 2: Programmatic Control
+### Feature 2: Programmatic Monitoring
 
-**Python script to automate simulation:**
+**Python script to read simulation data:**
 
 ```python
 import time
@@ -1734,25 +1736,27 @@ try:
     site = enterprise.get_child(["2:LV426_Colony"])
     area = site.get_child(["2:AtmosphereProcessor01"])
     equip = area.get_child(["2:Nostromo_BioProductPakaging_Equipment"])
+
+    # Read line KPIs
+    ops_perf = equip.get_child(["2:OperationsPerformance"])
+    throughput = ops_perf.get_child(["2:Throughput"])
+
+    # Read interarrival time set at run start (read-only during run)
     controls = equip.get_child(["2:OperationsState", "2:Controls"])
-
-    # Get control variables
-    pause = controls.get_child(["2:CmdPauseLine"])
     interarrival = controls.get_child(["2:SetInterarrivalTime"])
+    print(f"Interarrival time: {interarrival.get_value()}")
 
-    # Experiment: Vary arrival rate
-    print("Starting experiment...")
-    for rate in [0.0, 1.0, 2.0, 3.0]:
-        print(f"Setting arrival rate to {rate}...")
-        interarrival.set_value(rate)
-        time.sleep(30)  # Run for 30 seconds
-
-    print("Pausing line...")
-    pause.set_value(True)
+    # Poll throughput
+    print("Monitoring throughput...")
+    for _ in range(10):
+        print(f"Throughput: {throughput.get_value()}")
+        time.sleep(5)
 
 finally:
     client.disconnect()
 ```
+
+> **Note (v2.6+):** All OPC UA variables are read-only during a run. `SetInterarrivalTime` is set before starting via the Web UI. `CmdPauseLine` was removed — use the Web UI Stop button to end a run.
 
 ### Feature 3: Data Logging
 
@@ -2094,6 +2098,83 @@ In the migration to the per-step architecture, two runtime controls were removed
 
 ---
 
+### Feature 8: OPC UA PubSub over MQTT
+
+The simulation can publish live data to an MQTT broker alongside the OPC UA server. This enables lightweight subscribers (Node-RED, browser clients, SCADA adapters) to consume data without a full OPC UA stack.
+
+#### Enabling MQTT PubSub
+
+```bash
+# Enable with default broker (mqtt://mosquitto:1883 — Docker internal)
+python src/opcua_server.py --mqtt
+
+# Specify a custom broker
+python src/opcua_server.py --mqtt --mqtt-broker mqtt://localhost:1883
+
+# Works with any scenario or recipe
+python src/opcua_server.py --scenario full_feature_line --seed 42 --mqtt
+python src/opcua_server.py --recipe monday_schedule --seed 42 --mqtt
+```
+
+The MQTT publisher is **non-blocking** — if the broker is unreachable, the simulation continues normally and missed steps are silently dropped.
+
+#### Topic Layout
+
+Two topic trees are published per simulation step:
+
+| Topic | Format | Content |
+|-------|--------|---------|
+| `opcua/simantha/{run_id}/machines/M{i}` | OPC UA Part 14 JSON | Per-machine state snapshot |
+| `opcua/simantha/{run_id}/system` | OPC UA Part 14 JSON | Line-level KPIs |
+| `simantha/{run_id}/machines/M{i}` | Flat JSON | Per-machine state snapshot |
+| `simantha/{run_id}/system` | Flat JSON | Line-level KPIs |
+
+#### Message Formats
+
+**OPC UA Part 14 JSON Network Message** (opcua/ topics):
+```json
+{
+  "MessageId": "step-42-M1",
+  "MessageType": "ua-data",
+  "PublisherId": "simantha-opcua",
+  "DataSetWriterId": 1,
+  "Timestamp": "2026-03-26T10:00:00+00:00",
+  "Payload": { "State": "PROCESSING", "OEE": 0.87, ... }
+}
+```
+
+**Flat JSON** (simantha/ topics):
+```json
+{
+  "run_id": "full_feature_line_20260326_100000",
+  "sim_time": 42.0,
+  "source": "M1",
+  "State": "PROCESSING",
+  "OEE": 0.87, ...
+}
+```
+
+#### Web UI Toggle
+
+The dashboard start panel includes an **MQTT PubSub** toggle. Enable it and optionally set a custom broker URL before starting a simulation. The toggle is disabled while a simulation is running.
+
+#### Mosquitto Broker (Docker Stack)
+
+The Docker stack includes Eclipse Mosquitto 2.0:
+- **MQTT:** port 1883
+- **WebSocket:** port 9001 (for browser clients)
+- Anonymous connections allowed (development default)
+
+```bash
+# Subscribe to all machine topics for a run
+mosquitto_sub -h localhost -t "simantha/+/machines/#" -v
+
+# Subscribe to system KPIs
+mosquitto_sub -h localhost -t "simantha/+/system" -v
+```
+
+---
+
 ## 11. Run Recipes
 
 Recipes define ordered production segments with changeover periods, enabling multi-product scheduling without modifying scenario configs.
@@ -2387,9 +2468,9 @@ Or the process is killed by the OS after running for thousands of simulation ste
 
 **Solutions:**
 
-1. **Check simulation not paused:**
-   - `CmdPauseLine` should be `false`
-   - `SimTime` should be incrementing
+1. **Check simulation is running:**
+   - `SimTime` should be incrementing in the OPC UA address space
+   - `LineState` should be `"RUNNING"` (not `"STOPPED"` or `"CHANGEOVER"`)
 
 2. **Refresh client:**
    - Disconnect and reconnect in UA Expert

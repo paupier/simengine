@@ -11,7 +11,7 @@ A real-time **digital twin** of a manufacturing production line using [Simantha]
 ## 📋 Project Status
 
 **Status:** Feature-complete manufacturing digital twin
-**Last Updated:** 2026-03-20
+**Last Updated:** 2026-03-26
 
 ### Key Capabilities
 
@@ -23,7 +23,7 @@ A real-time **digital twin** of a manufacturing production line using [Simantha]
 | **Maintenance** | Corrective/preventive/predictive strategies, priority maintainer (FIFO, SPT, priority, bottleneck) |
 | **Quality** | Health-correlated defects, scrap/rework routing, SPC (X-bar/R, Cp/Cpk, Western Electric rules) |
 | **Production** | OEE (per-machine & line-level), shift management, warm-up periods, target PPM tracking |
-| **Data** | Event historians (CSV/InfluxDB/Neo4j), Grafana dashboards, dynamic Telegraf config generation |
+| **Data** | Event historians (CSV/InfluxDB/Neo4j), Grafana dashboards, dynamic Telegraf config generation, OPC UA PubSub over MQTT (Part 14 JSON + flat JSON) |
 | **Web UI** | Flask dashboard with live KPIs, config editor, reports, and pipeline validation |
 
 ---
@@ -38,6 +38,7 @@ This project creates a **realistic manufacturing digital twin** that:
 - **Routes** defective parts to scrap sinks or attempts virtual rework before scrapping
 - **Tracks** shift-based production with automatic rotation and per-shift OEE
 - **Logs** events to CSV, InfluxDB, and Neo4j with Grafana visualization
+- **Publishes** live data via MQTT (OPC UA Part 14 JSON + flat JSON) to Eclipse Mosquitto
 - **Responds** to external control inputs (arrival rate adjustment configurable at run start)
 - **Schedules** multi-segment production recipes with stochastic changeover analysis
 - **Demonstrates** buffer dynamics, bottlenecks, failure impacts, and SPC analytics
@@ -57,6 +58,7 @@ This project creates a **realistic manufacturing digital twin** that:
 - ✅ **Time Tracking** - Per-step time accumulation by machine state (see [How KPIs Are Derived](#how-kpis-are-derived))
 - ✅ **Event Historian** - CSV, InfluxDB 2.x, Neo4j backends with edge-detection logging
 - ✅ **Grafana Dashboards** - Manufacturing overview, OEE detail, machine KPIs, state timeline, downtime/reliability, SPC, shift comparison, alarm log, line balance/bottleneck, SPC machine detail (10 dashboards)
+- ✅ **MQTT PubSub** - OPC UA Part 14 JSON Network Messages + flat JSON published to Eclipse Mosquitto every simulation step (`--mqtt` CLI flag)
 - ✅ **Scrap & Rework Routing** - Defective parts routed to scrap sinks, virtual rework at machine
 - ✅ **Quality Routing** - Per-part defect decisions inside simulation with health correlation
 
@@ -120,6 +122,10 @@ python src/opcua_server.py --scenario full_feature_8_machine_line --seed 42
 
 # Enable DES event tracing (outputs environment_trace.pkl)
 python src/opcua_server.py --scenario failure_line --trace
+
+# Publish live data to MQTT broker (OPC UA Part 14 JSON + flat JSON)
+python src/opcua_server.py --mqtt
+python src/opcua_server.py --scenario full_feature_line --seed 42 --mqtt --mqtt-broker mqtt://localhost:1883
 ```
 
 **Run a recipe (multi-segment production schedule):**
@@ -166,7 +172,7 @@ Features: scenario selection, live dashboard (per-machine OEE/PPM/SPC/shifts/scr
 docker compose -f docker/docker-compose.yml up --build -d
 ```
 
-Includes the Web UI, InfluxDB for time-series storage, and Grafana for dashboards.
+Includes: Web UI (:8080), OPC UA (:4840), InfluxDB (:8086), Grafana (:3000), Telegraf, Mosquitto MQTT broker (:1883/:9001), Neo4j (:7474/:7687), NeoDash (:5005).
 
 ### Connect with UA Expert
 
@@ -195,27 +201,27 @@ Under the Equipment node:
 ## 🏗️ Architecture
 
 ```
-┌─────────────────┐     ┌──────────────┐
-│  OPC UA Client  │     │   Flask UI   │  http://localhost:8080
-│ (UA Expert, MES)│     │ (Dashboard,  │  /config, /reports, /validation
-└────────┬────────┘     │  Config, etc)│
-         │ OPC UA       └──────┬───────┘
-         │ Protocol            │ OPC UA Client API
-         ▼                     ▼
-┌──────────────────────────────────────┐
-│         OPC UA Server (ISA-95)       │  (python-opcua)
-│  Enterprise/Site/Area/Line hierarchy │
-│  All variables read-only during run  │
-│  (SetInterarrivalTime set at start)  │
-└────────────────┬─────────────────────┘
-                 │ Python API
-                 ▼
-┌──────────────────────────────────────┐
-│         Simantha Simulation          │  Discrete-Event Simulation
-│  Source → M1 → B1 → M2 → ... → Sink│  N-machine serial topology
-│  Health degradation, failures, SPC   │  Quality routing, shifts
-│  Maintenance, run recipes            │  Multi-segment changeovers
-└──────────────┬───────────────────────┘
+┌─────────────────┐     ┌──────────────┐     ┌───────────────────┐
+│  OPC UA Client  │     │   Flask UI   │     │  MQTT Subscriber  │
+│ (UA Expert, MES)│     │ (Dashboard,  │     │ (Node-RED, browser│
+└────────┬────────┘     │  Config, etc)│     │  SCADA adapter)   │
+         │ OPC UA       └──────┬───────┘     └────────┬──────────┘
+         │ Protocol            │ OPC UA               │ MQTT
+         ▼                     ▼                      ▼
+┌──────────────────────────────────────┐    ┌─────────────────────┐
+│         OPC UA Server (ISA-95)       │    │  Eclipse Mosquitto  │
+│  Enterprise/Site/Area/Line hierarchy │    │  :1883 (MQTT)       │
+│  All variables read-only during run  │    │  :9001 (WebSocket)  │
+│  (SetInterarrivalTime set at start)  │    └─────────────────────┘
+└────────────────┬─────────────────────┘             ▲
+                 │ Python API                         │ --mqtt flag
+                 ▼                                    │
+┌─────────────────────────────────────────────────────┤
+│         Simantha Simulation                         │  Discrete-Event Simulation
+│  Source → M1 → B1 → M2 → ... → Sink                │  N-machine serial topology
+│  Health degradation, failures, SPC                  │  Quality routing, shifts
+│  Maintenance, run recipes                           │  Multi-segment changeovers
+└──────────────┬──────────────────────────────────────┘
                │ Events
                ▼
 ┌──────────────────────────────────────┐
@@ -468,10 +474,11 @@ simantha-opcua/
 │   ├─ event_historian.py         # CSV/InfluxDB event historian
 │   ├─ neo4j_historian.py         # Neo4j graph DB historian
 │   ├─ recipe_runner.py           # Multi-segment recipe orchestration & changeovers
+│   ├─ mqtt_publisher.py          # OPC UA PubSub over MQTT (Part 14 JSON + flat JSON)
 │   └─ simantha_baseline.py       # Standalone baseline scenarios (batch mode)
 │
 ├─ config/
-│   ├─ line_models.yaml           # Scenario definitions (20 scenarios)
+│   ├─ line_models.yaml           # Scenario definitions (21 scenarios)
 │   └─ recipes/                   # Recipe YAML files (multi-segment schedules)
 │       ├─ monday_schedule.yaml   # 3-segment: Product A → B → A with changeovers
 │       ├─ single_product.yaml    # 1-segment batch
@@ -492,6 +499,7 @@ simantha-opcua/
 │   ├─ test_neo4j_historian.py    # Neo4j historian (23 tests)
 │   ├─ test_recipe_runner.py       # Recipe loading, validation, changeover, overrides (76 tests)
 │   ├─ test_distribution_validation.py  # Statistical distribution tests (12 tests)
+│   ├─ test_mqtt_publisher.py     # MQTT publisher unit tests (11 tests)
 │   └─ ...                        # Integration, scenario, advanced isolation tests
 │
 ├─ docker/
@@ -501,7 +509,9 @@ simantha-opcua/
 │   ├─ telegraf/
 │   │   ├─ generate_telegraf_conf.py  # Dynamic Telegraf config from scenario YAML
 │   │   └─ telegraf.conf              # Generated/fallback Telegraf config
-│   ├─ docker-compose.yml         # Full stack: Web UI + InfluxDB + Telegraf + Grafana
+│   ├─ mosquitto/
+│   │   └─ mosquitto.conf             # Eclipse Mosquitto 2.0 config (MQTT + WebSocket)
+│   ├─ docker-compose.yml         # Full stack: Web UI + InfluxDB + Telegraf + Grafana + Mosquitto
 │   └─ entrypoint.sh              # Container startup (generates Telegraf config)
 │
 ├─ tools/
@@ -630,6 +640,58 @@ New event types: `SEGMENT_START`, `SEGMENT_END`, `CHANGEOVER`, `RECIPE_COMPLETE`
 
 ---
 
+## 📡 MQTT PubSub
+
+The `--mqtt` flag enables OPC UA PubSub over MQTT (Part 14 JSON), publishing a snapshot every simulation step to Eclipse Mosquitto.
+
+### Usage
+
+```bash
+# Default broker (mqtt://mosquitto:1883 — Docker internal hostname)
+python src/opcua_server.py --mqtt
+
+# Custom broker
+python src/opcua_server.py --scenario full_feature_line --seed 42 \
+    --mqtt --mqtt-broker mqtt://localhost:1883
+
+# Works with recipes too
+python src/opcua_server.py --recipe monday_schedule --mqtt
+```
+
+The Web UI dashboard also includes an MQTT toggle and broker URL input in the start panel.
+
+### Topic Layout
+
+Per step, two messages are published for each machine and one for the system (line KPIs):
+
+| Topic | Format |
+|-------|--------|
+| `opcua/simantha/{run_id}/machines/M{i}` | OPC UA Part 14 JSON Network Message |
+| `opcua/simantha/{run_id}/system` | OPC UA Part 14 JSON Network Message |
+| `simantha/{run_id}/machines/M{i}` | Flat JSON (`run_id`, `sim_time`, `source` + payload) |
+| `simantha/{run_id}/system` | Flat JSON |
+
+### Mosquitto (Docker)
+
+The Docker stack includes Eclipse Mosquitto 2.0 on ports 1883 (MQTT) and 9001 (WebSocket).
+
+```bash
+# Subscribe to all flat machine data
+mosquitto_sub -h localhost -t "simantha/+/machines/#" -v
+
+# Subscribe to line KPIs only
+mosquitto_sub -h localhost -t "simantha/+/system" -v
+```
+
+### Behaviour
+
+- **QoS 0** (fire-and-forget) — never blocks the simulation step clock
+- **Non-blocking connect** — if the broker is unreachable, simulation continues normally; dropped steps are logged at close
+- **Auto-reconnect** with exponential backoff (1s to 30s)
+- Requires `paho-mqtt>=2.0.0` (already in `requirements.txt`)
+
+---
+
 ## Neo4j Graph Analytics (Optional)
 
 Neo4j stores manufacturing events as a causal graph alongside InfluxDB. Where InfluxDB answers "what happened and when", Neo4j answers "what caused what" — tracing failure cascades, starvation propagation, and SPC-to-quality chains.
@@ -687,7 +749,13 @@ The following are identified for future phases (out of scope for current impleme
 
 ## 🗺️ Roadmap
 
-### Recent Changes (2026-03-17)
+### Recent Changes (2026-03-26)
+
+- **OPC UA PubSub over MQTT** — `--mqtt` CLI flag enables publishing per-step snapshots to Eclipse Mosquitto in OPC UA Part 14 JSON and flat JSON formats. `--mqtt-broker` sets the broker URL. Web UI dashboard includes MQTT toggle. `src/mqtt_publisher.py` (non-blocking, QoS 0, paho-mqtt 2.0 / MQTTv5).
+- **Downtime & Reliability fix** — MTBF, MTTR, FailureCount and TotalDowntime per failure mode were all zero when using the external repair countdown loop (all realistic MTTR > 1s cases). Root cause: `AdvancedMachine.restore()` (which calls `record_failure()`) was never triggered by the per-step repair countdown. Fix: `_record_external_repair()` is now called when the repair countdown reaches zero, recording the failure into the `FailureModeManager` so all Grafana Downtime & Reliability panels display correctly.
+- **Mosquitto WebSocket listener** — Docker Mosquitto config now includes an explicit `listener 9001 / protocol websockets` block alongside the MQTT listener on 1883.
+
+### Previous Changes (2026-03-17)
 
 - **Per-step real-time architecture** — `simulate(1)` per loop iteration, O(1)/step forever
   - Eliminates the O(N²) quadratic compute growth of the previous cumulative `simulate(N)` pattern
@@ -701,7 +769,7 @@ The following are identified for future phases (out of scope for current impleme
 - **Web UI improvements** — Run History page with run_id visibility and Grafana integration; contrast fixes across all pages; wall-clock duration display alongside sim duration in reports
 - **Grafana** — `run_id` filter integration for per-run scoping in dashboards
 
-### Previous Additions (2026-02-28)
+### Previous Changes (2026-02-28)
 
 - **Run Recipes** — Multi-segment production scheduling with stochastic changeovers (`--recipe` CLI arg)
 - **`run_segment()` extraction** — Core simulation loop extracted into reusable function for both single-scenario and recipe modes
@@ -710,7 +778,7 @@ The following are identified for future phases (out of scope for current impleme
 - **Recipe Web UI** — `/api/recipes`, `/api/start-recipe` endpoints for recipe management
 - **Report engine** — `analyze_recipe_segments()` and `analyze_changeovers()` for post-run analysis
 
-### Previous Additions
+### Earlier Additions
 
 - **OEE every step** — A, P, Q recalculate every simulation step using shift-relative deltas
 - **MTTF scaling** — Multi-state degradation: per-step MTTF = configured MTTF / `failed_health`
