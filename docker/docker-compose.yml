@@ -162,7 +162,7 @@ services:
       - "1883:1883"      # MQTT
       - "9001:9001"      # WebSocket (for browser MQTT clients)
     volumes:
-      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./mosquitto:/mosquitto/config:ro
       - mosquitto-data:/mosquitto/data
       - mosquitto-log:/mosquitto/log
     networks:
