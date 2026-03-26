@@ -723,6 +723,18 @@
                            placeholder="e.g. 1.0" min="0.01" step="0.1">
                     <small class="form-text" style="color:var(--text-dim);">Override source part arrival rate</small>
                 </div>
+                <div class="mb-3">
+                    <div class="form-check form-switch mb-1">
+                        <input class="form-check-input" type="checkbox" id="mqtt-toggle"
+                               onchange="document.getElementById('mqtt-broker-row').style.display=this.checked?'block':'none'">
+                        <label class="form-check-label" for="mqtt-toggle" style="color:var(--text-dim);font-size:.85em;">MQTT PubSub</label>
+                    </div>
+                    <div id="mqtt-broker-row" style="display:none;">
+                        <input type="text" id="mqtt-broker-input" class="form-control form-control-sm font-monospace"
+                               value="mqtt://mosquitto:1883" placeholder="mqtt://host:1883">
+                        <small class="form-text" style="color:var(--text-dim);">Broker URL</small>
+                    </div>
+                </div>
                 <button id="btn-start" class="btn-hmi btn-hmi-start" onclick="startSim()">▶  Start</button>
                 <button id="btn-stop"  class="btn-hmi btn-hmi-stop"  onclick="stopSim()" disabled>■  Stop</button>
             </div>
@@ -891,11 +903,14 @@
             const isRecipeMode = document.getElementById('mode-recipe').checked;
             const seedVal = document.getElementById('seed-input').value;
             const interarrivalVal = document.getElementById('interarrival-input').value;
+            const mqttEnabled = document.getElementById('mqtt-toggle').checked;
+            const mqttBroker = document.getElementById('mqtt-broker-input').value.trim();
             if (isRecipeMode) {
                 const recipe = document.getElementById('recipe-select').value;
                 const body = { recipe };
                 if (seedVal) body.seed = parseInt(seedVal);
                 if (interarrivalVal) body.interarrival_time = parseFloat(interarrivalVal);
+                if (mqttEnabled) { body.mqtt = true; body.mqtt_broker = mqttBroker; }
                 await fetch('/api/start-recipe', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(body)
@@ -905,6 +920,7 @@
                 const body = { scenario };
                 if (seedVal) body.seed = parseInt(seedVal);
                 if (interarrivalVal) body.interarrival_time = parseFloat(interarrivalVal);
+                if (mqttEnabled) { body.mqtt = true; body.mqtt_broker = mqttBroker; }
                 await fetch('/api/start', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(body)
@@ -1181,6 +1197,8 @@
                 document.getElementById('recipe-select').disabled      = formDisabled;
                 document.getElementById('seed-input').disabled         = formDisabled;
                 document.getElementById('interarrival-input').disabled = formDisabled;
+                document.getElementById('mqtt-toggle').disabled        = formDisabled;
+                document.getElementById('mqtt-broker-input').disabled  = formDisabled;
                 document.getElementById('mode-scenario').disabled      = formDisabled;
                 document.getElementById('mode-recipe').disabled        = formDisabled;
 
