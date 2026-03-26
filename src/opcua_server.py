@@ -2247,6 +2247,9 @@ def run_segment(
     # result here.  Each step we decrement by sim_step.  While > 0 the machine
     # stays FAILED/UNDER_REPAIR; when it reaches 0 health is reset to 0.
     machine_repair_remaining = {mname: 0.0 for mname in machines}
+    # Tracks when each machine first entered FAILED state (sim_time), so we
+    # can compute actual downtime when the external repair loop completes.
+    machine_failure_start = {mname: None for mname in machines}
     # Running scrap totals — scrap Sink.level resets to 0 each step (same as
     # the main sink), so we accumulate deltas here rather than reading the
     # raw level which would jump up/down each step.
@@ -2318,19 +2321,30 @@ def run_segment(
             curr_health = machine_health[mname]
             if curr_health >= fh:
                 if machine_repair_remaining[mname] <= 0:
-                    # Machine just reached failed state this step — sample MTTR.
+                    # Machine just reached failed state this step — sample MTTR
+                    # and record when this failure started.
                     repair_time = float(mobj.get_time_to_repair())
-                    # Ensure at least sim_step so the machine is visible as
-                    # UNDER_REPAIR for at least one step before recovering.
                     machine_repair_remaining[mname] = max(sim_step, repair_time)
+                    machine_failure_start[mname] = sim_time
                 else:
                     # Repair in progress — count down.
+                    prev = machine_repair_remaining[mname]
                     machine_repair_remaining[mname] = max(
-                        0.0, machine_repair_remaining[mname] - sim_step
+                        0.0, prev - sim_step
                     )
+                    # Repair just completed: record failure stats on AdvancedMachine.
+                    # restore() is never called by our external repair loop (it only
+                    # fires inside system.simulate when repair < sim_step), so we
+                    # must record here to keep MTBF/MTTR/FailureCount accurate.
+                    if machine_repair_remaining[mname] == 0.0:
+                        _record_external_repair(
+                            mobj, machine_failure_start[mname], sim_time
+                        )
+                        machine_failure_start[mname] = None
             else:
                 # Machine healthy or degraded — no repair in progress.
                 machine_repair_remaining[mname] = 0.0
+                machine_failure_start[mname] = None
         # Save mid-cycle part carryover for next step: any machine that still
         # has a part at step end (either mid-cycle or blocked downstream).
         machine_carryover = {}
@@ -2490,6 +2504,30 @@ def run_segment(
             line_quality=line_qual, machine_totals=line_state.machines)
 
     return sim_time, total_parts_produced, stop_reason, line_oee
+
+
+def _record_external_repair(mobj, failure_start, sim_time):
+    """Record MTBF/MTTR failure stats when our external repair loop completes.
+
+    The external repair loop (machine_repair_remaining countdown) bypasses
+    Simantha's restore() hook, so AdvancedMachine.failure_mode_manager never
+    gets notified.  Call this once when machine_repair_remaining reaches 0.
+    """
+    if not isinstance(mobj, AdvancedMachine):
+        return
+    mode = getattr(mobj, 'pending_failure_mode', None)
+    if mode is None or failure_start is None:
+        return
+    downtime = sim_time - failure_start
+    mobj.failure_mode_manager.record_failure(
+        mode_name=mode,
+        failure_time=failure_start,
+        downtime=max(0.0, downtime),
+    )
+    mobj.total_cm_count += 1
+    # Clear so Simantha's restore() doesn't double-count if it fires later.
+    mobj.pending_failure_mode = None
+    mobj.failure_start_time = None
 
 
 def _build_machine_snapshot(
