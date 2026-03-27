@@ -98,11 +98,13 @@ class AdvancedMachine(Machine):
 
     def initialize_addon_process(self):
         super().initialize_addon_process()
-        self.total_cm_count = 0
-        self.total_pm_count = 0
-        self.pending_failure_mode = None
-        self.failure_start_time = None
-        self.failure_mode_manager.reset()
+        # NOTE: do NOT reset failure tracking state here.
+        # In the per-step O(1) architecture, initialize() — and therefore
+        # initialize_addon_process() — is called every 1-second step via
+        # base_init() inside patched_init().  Resetting here would wipe
+        # accumulated MTBF/MTTR stats, pending_failure_mode, and cm_count on
+        # every step, breaking _record_external_repair().
+        # Initial values are set in __init__; machines are rebuilt between runs.
 
     def get_time_to_degrade(self) -> float:
         """
