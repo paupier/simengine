@@ -1532,8 +1532,9 @@ Each machine node (e.g., `M1_Equipment`, `M2_Equipment`) has ISA-95 sub-groups:
 | | `Pp` | Double | Process performance |
 | | `Ppk` | Double | Process performance index |
 | | `SigmaLevel` | Double | Sigma quality level (2-6) |
-| `Status/` | `InControl` | Boolean | Process in statistical control |
-| | `Violations` | String | Active rule violations |
+| `Status/` | `InControl` | Int32 | Process in statistical control (1=in control, 0=out of control; stored as int so Telegraf/InfluxDB receives a numeric field) |
+| | `ViolationCount` | Int32 | Number of active Western Electric rule violations (use this for Grafana/InfluxDB) |
+| | `Violations` | String | Human-readable violation descriptions, e.g. `"Rule1: Point beyond 3σ"` (string — not forwarded by Telegraf's OPC UA plugin into InfluxDB) |
 | | `TotalSamples` | Int32 | Total measurements |
 | | `NumSubgroups` | Int32 | Complete subgroups analyzed |
 
@@ -1991,13 +1992,29 @@ historian:
 
 **Grafana Integration:**
 
-1. Connect Grafana to InfluxDB (or use CSV plugin)
-2. Query events by type: `SELECT * FROM events WHERE event_type = 'SCRAP'`
-3. Build dashboards for:
-   - Scrap rate over time
-   - Maintenance frequency per machine
-   - SPC violation history
-   - Shift-by-shift production comparison
+The Docker stack auto-provisions 10 pre-built dashboards:
+
+| Dashboard | Purpose |
+|-----------|---------|
+| Manufacturing Overview | Line OEE, throughput, WIP, scrap rate, buffer levels |
+| OEE Detail | Availability, Performance, Quality breakdown per machine |
+| Machine KPIs | Per-machine PPM, cycle time, utilisation, SPC summary |
+| Machine State Timeline | State-transition Gantt chart (IDLE/PROCESSING/BLOCKED/STARVED/DEGRADED/FAILED/UNDER_REPAIR) |
+| Downtime & Reliability | MTBF/MTTR/FailureCount per failure mode per machine |
+| SPC Control Charts | X-bar/R charts, capability indices (Cp/Cpk), violation count per machine |
+| SPC Machine Detail | Deep-dive SPC for a selected machine |
+| Shift Comparison | Current vs previous shift (A/P/Q/OEE bar gauges), completed-shift history step charts |
+| Alarm Event Log | Live machine failure status, alarm rate over time, colour-coded event log |
+| Line Balance | Bottleneck identification, throughput and utilisation comparison across machines |
+
+All dashboards are scoped by `run_id` (top-left dropdown) so multiple runs can be stored and compared in the same InfluxDB instance. Custom dashboards can query the `manufacturing` bucket filtering on `event_type`:
+
+```flux
+from(bucket: "manufacturing")
+  |> range(start: -1h)
+  |> filter(fn: (r) => r._measurement == "sim_events")
+  |> filter(fn: (r) => r.event_type == "SCRAP")
+```
 
 ---
 
@@ -2430,13 +2447,16 @@ ModuleNotFoundError: No module named 'simantha'
 
 **Symptom:** The simulation starts at approximately real-time speed, but after several hours of wall time the sim clock lags noticeably — advancing only a fraction of a second for each wall second. OEE and throughput charts in Grafana show data points becoming increasingly sparse.
 
-**Cause:** This is a symptom of running an older server build that used the O(N²) cumulative simulate pattern. Each step K called `system.simulate(simulation_time=K)`, replaying the entire history. After thousands of steps, each iteration consumed seconds of CPU time.
+**Cause (two separate root causes):**
 
-**The current server (v2.6+) does not have this problem.** It uses per-step `simulate(1)` which is O(1) and keeps wall-clock and sim-clock in sync indefinitely. If you see this issue you are likely running an old Docker image.
+- *Old O(N²) architecture (pre-v2.6):* Each step K called `system.simulate(simulation_time=K)`, replaying the entire history. After thousands of steps each iteration consumed seconds.
+- *OPC UA write overhead (pre-v2.7):* With ~600 OPC UA nodes, every `set_value()` call over the loopback socket takes 2–3 ms even when the value hasn't changed. 600 writes × 2.5 ms = 1.5 s per step, pushing the budget over the 1-second target.
+
+**The current server (v2.7+) does not have either problem.** It uses per-step `simulate(1)` (O(1)) and `CachedOpcuaNode` write caching (skips `set_value()` when the value is unchanged, reducing ~600 writes to ~150 per step). If you see this issue you are likely running an old Docker image.
 
 **Solutions:**
 
-1. **Pull and rebuild the Docker image** to get the per-step architecture:
+1. **Pull and rebuild the Docker image** to get both fixes:
    ```bash
    docker compose -f docker/docker-compose.yml pull
    docker compose -f docker/docker-compose.yml up --build -d
