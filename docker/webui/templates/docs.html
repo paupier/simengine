@@ -466,6 +466,15 @@
             <a class="toc-link" href="#grafana-dashboards">Dashboards</a>
         </div>
         <div class="toc-section">
+            <div class="toc-header">Integrations</div>
+            <a class="toc-link" href="#mqtt">MQTT PubSub</a>
+            <a class="toc-link" href="#neo4j">Neo4j Graph Analytics</a>
+        </div>
+        <div class="toc-section">
+            <div class="toc-header">Administration</div>
+            <a class="toc-link" href="#demo-mode">Demo Mode</a>
+        </div>
+        <div class="toc-section">
             <div class="toc-header">Reference</div>
             <a class="toc-link" href="#glossary">Glossary</a>
         </div>
@@ -1037,6 +1046,34 @@ else:
                     is sampled at the moment of failure. Machine enters FAILED then UNDER_REPAIR.
                     <em>Appropriate for low-cost or easily replaced components.</em>
                 </div>
+            </div>
+
+            <h3>Config examples</h3>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0;">
+                <div>
+                    <p style="margin-bottom:6px;font-weight:600;color:var(--accent-green);">CBM — machine never fails</p>
+                    <pre style="font-size:11px;margin:0;">health_states:
+  h_max: 4          # 5 states (0–4)
+  p_degrade: 0.01   # ~100 steps per state
+  cbm_threshold: 3  # repair at state 3
+                    # never reaches h_max=4
+                    # → never enters FAILED</pre>
+                </div>
+                <div>
+                    <p style="margin-bottom:6px;font-weight:600;color:var(--accent-orange, #f0a040);">Run-to-Failure — machine must fail first</p>
+                    <pre style="font-size:11px;margin:0;">health_states:
+  h_max: 4          # 5 states (0–4)
+  p_degrade: 0.01
+  cbm_threshold: 4  # == h_max: repair only
+                    # after reaching FAILED
+                    # → MTTR sampled, machine
+                    # enters UNDER_REPAIR</pre>
+                </div>
+            </div>
+            <div class="callout">
+                To generate clear <code>FAILED → UNDER_REPAIR → PROCESSING</code> transitions for testing the
+                Downtime &amp; Reliability Grafana dashboard, use the <strong>full_feature_8_machine_line_rtf</strong>
+                scenario — it sets <code>cbm_threshold == h_max</code> on every machine.
             </div>
 
             <h3>MTTF scaling for multi-state machines</h3>
@@ -1680,6 +1717,231 @@ segments:
                 Use any OPC UA client (UaExpert, Python <code>asyncua</code>, etc.) to browse and subscribe
                 to nodes. Telegraf polls all nodes automatically when running in Docker.
             </p>
+        </div>
+
+        <!-- ═══════════════════════ MQTT ═══════════════════════ -->
+        <div class="docs-section" id="mqtt">
+            <h2>MQTT PubSub</h2>
+            <p>
+                The simulation can publish a real-time snapshot of every step to an MQTT broker using the
+                <strong>OPC UA Part 14 JSON Network Message</strong> format as well as a flat JSON format.
+                This lets any MQTT subscriber (Node-RED, MQTT Explorer, cloud IoT platform, etc.) receive
+                live machine data without polling OPC UA directly.
+            </p>
+
+            <h3>Enabling MQTT</h3>
+            <pre style="font-size:12px;"># Start OPC UA server with MQTT enabled
+python src/opcua_server.py --scenario full_feature_line --mqtt
+
+# Use a different broker (default: mqtt://mosquitto:1883)
+python src/opcua_server.py --scenario full_feature_line \
+    --mqtt --mqtt-broker mqtt://localhost:1883</pre>
+            <p>
+                MQTT publishing is non-blocking — the simulation clock is never delayed by broker
+                latency. If the broker is unreachable, steps are dropped silently and a warning is
+                logged. The simulation continues normally.
+            </p>
+
+            <h3>Topic layout</h3>
+            <p>
+                Four topics are published per simulation step, using the current <code>run_id</code> as
+                a path segment:
+            </p>
+            <table class="param-table">
+                <thead><tr><th>Topic pattern</th><th>Format</th><th>Content</th></tr></thead>
+                <tbody>
+                    <tr>
+                        <td><code>opcua/simantha/{run_id}/machines/M{i}</code></td>
+                        <td>OPC UA Part 14 JSON</td>
+                        <td>Per-machine KPIs wrapped in a DataSetMessage envelope</td>
+                    </tr>
+                    <tr>
+                        <td><code>opcua/simantha/{run_id}/system</code></td>
+                        <td>OPC UA Part 14 JSON</td>
+                        <td>Line-level KPIs (throughput, OEE, WIP, scrap rate)</td>
+                    </tr>
+                    <tr>
+                        <td><code>simantha/{run_id}/machines/M{i}</code></td>
+                        <td>Flat JSON</td>
+                        <td>Same machine payload without the OPC UA envelope — easier to parse</td>
+                    </tr>
+                    <tr>
+                        <td><code>simantha/{run_id}/system</code></td>
+                        <td>Flat JSON</td>
+                        <td>Line KPIs without OPC UA envelope</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h3>OPC UA Part 14 envelope</h3>
+            <pre style="font-size:11px;">{
+  "MessageId": "step-1234-M1",
+  "MessageType": "ua-data",
+  "PublisherId": "simantha-opcua",
+  "DataSetWriterId": 1,
+  "Timestamp": "2026-03-20T16:09:23Z",
+  "Payload": {
+    "state": "PROCESSING",
+    "oee": 0.87,
+    "parts_made": 412,
+    ...
+  }
+}</pre>
+
+            <h3>Docker deployment</h3>
+            <p>
+                The Docker Compose stack includes a <strong>Mosquitto</strong> MQTT broker container.
+                Enable MQTT for the simulation via the Web UI Start dialog — the broker URL is
+                pre-configured as <code>mqtt://mosquitto:1883</code> inside Docker.
+                MQTT Explorer (port 1884) is also included for ad-hoc topic inspection.
+            </p>
+
+            <h3>Requirements</h3>
+            <p>
+                Install the optional MQTT dependency: <code>pip install paho-mqtt&gt;=2.0</code>.
+                Without it, the <code>--mqtt</code> flag is accepted but MQTT publishing is disabled
+                with a warning.
+            </p>
+        </div>
+
+        <!-- ═══════════════════════ NEO4J ═══════════════════════ -->
+        <div class="docs-section" id="neo4j">
+            <h2>Neo4j Graph Analytics</h2>
+            <p>
+                The <strong>Neo4jHistorian</strong> is an optional event historian backend that writes
+                simulation events to a <a href="https://neo4j.com/" target="_blank">Neo4j</a> graph
+                database. In addition to storage, it runs an automated
+                <strong>causal inference engine</strong> that detects relationships between events
+                — for example, whether a machine failure caused a downstream starvation cascade.
+            </p>
+
+            <h3>Graph schema</h3>
+            <pre style="font-size:11px;">(:Run)        — one node per simulation run (run_id)
+(:Shift)      — one node per shift
+(:Machine)    — one node per machine (created once, reused across runs)
+(:Buffer)     — one node per buffer
+(:Event)      — one node per historian event
+
+Relationships:
+  [:FEEDS]          — Machine/Buffer topology (M1 → B1 → M2 …)
+  [:INCLUDES]       — Run → Machine, Run → Buffer
+  [:HAD_SHIFT]      — Run → Shift
+  [:HAD_EVENT]      — Machine/Buffer → Event
+  [:OCCURRED_IN]    — Event → Shift
+  [:FOLLOWED_BY]    — Event → next Event on same machine (gap_s property)
+  [:CAUSED]         — trigger Event → target Event (type, lag_s properties)</pre>
+
+            <h3>Causal inference rules</h3>
+            <p>
+                The causal engine runs after every batch write, adding <code>:CAUSED</code> edges
+                between events that match configured rules:
+            </p>
+            <table class="param-table">
+                <thead><tr><th>Rule</th><th>Pattern</th><th>Window</th></tr></thead>
+                <tbody>
+                    <tr>
+                        <td>starvation_cascade</td>
+                        <td>Upstream FAILED/UNDER_REPAIR → downstream STARVED within 60 s</td>
+                        <td>60 s</td>
+                    </tr>
+                    <tr>
+                        <td>blocking_cascade</td>
+                        <td>Downstream BLOCKED → upstream BLOCKED within 30 s</td>
+                        <td>30 s</td>
+                    </tr>
+                    <tr>
+                        <td>spc_quality_impact</td>
+                        <td>SPC_VIOLATION → SCRAP or REWORK event on the same machine within 30 s</td>
+                        <td>30 s</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h3>Configuration</h3>
+            <pre style="font-size:12px;">historian:
+  neo4j:
+    enabled: true
+    uri: "bolt://localhost:7687"   # or bolt://neo4j:7687 in Docker
+    user: "neo4j"
+    password: "${NEO4J_PASSWORD}"  # env var substitution supported
+    track_parts: true              # record part genealogy (optional)</pre>
+            <div class="callout">
+                Environment variables in config values are expanded at load time using
+                <code>${VAR_NAME}</code> syntax. Set <code>NEO4J_PASSWORD</code> in your environment
+                or in a <code>.env</code> file before starting.
+            </div>
+
+            <h3>Querying with Neo4j Browser</h3>
+            <p>
+                Connect to <strong>http://localhost:7474</strong> (Neo4j Browser) to run Cypher queries
+                directly. Example queries:
+            </p>
+            <pre style="font-size:11px;">// All events for a run, ordered by sim time
+MATCH (r:Run {run_id: "full_feature_line_20260320_160923"})-[:HAD_EVENT]->(e:Event)
+RETURN e ORDER BY e.sim_time
+
+// Causal chains: what caused M3 to starve?
+MATCH (cause:Event)-[:CAUSED]->(effect:Event {new_state: "STARVED", source: "Machine3"})
+RETURN cause.source, cause.new_state, cause.sim_time, effect.sim_time
+
+// Failure frequency per machine
+MATCH (m:Machine)-[:HAD_EVENT]->(e:Event {new_state: "FAILED"})
+RETURN m.name, count(e) AS failures ORDER BY failures DESC</pre>
+
+            <h3>NeoDash dashboard</h3>
+            <p>
+                <strong>NeoDash</strong> (port 5005 in the Docker stack) is a dashboard builder for
+                Neo4j — similar to Grafana but for Cypher queries. It supports graph panels, tables,
+                and charts. Connect it to <code>bolt://neo4j:7687</code> inside Docker to build
+                custom dashboards on top of the causal graph data.
+            </p>
+
+            <h3>Requirements</h3>
+            <p>
+                Install the optional Neo4j driver: <code>pip install neo4j&gt;=5.0.0</code>.
+                The Neo4j historian uses lazy import — missing the package raises <code>ImportError</code>
+                only when <code>neo4j.enabled: true</code> is set in config.
+            </p>
+        </div>
+
+        <!-- ═══════════════════════ DEMO MODE ═══════════════════════ -->
+        <div class="docs-section" id="demo-mode">
+            <h2>Demo Mode</h2>
+            <p>
+                <strong>Demo mode</strong> is designed for shared or public deployments where old run
+                data should be cleaned up automatically. When enabled, two things change:
+            </p>
+            <ul>
+                <li><strong>CSV historian is disabled</strong> — runs do not write CSV files to disk,
+                    preventing the <code>results/</code> directory from filling up.</li>
+                <li><strong>Automatic data retention</strong> — InfluxDB and Neo4j data older than
+                    <code>retention_days</code> is pruned hourly by a background daemon thread.</li>
+            </ul>
+
+            <h3>Configuring demo mode</h3>
+            <p>
+                Demo mode is controlled via the Web UI settings. Navigate to <strong>Settings</strong>
+                in the navigation bar and toggle <em>Demo Mode</em>. The <code>retention_days</code>
+                value (default: 30) determines how far back historical data is kept.
+            </p>
+            <div class="callout">
+                Settings are stored in <code>docker/webui/demo_settings.json</code>. In Docker,
+                this file persists across container restarts (mounted volume). The trimming runs
+                once per hour when demo mode is active, targeting both the
+                <code>manufacturing</code> InfluxDB bucket and all Neo4j event nodes older than
+                the retention cutoff.
+            </div>
+
+            <h3>When to use demo mode</h3>
+            <table class="param-table">
+                <thead><tr><th>Use case</th><th>Demo mode?</th></tr></thead>
+                <tbody>
+                    <tr><td>Personal development machine</td><td>Off (default) — keep all data</td></tr>
+                    <tr><td>Team demo server or shared deployment</td><td>On — auto-prune old runs</td></tr>
+                    <tr><td>Production MES integration</td><td>Off — retain all historian data</td></tr>
+                    <tr><td>Conference / trade show kiosk</td><td>On with retention_days=1</td></tr>
+                </tbody>
+            </table>
         </div>
 
         <!-- ═══════════════════════ GLOSSARY ═══════════════════════ -->
