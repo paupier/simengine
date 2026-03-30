@@ -749,7 +749,13 @@ The following are identified for future phases (out of scope for current impleme
 
 ## 🗺️ Roadmap
 
-### Recent Changes (2026-03-26)
+### Recent Changes (2026-03-30)
+
+- **OPC UA write caching** — `CachedOpcuaNode` wrapper in `src/opcua_server.py` and `src/recipe_runner.py` skips `set_value()` calls when the value is unchanged since the last write. Reduces per-step OPC UA writes from ~600 to ~150, keeping sim-clock and wall-clock in tight 1:1 sync on long runs.
+- **Grafana dashboard redesigns** — Shift Comparison rebuilt with proper Current vs Previous shift comparison (bar gauges for A/P/Q/OEE, step charts for completed-shift history). Alarm Event Log rebuilt with live Machine Failure Status bar gauges, machine failure timeline, alarm rate-over-time chart, and colour-coded event table.
+- **SPC ViolationCount fix** — `M{N}_SPC_ViolationCount` (integer) restored in `telegraf.conf`; the previous revision had replaced it with `M{N}_SPC_Violations` (string), causing Grafana's Violations stat to show 0.
+
+### Previous Changes (2026-03-26)
 
 - **OPC UA PubSub over MQTT** — `--mqtt` CLI flag enables publishing per-step snapshots to Eclipse Mosquitto in OPC UA Part 14 JSON and flat JSON formats. `--mqtt-broker` sets the broker URL. Web UI dashboard includes MQTT toggle. `src/mqtt_publisher.py` (non-blocking, QoS 0, paho-mqtt 2.0 / MQTTv5).
 - **Downtime & Reliability fix** — MTBF, MTTR, FailureCount and TotalDowntime per failure mode were all zero when using the external repair countdown loop (all realistic MTTR > 1s cases). Root cause: `AdvancedMachine.restore()` (which calls `record_failure()`) was never triggered by the per-step repair countdown. Fix: `_record_external_repair()` is now called when the repair countdown reaches zero, recording the failure into the `FailureModeManager` so all Grafana Downtime & Reliability panels display correctly.
