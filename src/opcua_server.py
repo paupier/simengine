@@ -59,6 +59,53 @@ def _patched_step(self):
 Environment.step = _patched_step
 
 
+# ---------------------------------------------------------------------------
+# OPC UA write cache — skip set_value() when value hasn't changed.
+# With ~600 nodes, each set_value() call takes 2–3ms on the loopback OPC UA
+# server.  Only ~25% of values change each step, so this drops write time
+# from ~1.5s to ~0.4s and restores the 1-second wall-clock / sim-step ratio.
+# ---------------------------------------------------------------------------
+
+_SENTINEL = object()
+
+
+class CachedOpcuaNode:
+    """Wraps an OPC UA variable node, skipping set_value() when value unchanged."""
+
+    __slots__ = ("_node", "_cached_value")
+
+    def __init__(self, node):
+        self._node = node
+        self._cached_value = _SENTINEL
+
+    def set_value(self, value):
+        if value is not self._cached_value:
+            try:
+                if value != self._cached_value:
+                    self._node.set_value(value)
+                    self._cached_value = value
+            except Exception:
+                # Fall back to unconditional write (handles unhashable types)
+                self._node.set_value(value)
+                self._cached_value = value
+
+    def get_value(self):
+        return self._node.get_value()
+
+    def __getattr__(self, name):
+        return getattr(self._node, name)
+
+
+def _wrap_opcua_vars_with_cache(d):
+    """Recursively replace OPC UA node objects in a nested dict with CachedOpcuaNode."""
+    for k, v in d.items():
+        if isinstance(v, dict):
+            _wrap_opcua_vars_with_cache(v)
+        elif hasattr(v, "set_value") and not isinstance(v, CachedOpcuaNode):
+            d[k] = CachedOpcuaNode(v)
+
+
+
 # Monkey-patch Simantha's Sink.initialize() to reset level_data.
 # Bug: Buffer and Machine reset their data lists in initialize(), but Sink does not.
 # Since system.simulate(N) calls initialize() then runs 0..N each step, Sink.level_data
@@ -2722,6 +2769,7 @@ def main(argv=None):
 
     # Build OPC UA server from config
     server, opcua_vars, idx = build_opcua_server(config)
+    _wrap_opcua_vars_with_cache(opcua_vars)
     opcua_vars["system"]["run_id"].set_value(run_id)
 
     # Create shift manager if configured

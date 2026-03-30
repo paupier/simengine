@@ -408,6 +408,7 @@ def run_recipe(
         build_opcua_server,
         run_segment,
         create_shift_manager_from_config,
+        _wrap_opcua_vars_with_cache,
     )
     from event_historian import create_historian_from_config
     from neo4j_historian import create_neo4j_historian_from_config
@@ -422,6 +423,7 @@ def run_recipe(
 
     # Build OPC UA server ONCE (topology doesn't change)
     server, opcua_vars, idx = build_opcua_server(base_config)
+    _wrap_opcua_vars_with_cache(opcua_vars)
     opcua_vars["system"]["run_id"].set_value(run_id)
 
     # Initialize recipe OPC UA vars (if present)
