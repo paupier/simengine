@@ -2270,7 +2270,8 @@ def run_segment(
     import numpy as np
 
     sim_time = 0.0
-    sim_step = 1.0       # simulated seconds per loop iteration; adapts to wall-clock
+    sim_step = 1.0       # simulated seconds per loop iteration
+    real_step = 1.0      # target wall-clock seconds per loop iteration
     warm_up_time = int(config.get("warm_up_time", 0))
     # opcua_update_interval: write OPC UA every N steps (default 1 = every step).
     # Increase for complex scenarios where OPC UA write overhead exceeds budget.
@@ -2383,15 +2384,12 @@ def run_segment(
     line_oee = 0.0
 
     while True:
-        # Adaptive sim_step: measure actual wall-clock elapsed and simulate that
-        # many seconds, scaled by speed_ratio.  sim_time always tracks
-        # wall_clock × speed_ratio regardless of how long computation takes.
-        # The loop is self-correcting: larger steps → more events per call →
-        # slightly longer Simantha time → slightly smaller next step → converges.
-        _now = time.time()
-        speed_ratio = read_opcua_controls(opcua_vars)
-        sim_step = max(0.1, min(5.0, (_now - step_wall_start) * speed_ratio))
-        step_wall_start = _now
+        # Pace wall-clock: sleep for whatever remains of the 1-second budget
+        # after the previous iteration's work.  This keeps sim-time and
+        # wall-clock tightly in sync even when the simulate step is slow.
+        elapsed = time.time() - step_wall_start
+        time.sleep(max(0.0, real_step - elapsed))
+        step_wall_start = time.time()
 
         # Check stop conditions
         if sim_time >= max_sim_time:
@@ -2403,6 +2401,10 @@ def run_segment(
         if target_quantity is not None and total_parts_produced >= target_quantity:
             stop_reason = "quantity_reached"
             break
+
+        # Adjust wall-clock step from SimSpeedRatio (read-only, set at run start)
+        speed_ratio = read_opcua_controls(opcua_vars)
+        real_step = 1.0 / max(0.1, min(10.0, speed_ratio))
 
         # Step simulation — O(1) per step regardless of run length.
         # Seed advances per step: same base seed gives the same trajectory

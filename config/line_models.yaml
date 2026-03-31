@@ -1175,7 +1175,6 @@ full_feature_8_machine_line:
 full_feature_8_machine_line_rtf:
   description: "8-machine full-feature line with CBM disabled (run-to-failure). All machines reach FAILED state before repair, producing clear MTTR/downtime data for dashboard testing."
   warm_up_time: 120
-  opcua_update_interval: 2
   machines:
     - name: M1
       cycle_time: 1.0
