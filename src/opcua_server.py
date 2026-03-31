@@ -2207,8 +2207,7 @@ def run_segment(
     import numpy as np
 
     sim_time = 0.0
-    sim_step = 1.0       # simulated seconds per loop iteration
-    real_step = 1.0      # target wall-clock seconds per loop iteration
+    sim_step = 1.0       # simulated seconds per loop iteration; adapts to wall-clock
     warm_up_time = int(config.get("warm_up_time", 0))
     # opcua_update_interval: write OPC UA every N steps (default 1 = every step).
     # Increase for complex scenarios where OPC UA write overhead exceeds budget.
@@ -2321,12 +2320,15 @@ def run_segment(
     line_oee = 0.0
 
     while True:
-        # Pace wall-clock: sleep for whatever remains of the 1-second budget
-        # after the previous iteration's work.  This keeps sim-time and
-        # wall-clock tightly in sync even when the simulate step is slow.
-        elapsed = time.time() - step_wall_start
-        time.sleep(max(0.0, real_step - elapsed))
-        step_wall_start = time.time()
+        # Adaptive sim_step: measure actual wall-clock elapsed and simulate that
+        # many seconds, scaled by speed_ratio.  sim_time always tracks
+        # wall_clock × speed_ratio regardless of how long computation takes.
+        # The loop is self-correcting: larger steps → more events per call →
+        # slightly longer Simantha time → slightly smaller next step → converges.
+        _now = time.time()
+        speed_ratio = read_opcua_controls(opcua_vars)
+        sim_step = max(0.1, min(5.0, (_now - step_wall_start) * speed_ratio))
+        step_wall_start = _now
 
         # Check stop conditions
         if sim_time >= max_sim_time:
@@ -2339,10 +2341,6 @@ def run_segment(
             stop_reason = "quantity_reached"
             break
 
-        # Adjust wall-clock step from SimSpeedRatio (read-only, set at run start)
-        speed_ratio = read_opcua_controls(opcua_vars)
-        real_step = 1.0 / max(0.1, min(10.0, speed_ratio))
-
         # Step simulation — O(1) per step regardless of run length.
         # Seed advances per step: same base seed gives the same trajectory
         # every run (reproducible), different seeds give independent runs.
@@ -2354,7 +2352,7 @@ def run_segment(
         # starved on every step (Buffer.initialize() normally resets to 0).
         _persist_buffer_state(buffers)
         for mname, mobj in machines.items():
-            mobj._counting_active = line_state.step_count >= warm_up_time
+            mobj._counting_active = sim_time >= warm_up_time
             # Restore saved health and any in-progress part carryover.
             _install_health_restorer(
                 mobj, machine_health[mname],
@@ -2447,7 +2445,7 @@ def run_segment(
         # the denominators include warm-up seconds and PPM/OEE appear near-zero
         # for a long time after warm-up ends (e.g. with warm_up=600 and sim_time
         # only a few steps past 600, actual_ppm = 5 / (605/60) ≈ 0.5).
-        if warm_up_time > 0 and line_state.step_count == warm_up_time:
+        if warm_up_time > 0 and sim_time >= warm_up_time and (sim_time - sim_step) < warm_up_time:
             print(f"[t={sim_time:.0f}s] Warm-up complete ({warm_up_time}s). "
                   f"Resetting time accumulators — PPM/OEE now active.")
             shift_start_time = sim_time
