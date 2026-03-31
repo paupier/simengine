@@ -60,7 +60,7 @@ docker compose -f docker/docker-compose.yml up --build -d
 The core simulation loop is extracted into `run_segment()`, which is called by both single-scenario mode (`main()`) and recipe mode (`run_recipe()`). It accepts stop conditions (`max_sim_time`, `target_quantity`) and returns `(sim_time, parts, stop_reason, oee)`.
 
 The simulation loop delegates to extracted functions for each concern:
-- `read_opcua_controls()` — read pause/interarrival from OPC UA clients
+- `read_opcua_controls()` — read SimSpeedRatio from OPC UA node; sets real_step each iteration
 - `update_part_counter()` — monotonic sink tracking
 - `check_shift_rotation()` — shift boundary detection
 - `collect_system_metrics()` — WIP, maintenance status
@@ -317,7 +317,7 @@ Enterprise (WeylandIndustries)/
       {line_name}_Equipment/
         Identification/           EquipmentID, EquipmentClass, Description, RunID
         OperationsState/          SimTime, LineState, LineMode
-          Controls/               SetInterarrivalTime (read-only; set at run start)
+          Controls/               SimSpeedRatio (read-only; set at run start)
         OperationsPerformance/    Throughput, TotalWIP, TotalScrap, ScrapRate
         OEE/                      Availability, Performance, Quality, OEE, GoodPartCount, DefectivePartCount
         Resources/
@@ -342,7 +342,7 @@ Enterprise (WeylandIndustries)/
         Identification/           PhysicalAssetID, AssetClass, Description
 ```
 
-No OPC UA variables are writable during a run. `SetInterarrivalTime` (under `OperationsState/Controls`) is read-only and reflects the value set when the run started. `CmdPauseLine` was removed in v2.6.
+No OPC UA variables are writable during a run. `SimSpeedRatio` (under `OperationsState/Controls`) is read-only and reflects the sim-to-wall-clock speed ratio set when the run started (1.0 = real-time, 2.0 = 2× faster). `CmdPauseLine` was removed in v2.6.
 
 The `opcua_vars` dict serves as an abstraction layer — internal keys (e.g., `opcua_vars["machines"]["M1"]["state"]`) are unchanged from the main loop's perspective. Only the OPC UA NodeId strings changed.
 

@@ -1063,13 +1063,13 @@ def analyze_part_quality(sink, machines=None, scrap_sinks=None) -> dict:
 
 
 def read_opcua_controls(opcua_vars):
-    """Read the configured interarrival time from the OPC UA node.
+    """Read the sim speed ratio from the OPC UA node.
 
-    SetInterarrivalTime is read-only during a run — it reflects the value
-    the simulation was started with.  Reading it here keeps source.interarrival_time
-    in sync if the value was set via the start API rather than YAML directly.
+    SimSpeedRatio is read-only during a run — it reflects the value the
+    simulation was started with.  1.0 = real-time (1 sim-second per wall-clock
+    second).  2.0 = 2× faster.  0.5 = half speed.
     """
-    return float(opcua_vars["system"]["interarrival_time"].get_value())
+    return float(opcua_vars["system"]["speed_ratio"].get_value())
 
 
 def update_part_counter(sink_level, prev_sink_level):
@@ -1779,7 +1779,7 @@ def build_opcua_server(config: dict):
         tuple: (server, opcua_vars, idx)
                opcua_vars is a structured dict:
                {
-                   "system": {simtime, throughput, pause_line, interarrival_time, ...},
+                   "system": {simtime, throughput, speed_ratio, ...},
                    "line_kpis": {total_wip, line_availability, ...},
                    "machines": {"M1": {...}, "M2": {...}, ...},
                    "buffers": {"B1": {...}, "B2": {...}, ...},
@@ -1861,8 +1861,8 @@ def build_opcua_server(config: dict):
     # Controls under OperationsState (read-only — set at run start, not during run)
     ctrl_p = f"{os_p}.Controls"
     controls_node = ops_state.add_object(_nid(ctrl_p, idx), _qn("Controls", idx))
-    default_interarrival = config.get("source", {}).get("interarrival_time", 1.0)
-    var_interarrival = controls_node.add_variable(_nid(f"{ctrl_p}.SetInterarrivalTime", idx), _qn("SetInterarrivalTime", idx), default_interarrival)
+    default_speed = config.get("controls", {}).get("sim_speed", 1.0)
+    var_interarrival = controls_node.add_variable(_nid(f"{ctrl_p}.SimSpeedRatio", idx), _qn("SimSpeedRatio", idx), default_speed)
 
     # --- Line Equipment > OperationsPerformance ---
     op_p = f"{ep}.OperationsPerformance"
@@ -1973,7 +1973,7 @@ def build_opcua_server(config: dict):
     var_co_planned = recipe_node.add_variable(_nid(f"{rcp_p}.LastChangeoverPlanned", idx), _qn("LastChangeoverPlanned", idx), 0.0)
     var_co_actual = recipe_node.add_variable(_nid(f"{rcp_p}.LastChangeoverActual", idx), _qn("LastChangeoverActual", idx), 0.0)
 
-    # No writable variables — interarrival_time is set at run start only
+    # No writable variables — SimSpeedRatio is set at run start only
 
     # Recipe vars sub-dict
     recipe_vars = {
@@ -1996,7 +1996,7 @@ def build_opcua_server(config: dict):
         "system": {
             "simtime": var_simtime,
             "throughput": var_throughput,
-            "interarrival_time": var_interarrival,
+            "speed_ratio": var_interarrival,
             "line_state": var_line_state,
             "line_mode": var_line_mode,
             "total_events": var_total_events,
@@ -2328,9 +2328,9 @@ def run_segment(
             stop_reason = "quantity_reached"
             break
 
-        # Sync source interarrival from OPC UA node (set at run start, read-only during run)
-        interarrival = read_opcua_controls(opcua_vars)
-        source.interarrival_time = interarrival if interarrival > 0 else None
+        # Adjust wall-clock step from SimSpeedRatio (read-only, set at run start)
+        speed_ratio = read_opcua_controls(opcua_vars)
+        real_step = 1.0 / max(0.1, min(10.0, speed_ratio))
 
         # Step simulation — O(1) per step regardless of run length.
         # Seed advances per step: same base seed gives the same trajectory
@@ -2691,8 +2691,8 @@ def main(argv=None):
                        help="Enable Simantha DES event trace (outputs pickle file)")
     parser.add_argument("--no-csv", action="store_true", dest="no_csv",
                         help="Disable CSV historian (demo/long-run mode)")
-    parser.add_argument("--interarrival-time", type=float, default=None, dest="interarrival_time",
-                       help="Override source interarrival time (seconds) at run start")
+    parser.add_argument("--sim-speed", type=float, default=None, dest="sim_speed",
+                       help="Sim-to-wall-clock speed ratio (1.0 = real-time, 2.0 = 2× faster)")
     parser.add_argument("--mqtt", action="store_true",
                         help="Enable OPC UA PubSub over MQTT publisher")
     parser.add_argument("--mqtt-broker", default="mqtt://mosquitto:1883",
@@ -2757,8 +2757,8 @@ def main(argv=None):
 
     # Load configuration
     config = load_line_config(args.scenario)
-    if args.interarrival_time is not None:
-        config.setdefault("source", {})["interarrival_time"] = args.interarrival_time
+    if args.sim_speed is not None:
+        config.setdefault("controls", {})["sim_speed"] = args.sim_speed
     print(f"Loading scenario: {args.scenario}")
     print(f"RunID: {run_id}")
     _wu = int(config.get("warm_up_time", 0))

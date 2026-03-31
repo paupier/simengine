@@ -106,7 +106,7 @@ sim_recipe = None
 sim_start_time = None
 sim_run_id = None
 sim_seed = None
-sim_interarrival_time = None
+sim_speed_ratio = None
 sim_log = deque(maxlen=200)  # Ring buffer for stdout capture
 sim_lock = threading.Lock()
 
@@ -334,10 +334,10 @@ def _regenerate_telegraf_config(scenario_name, run_id=""):
         print(f"[WebUI] Warning: Could not regenerate Telegraf config: {e}")
 
 
-def start_simulation(scenario, seed=None, interarrival_time=None, mqtt=False, mqtt_broker=""):
+def start_simulation(scenario, seed=None, speed_ratio=None, mqtt=False, mqtt_broker=""):
     """Spawn opcua_server.py as a subprocess."""
     global sim_process, sim_scenario, sim_recipe
-    global sim_start_time, sim_run_id, sim_seed, sim_interarrival_time
+    global sim_start_time, sim_run_id, sim_seed, sim_speed_ratio
 
     with sim_lock:
         stop_simulation()
@@ -351,8 +351,8 @@ def start_simulation(scenario, seed=None, interarrival_time=None, mqtt=False, mq
         cmd = ["python", OPCUA_SERVER_SCRIPT, "--scenario", scenario]
         if seed is not None:
             cmd += ["--seed", str(seed)]
-        if interarrival_time is not None:
-            cmd += ["--interarrival-time", str(interarrival_time)]
+        if speed_ratio is not None:
+            cmd += ["--sim-speed", str(speed_ratio)]
         if _read_settings().get("demo_mode"):
             cmd.append("--no-csv")
         if mqtt:
@@ -377,7 +377,7 @@ def start_simulation(scenario, seed=None, interarrival_time=None, mqtt=False, mq
         sim_recipe = None
         sim_start_time = time.time()
         sim_seed = seed
-        sim_interarrival_time = interarrival_time
+        sim_speed_ratio = speed_ratio
 
         # Disconnect OPC UA client (will reconnect lazily)
         _disconnect_opcua()
@@ -387,10 +387,10 @@ def start_simulation(scenario, seed=None, interarrival_time=None, mqtt=False, mq
         t.start()
 
 
-def start_simulation_recipe(recipe_name, seed=None, interarrival_time=None, mqtt=False, mqtt_broker=""):
+def start_simulation_recipe(recipe_name, seed=None, speed_ratio=None, mqtt=False, mqtt_broker=""):
     """Spawn opcua_server.py in recipe mode as a subprocess."""
     global sim_process, sim_scenario, sim_recipe
-    global sim_start_time, sim_run_id, sim_seed, sim_interarrival_time
+    global sim_start_time, sim_run_id, sim_seed, sim_speed_ratio
 
     with sim_lock:
         stop_simulation()
@@ -408,8 +408,8 @@ def start_simulation_recipe(recipe_name, seed=None, interarrival_time=None, mqtt
         cmd = ["python", OPCUA_SERVER_SCRIPT, "--recipe", recipe_name]
         if seed is not None:
             cmd += ["--seed", str(seed)]
-        if interarrival_time is not None:
-            cmd += ["--interarrival-time", str(interarrival_time)]
+        if speed_ratio is not None:
+            cmd += ["--sim-speed", str(speed_ratio)]
         if _read_settings().get("demo_mode"):
             cmd.append("--no-csv")
         if mqtt:
@@ -434,7 +434,7 @@ def start_simulation_recipe(recipe_name, seed=None, interarrival_time=None, mqtt
         sim_recipe = recipe_name
         sim_start_time = time.time()
         sim_seed = seed
-        sim_interarrival_time = interarrival_time
+        sim_speed_ratio = speed_ratio
 
         # Disconnect OPC UA client (will reconnect lazily)
         _disconnect_opcua()
@@ -521,7 +521,7 @@ def _read_opcua_values():
         sim_time = ops_state.get_child(["2:SimTime"]).get_value()
 
         controls = ops_state.get_child(["2:Controls"])
-        interarrival = controls.get_child(["2:SetInterarrivalTime"]).get_value()
+        interarrival = controls.get_child(["2:SimSpeedRatio"]).get_value()
 
         # OperationsPerformance
         ops_perf = line_equip.get_child(["2:OperationsPerformance"])
@@ -630,7 +630,7 @@ def _read_opcua_values():
         result = {
             "sim_time": sim_time,
             "throughput": throughput,
-            "interarrival_time": interarrival,
+            "speed_ratio": interarrival,
             "machines": machines,
             "line_oee": line_oee,
             "line_kpis": line_kpis,
@@ -680,7 +680,7 @@ def api_status():
         "uptime_seconds": uptime,
         "pid": sim_process.pid if sim_process else None,
         "seed": sim_seed,
-        "interarrival_time": sim_interarrival_time,
+        "speed_ratio": sim_speed_ratio,
     }
 
     # Include OPC UA values if running
@@ -698,7 +698,7 @@ def api_start():
     data = request.get_json(force=True) if request.data else {}
     scenario = data.get("scenario", "balanced_line")
     seed = data.get("seed")
-    interarrival_time = data.get("interarrival_time")
+    speed_ratio = data.get("speed_ratio")
     mqtt = bool(data.get("mqtt", False))
     mqtt_broker = data.get("mqtt_broker", "")
 
@@ -713,15 +713,15 @@ def api_start():
         except (ValueError, TypeError):
             return jsonify({"error": "seed must be an integer"}), 400
 
-    if interarrival_time is not None:
+    if speed_ratio is not None:
         try:
-            interarrival_time = float(interarrival_time)
-            if interarrival_time <= 0:
-                return jsonify({"error": "interarrival_time must be positive"}), 400
+            speed_ratio = float(speed_ratio)
+            if speed_ratio <= 0:
+                return jsonify({"error": "speed_ratio must be positive"}), 400
         except (ValueError, TypeError):
-            return jsonify({"error": "interarrival_time must be a number"}), 400
+            return jsonify({"error": "speed_ratio must be a number"}), 400
 
-    start_simulation(scenario, seed, interarrival_time, mqtt=mqtt, mqtt_broker=mqtt_broker)
+    start_simulation(scenario, seed, speed_ratio, mqtt=mqtt, mqtt_broker=mqtt_broker)
     return jsonify({"status": "started", "scenario": scenario, "seed": seed})
 
 
@@ -745,8 +745,8 @@ def api_logs():
 def api_control():
     """Runtime control endpoint.
 
-    SetInterarrivalTime and CmdPauseLine have been removed — interarrival is
-    a start-time parameter and pause is handled via /api/stop.  This endpoint
+    SimSpeedRatio and CmdPauseLine have been removed as writable nodes —
+    speed is a start-time parameter and pause is handled via /api/stop.  This endpoint
     is kept for backward compatibility but no longer writes OPC UA variables.
     """
     return jsonify({"status": "ok", "written": {}})
@@ -978,7 +978,7 @@ def api_start_recipe():
     data = request.get_json(force=True) if request.data else {}
     recipe_name = data.get("recipe")
     seed = data.get("seed")
-    interarrival_time = data.get("interarrival_time")
+    speed_ratio = data.get("speed_ratio")
     mqtt = bool(data.get("mqtt", False))
     mqtt_broker = data.get("mqtt_broker", "")
 
@@ -996,15 +996,15 @@ def api_start_recipe():
         except (ValueError, TypeError):
             return jsonify({"error": "seed must be an integer"}), 400
 
-    if interarrival_time is not None:
+    if speed_ratio is not None:
         try:
-            interarrival_time = float(interarrival_time)
-            if interarrival_time <= 0:
-                return jsonify({"error": "interarrival_time must be positive"}), 400
+            speed_ratio = float(speed_ratio)
+            if speed_ratio <= 0:
+                return jsonify({"error": "speed_ratio must be positive"}), 400
         except (ValueError, TypeError):
-            return jsonify({"error": "interarrival_time must be a number"}), 400
+            return jsonify({"error": "speed_ratio must be a number"}), 400
 
-    start_simulation_recipe(recipe_name, seed, interarrival_time, mqtt=mqtt, mqtt_broker=mqtt_broker)
+    start_simulation_recipe(recipe_name, seed, speed_ratio, mqtt=mqtt, mqtt_broker=mqtt_broker)
     return jsonify({"status": "started", "recipe": recipe_name, "seed": seed})
 
 

@@ -718,10 +718,10 @@
                     <input type="number" id="seed-input" class="form-control form-control-sm" placeholder="e.g. 42">
                 </div>
                 <div class="mb-3">
-                    <label class="form-label" for="interarrival-input">Interarrival Time (s, optional)</label>
+                    <label class="form-label" for="interarrival-input">Sim Speed Ratio (optional)</label>
                     <input type="number" id="interarrival-input" class="form-control form-control-sm"
-                           placeholder="e.g. 1.0" min="0.01" step="0.1">
-                    <small class="form-text" style="color:var(--text-dim);">Override source part arrival rate</small>
+                           placeholder="1.0 (real-time)" min="0.1" max="10" step="0.1">
+                    <small class="form-text" style="color:var(--text-dim);">1 = real-time &nbsp;·&nbsp; 2 = 2× faster &nbsp;·&nbsp; 0.5 = half speed</small>
                 </div>
                 <div class="mb-3">
                     <div class="form-check form-switch mb-1">
@@ -909,7 +909,7 @@
                 const recipe = document.getElementById('recipe-select').value;
                 const body = { recipe };
                 if (seedVal) body.seed = parseInt(seedVal);
-                if (interarrivalVal) body.interarrival_time = parseFloat(interarrivalVal);
+                if (interarrivalVal) body.speed_ratio = parseFloat(interarrivalVal);
                 if (mqttEnabled) { body.mqtt = true; body.mqtt_broker = mqttBroker; }
                 await fetch('/api/start-recipe', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -919,7 +919,7 @@
                 const scenario = document.getElementById('scenario-select').value;
                 const body = { scenario };
                 if (seedVal) body.seed = parseInt(seedVal);
-                if (interarrivalVal) body.interarrival_time = parseFloat(interarrivalVal);
+                if (interarrivalVal) body.speed_ratio = parseFloat(interarrivalVal);
                 if (mqttEnabled) { body.mqtt = true; body.mqtt_broker = mqttBroker; }
                 await fetch('/api/start', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1222,7 +1222,7 @@
                     const seedEl = document.getElementById('seed-input');
                     if (seedEl.value === '') seedEl.value = data.seed != null ? data.seed : '';
                     const iaEl = document.getElementById('interarrival-input');
-                    if (iaEl.value === '') iaEl.value = data.interarrival_time != null ? data.interarrival_time : '';
+                    if (iaEl.value === '') iaEl.value = data.speed_ratio != null ? data.speed_ratio : '';
                 }
 
                 if (data.opcua) {
