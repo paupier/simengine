@@ -720,8 +720,10 @@
                 <div class="mb-3">
                     <label class="form-label" for="interarrival-input">Sim Speed Ratio (optional)</label>
                     <input type="number" id="interarrival-input" class="form-control form-control-sm"
-                           placeholder="1.0 (real-time)" min="0.1" max="10" step="0.1">
-                    <small class="form-text" style="color:var(--text-dim);">1 = real-time &nbsp;·&nbsp; 2 = 2× faster &nbsp;·&nbsp; 0.5 = half speed</small>
+                           placeholder="1.0 (real-time)" min="0.1" max="4" step="0.1"
+                           oninput="updateSpeedRatioWarning(this.value)">
+                    <small class="form-text" style="color:var(--text-dim);">1 = real-time &nbsp;·&nbsp; 2 = 2× faster &nbsp;·&nbsp; 0.5 = half speed &nbsp;·&nbsp; max 4×</small>
+                    <div id="speed-ratio-warning" style="display:none;font-size:.8em;margin-top:4px;"></div>
                 </div>
                 <div class="mb-3">
                     <div class="form-check form-switch mb-1">
@@ -1465,6 +1467,24 @@
         fetch('/api/settings').then(r => r.json()).then(s => {
             if (s.demo_mode) document.getElementById('demo-pill').classList.add('active');
         }).catch(() => {});
+
+        function updateSpeedRatioWarning(val) {
+            const el = document.getElementById('speed-ratio-warning');
+            const v = parseFloat(val);
+            if (!el) return;
+            if (isNaN(v) || v <= 1.0) {
+                el.style.display = 'none';
+                el.textContent = '';
+            } else if (v <= 2.0) {
+                el.style.display = 'block';
+                el.style.color = '#f0ad4e';
+                el.textContent = 'Running faster than real-time — Telegraf samples will cover multiple sim-seconds.';
+            } else {
+                el.style.display = 'block';
+                el.style.color = '#e07b39';
+                el.textContent = 'Cause-effect resolution reduced — state transitions within each Telegraf interval may be missed.';
+            }
+        }
     </script>
 </body>
 </html>
