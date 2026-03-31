@@ -24,8 +24,14 @@ Result: sim_time falls to ~41% of wall-clock time. A 12-hour run produces only ~
 
 Add an optional `dead_band` parameter to `CachedOpcuaNode`. When set, a `set_value()` call is skipped if the new value is within `dead_band` of the last written value.
 
+The current class uses `__slots__ = ("_node", "_cached_value")`. The updated class must change `__slots__` and rename `_cached_value` to `_last_value`:
+
 ```python
+_UNSET = object()
+
 class CachedOpcuaNode:
+    __slots__ = ("_node", "_last_value", "_dead_band")
+
     def __init__(self, node, dead_band=None):
         self._node = node
         self._last_value = _UNSET
@@ -46,20 +52,42 @@ class CachedOpcuaNode:
             return
         self._node.set_value(value)
         self._last_value = value
+
+    def get_value(self):
+        return self._node.get_value()
 ```
 
-Dead-band values applied at node creation in `build_opcua_server()`:
+**Integration with `_wrap_opcua_vars_with_cache()`:**
+
+The existing `_wrap_opcua_vars_with_cache()` bulk-wraps all nodes without dead-band. It must be removed (or bypassed) and replaced by per-node wrapping directly in `build_opcua_server()`. Each node is wrapped individually at creation time with its appropriate dead-band:
+
+```python
+# OEE components
+var_oee = CachedOpcuaNode(oee_node.add_variable(..., "OEE", 0.0), dead_band=0.001)
+
+# Time accumulators
+var_proc_time = CachedOpcuaNode(perf_node.add_variable(..., "ProcessingTime", 0.0), dead_band=1.0)
+
+# Discrete/string — no dead-band
+var_state = CachedOpcuaNode(ops_node.add_variable(..., "State", "IDLE"))
+```
+
+This replaces the post-build bulk-wrap call entirely.
+
+Dead-band values by node category:
 
 | Node category | Examples | Dead-band |
 |---|---|---|
 | OEE components (0–1 float) | Availability, Performance, Quality, OEE | `0.001` |
 | Time accumulators (float seconds) | ProcessingTime, BlockedTime, StarvedTime, DownTime, IdleTime | `1.0` |
+| Failure mode accumulators (float seconds) | `{fm}_downtime`, `{fm}_mtbf`, `{fm}_mttr` per failure mode | `1.0` |
 | Throughput rate (float PPM) | ActualPPM | `0.5` |
-| Sim clock | SimTime | `0.5` |
-| Integer/discrete | PartCount, BufferLevel, HealthState | None (equality check sufficient) |
+| Integer/discrete | PartCount, BufferLevel, HealthState, GoodPartCount, DefectivePartCount | None (equality check sufficient) |
 | String/bool | State, alarm flags | None (always write on change) |
 
-Dead-band values are hardcoded by category, not per-scenario YAML config. They reflect meaningful precision for each metric type.
+Note: `SimTime` is **not** assigned a dead-band. With `sim_step = 1.0` (fixed), SimTime increments by exactly 1.0 each step, so a dead-band of 0.5 would always trigger a write anyway — it has no effect and is misleading to include.
+
+Dead-band values are hardcoded by category, not per-scenario YAML config. They reflect meaningful display precision for each metric type.
 
 Expected outcome: effective writes per step drop from ~300 to ~20–40. Each step completes in ~50–80ms, well within the 1s budget.
 
@@ -69,12 +97,12 @@ The adaptive sim_step introduced in commit `eaea8ca` is reverted. Restore:
 - `sim_step = 1.0` (fixed 1 simulated second per step)
 - `real_step = 1.0 / max(0.1, min(10.0, speed_ratio))`
 - `time.sleep(max(0.0, real_step - elapsed))` pacing
-- Warm-up guard: `line_state.step_count >= warm_up_time`
-- Warm-up reset: `line_state.step_count == warm_up_time`
+
+The warm-up guard `sim_time >= warm_up_time` (introduced in `eaea8ca`) is **kept as-is** — with `sim_step = 1.0` fixed, `sim_time` and `step_count` are numerically equivalent after the first step, so there is no functional difference. No change needed for the warm-up logic.
+
+Also revert `opcua_update_interval: 2` from `full_feature_8_machine_line_rtf` in `config/line_models.yaml` (no longer needed).
 
 With dead-band reducing computation to ~80ms/step, sleep handles the remaining ~920ms at speed_ratio=1.0. sim_time advances exactly 1s per step and tracks wall-clock naturally.
-
-Also revert `opcua_update_interval: 2` from `full_feature_8_machine_line_rtf` (no longer needed).
 
 ### Component 3: UI speed ratio guard (`docker/webui/templates/index.html`)
 
@@ -91,7 +119,7 @@ The 4× cap reflects the practical limit where a 1s Telegraf poll covers 4 sim-s
 ```
 Simantha simulate(1s)           ~20ms
 State detection + OEE           ~15ms
-Dead-band OPC UA writes         ~50ms  (was ~1000ms)
+Dead-band OPC UA writes         ~50ms  (was ~1000ms, projected not measured)
 Historian + MQTT                ~10ms
 sleep(remaining budget)         ~905ms
 ─────────────────────────────────────
@@ -99,6 +127,8 @@ Total per step                  ~1000ms  → sim_time = wall_clock ✓
 ```
 
 Telegraf polls OPC UA every 1s, capturing the state as of the most recently completed step. State transitions (PROCESSING → BLOCKED) written every step appear in InfluxDB at 1s wall-clock resolution. Cause-effect chains that span 2+ seconds are fully visible.
+
+The timing budget above is a projection. A manual smoke test against the `full_feature_8_machine_line_rtf` scenario should confirm actual per-step elapsed time after implementation.
 
 ## What Is Not Changing
 
@@ -111,7 +141,8 @@ Telegraf polls OPC UA every 1s, capturing the state as of the most recently comp
 ## Testing
 
 - All 584 existing unit tests must continue to pass
-- Verify `CachedOpcuaNode.set_value()` skips writes within dead-band (unit test)
-- Verify `CachedOpcuaNode.set_value()` writes when dead-band is crossed (unit test)
-- Verify `CachedOpcuaNode.set_value()` always writes non-numeric values on change (unit test)
-- Verify non-dead-band nodes (State, alarms) still write every change
+- Unit test: `CachedOpcuaNode.set_value()` skips write when change is within dead-band
+- Unit test: `CachedOpcuaNode.set_value()` writes when dead-band threshold is crossed
+- Unit test: `CachedOpcuaNode.set_value()` always writes non-numeric (string/bool) values on change
+- Unit test: `CachedOpcuaNode` with `dead_band=None` behaves identically to the old implementation
+- Integration smoke test: start `full_feature_8_machine_line_rtf`, observe that sim_time advances at ~1s per real second after 60 seconds of runtime
