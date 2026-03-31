@@ -1137,7 +1137,7 @@ def process_machine_step(machine_name, machine_obj, metrics, config_machines,
                          total_parts_produced, sim_step, maintainer,
                          shift_manager, spc_monitors, opcua_vars, sink, sim_time,
                          shift_oee_snapshot=None, shift_start_time=0.0,
-                         machine_totals=None):
+                         machine_totals=None, write_opcua=True):
     """Process one simulation step for a single machine.
 
     Updates metrics, detects state, calculates OEE, updates alarms, SPC,
@@ -1272,11 +1272,12 @@ def process_machine_step(machine_name, machine_obj, metrics, config_machines,
     )
     utilisation = metrics["processing_time"] / total_time if total_time > 0 else 0.0
 
-    # Write all OPC UA variables for this machine
-    write_machine_opcua_vars(machine_vars, machine_obj, current_state, metrics,
-                             utilisation, oee_result, health_state,
-                             spc_monitors.get(machine_name), new_parts,
-                             machine_totals=machine_totals)
+    # Write all OPC UA variables for this machine (skipped on off-interval steps)
+    if write_opcua:
+        write_machine_opcua_vars(machine_vars, machine_obj, current_state, metrics,
+                                 utilisation, oee_result, health_state,
+                                 spc_monitors.get(machine_name), new_parts,
+                                 machine_totals=machine_totals)
 
     return machine_alarms
 
@@ -1387,8 +1388,11 @@ def write_machine_opcua_vars(machine_vars, machine_obj, current_state, metrics,
             machine_vars["qr_rework_success_rate"].set_value(rsr)
 
 
-def update_buffers(buffers, opcua_vars):
+def update_buffers(buffers, opcua_vars, write_opcua=True):
     """Update buffer levels and detect buffer alarms.
+
+    Alarm detection always runs (historian needs transitions every step).
+    OPC UA writes are skipped when write_opcua=False.
 
     Returns:
         dict: buffer_alarms_map {buffer_name: [alarm_tuples]}
@@ -1396,7 +1400,8 @@ def update_buffers(buffers, opcua_vars):
     buffer_alarms_map = {}
     for buffer_name, buffer_obj in buffers.items():
         buffer_vars = opcua_vars["buffers"][buffer_name]
-        buffer_vars["level"].set_value(buffer_obj.level)
+        if write_opcua:
+            buffer_vars["level"].set_value(buffer_obj.level)
 
         if not hasattr(buffer_obj, '_alarm_state'):
             buffer_obj._alarm_state = {}
@@ -1409,14 +1414,15 @@ def update_buffers(buffers, opcua_vars):
         )
 
         if buffer_alarms:
-            update_alarm_variables(buffer_vars, buffer_alarms)
+            if write_opcua:
+                update_alarm_variables(buffer_vars, buffer_alarms)
             buffer_alarms_map[buffer_name] = buffer_alarms
 
     return buffer_alarms_map
 
 
 def update_scrap_tracking(scrap_sinks, total_parts_produced, opcua_vars,
-                          scrap_totals=None):
+                          scrap_totals=None, write_opcua=True):
     """Update scrap sink levels and compute scrap KPIs. Returns total_scrap.
 
     Args:
@@ -1424,6 +1430,7 @@ def update_scrap_tracking(scrap_sinks, total_parts_produced, opcua_vars,
             by the caller across steps.  When provided it is used in place of
             scrap_obj.level (which resets to 0 each step and caused the
             scrap-rate metric to jump between a per-step spike and 0).
+        write_opcua: When False, skip OPC UA set_value calls (computation still runs).
     """
     total_scrap = 0
     for scrap_name, scrap_obj in scrap_sinks.items():
@@ -1432,14 +1439,15 @@ def update_scrap_tracking(scrap_sinks, total_parts_produced, opcua_vars,
         else:
             scrap_level = scrap_obj.level
         total_scrap += scrap_level
-        if scrap_name in opcua_vars["scrap_sinks"]:
+        if write_opcua and scrap_name in opcua_vars["scrap_sinks"]:
             opcua_vars["scrap_sinks"][scrap_name]["level"].set_value(scrap_level)
 
-    total_output = total_parts_produced + total_scrap
-    opcua_vars["scrap_kpis"]["total_scrap"].set_value(total_scrap)
-    opcua_vars["scrap_kpis"]["scrap_rate"].set_value(
-        total_scrap / total_output if total_output > 0 else 0.0
-    )
+    if write_opcua:
+        total_output = total_parts_produced + total_scrap
+        opcua_vars["scrap_kpis"]["total_scrap"].set_value(total_scrap)
+        opcua_vars["scrap_kpis"]["scrap_rate"].set_value(
+            total_scrap / total_output if total_output > 0 else 0.0
+        )
     return total_scrap
 
 
@@ -2202,6 +2210,9 @@ def run_segment(
     sim_step = 1.0       # simulated seconds per loop iteration
     real_step = 1.0      # target wall-clock seconds per loop iteration
     warm_up_time = int(config.get("warm_up_time", 0))
+    # opcua_update_interval: write OPC UA every N steps (default 1 = every step).
+    # Increase for complex scenarios where OPC UA write overhead exceeds budget.
+    opcua_interval = max(1, int(config.get("opcua_update_interval", 1)))
     step_wall_start = time.time()  # initialised here; reset at top of each iteration
 
     # LineState owns all accumulated counters across simulate() calls.
@@ -2483,6 +2494,10 @@ def run_segment(
         total_wip, maint_active, maint_queue_length, total_repairs = \
             collect_system_metrics(buffers, maintainer, machines)
 
+        # Gate OPC UA writes: write every opcua_interval steps to cap write overhead.
+        # Computation (state detection, OEE, alarms) still runs every step.
+        write_opcua = (line_state.step_count % opcua_interval == 0)
+
         # Per-machine processing
         machine_alarms_map = {}
         for machine_name, machine_obj in machines.items():
@@ -2493,16 +2508,17 @@ def run_segment(
                 sim_time,
                 shift_oee_snapshot=shift_oee_snapshots.get(machine_name),
                 shift_start_time=shift_start_time,
-                machine_totals=line_state.machines.get(machine_name))
+                machine_totals=line_state.machines.get(machine_name),
+                write_opcua=write_opcua)
             if alarms:
                 machine_alarms_map[machine_name] = alarms
 
-        # Buffer levels and alarms
-        buffer_alarms_map = update_buffers(buffers, opcua_vars)
+        # Buffer levels and alarms (alarm detection runs every step for historian)
+        buffer_alarms_map = update_buffers(buffers, opcua_vars, write_opcua=write_opcua)
 
-        # Scrap tracking
+        # Scrap tracking (total_scrap computation runs every step; OPC UA writes gated)
         total_scrap = update_scrap_tracking(scrap_sinks, total_parts_produced, opcua_vars,
-                                            scrap_totals=scrap_totals)
+                                            scrap_totals=scrap_totals, write_opcua=write_opcua)
         _total_output = total_parts_produced + total_scrap
         scrap_rate = total_scrap / _total_output if _total_output > 0 else 0.0
 
@@ -2514,14 +2530,16 @@ def run_segment(
         line_defective = sum(m.get("defective_parts", 0) for m in machine_metrics.values())
 
         # Write system KPIs to OPC UA
-        write_system_opcua_vars(opcua_vars, sim_time, total_parts_produced, total_wip,
-                                line_avail, line_perf, line_qual, line_oee,
-                                maint_active, maint_queue_length, total_repairs,
-                                line_good_parts=line_good,
-                                line_defective_parts=line_defective)
+        if write_opcua:
+            write_system_opcua_vars(opcua_vars, sim_time, total_parts_produced, total_wip,
+                                    line_avail, line_perf, line_qual, line_oee,
+                                    maint_active, maint_queue_length, total_repairs,
+                                    line_good_parts=line_good,
+                                    line_defective_parts=line_defective)
 
         # Shift OPC UA updates
-        update_shift_opcua_vars(shift_manager, opcua_vars, sim_time, delta_parts)
+        if write_opcua:
+            update_shift_opcua_vars(shift_manager, opcua_vars, sim_time, delta_parts)
 
         # MQTT PubSub — publish full snapshot if enabled
         if mqtt_publisher is not None:
