@@ -776,3 +776,90 @@ class TestMTTFScaling:
         ttd = m.get_time_to_degrade()
         # Should be unscaled: 600
         assert ttd == pytest.approx(600.0)
+
+
+# ---------------------------------------------------------------------------
+# CachedOpcuaNode dead-band tests
+# ---------------------------------------------------------------------------
+
+class _MockNode:
+    """Minimal OPC UA node mock that records write calls."""
+    def __init__(self):
+        self.write_count = 0
+        self.last_value = None
+
+    def set_value(self, v):
+        self.write_count += 1
+        self.last_value = v
+
+    def get_value(self):
+        return self.last_value
+
+
+class TestCachedOpcuaNodeDeadBand:
+    def test_no_dead_band_writes_on_every_change(self):
+        """dead_band=None: same as original — writes when value changes."""
+        from opcua_server import CachedOpcuaNode
+        node = _MockNode()
+        cached = CachedOpcuaNode(node, dead_band=None)
+        cached.set_value(1.0)
+        cached.set_value(1.0001)  # tiny change — should write (no dead-band)
+        assert node.write_count == 2
+
+    def test_dead_band_suppresses_small_change(self):
+        """Change smaller than dead_band is not written."""
+        from opcua_server import CachedOpcuaNode
+        node = _MockNode()
+        cached = CachedOpcuaNode(node, dead_band=0.001)
+        cached.set_value(0.9841)        # first write
+        cached.set_value(0.98415)       # delta=0.00005 < 0.001 → skip
+        assert node.write_count == 1
+        assert node.last_value == 0.9841
+
+    def test_dead_band_writes_when_threshold_crossed(self):
+        """Change >= dead_band triggers a write."""
+        from opcua_server import CachedOpcuaNode
+        node = _MockNode()
+        cached = CachedOpcuaNode(node, dead_band=0.001)
+        cached.set_value(0.9841)        # first write
+        cached.set_value(0.9852)        # delta=0.0011 >= 0.001 → write
+        assert node.write_count == 2
+        assert node.last_value == 0.9852
+
+    def test_first_call_always_writes(self):
+        """First set_value always writes regardless of dead_band."""
+        from opcua_server import CachedOpcuaNode
+        node = _MockNode()
+        cached = CachedOpcuaNode(node, dead_band=0.001)
+        cached.set_value(0.0)
+        assert node.write_count == 1
+
+    def test_dead_band_non_numeric_always_writes_on_change(self):
+        """Strings/bools fall through to equality check — always write on change."""
+        from opcua_server import CachedOpcuaNode
+        node = _MockNode()
+        cached = CachedOpcuaNode(node, dead_band=0.001)
+        cached.set_value("IDLE")
+        cached.set_value("BLOCKED")     # different string — must write
+        assert node.write_count == 2
+
+    def test_dead_band_non_numeric_skips_identical(self):
+        """Strings that don't change are not written even with dead_band set."""
+        from opcua_server import CachedOpcuaNode
+        node = _MockNode()
+        cached = CachedOpcuaNode(node, dead_band=0.001)
+        cached.set_value("IDLE")
+        cached.set_value("IDLE")        # same — skip
+        assert node.write_count == 1
+
+    def test_dead_band_accumulates_from_last_written_value(self):
+        """Dead-band is relative to the last *written* value, not the last *seen* value."""
+        from opcua_server import CachedOpcuaNode
+        node = _MockNode()
+        cached = CachedOpcuaNode(node, dead_band=0.001)
+        cached.set_value(1.000)         # write (count=1)
+        cached.set_value(1.0005)        # delta vs 1.000 = 0.0005 < 0.001 → skip
+        cached.set_value(1.0008)        # delta vs 1.000 = 0.0008 < 0.001 → skip
+        cached.set_value(1.0015)        # delta vs 1.000 = 0.0015 >= 0.001 → write (count=2)
+        assert node.write_count == 2
+        assert node.last_value == 1.0015

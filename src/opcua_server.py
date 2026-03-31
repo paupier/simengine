@@ -68,17 +68,75 @@ Environment.step = _patched_step
 
 _SENTINEL = object()
 
+# ---------------------------------------------------------------------------
+# Dead-band mapping — keys that change by tiny float increments every step
+# get a dead_band so set_value() is skipped until the change is meaningful.
+# Keys NOT listed here use exact-equality caching (integers, strings, bools).
+# All keys are direct opcua_vars dict keys (not dotted paths).
+# ---------------------------------------------------------------------------
+_OEE_FLOAT_KEYS = frozenset([
+    "availability", "performance", "quality", "oee", "utilisation",
+    "health_pct", "theoretical",
+    "line_availability", "line_performance", "line_quality", "line_oee",
+    "scrap_rate", "qr_rework_success_rate",
+    # SPC chart and capability floats
+    "cp", "cpk", "pp", "ppk", "sigma_level",
+    "xbar_current", "xbar_ucl", "xbar_cl", "xbar_lcl",
+    "r_current", "r_ucl", "r_cl", "r_lcl",
+])
+_TIME_ACC_KEYS = frozenset([
+    "blocked_time", "starved_time", "down_time", "processing_time", "idle_time",
+    "shift_total_time", "ms_next_pm",
+])
+_PPM_KEYS = frozenset(["actual_ppm"])
+
+
+def _get_dead_band_for_key(key: str):
+    """Return dead-band for a given opcua_vars dict key, or None for exact-match caching.
+
+    None means use equality check only (integers, strings, booleans, part counts).
+    """
+    if key in _OEE_FLOAT_KEYS:
+        return 0.001
+    if key in _TIME_ACC_KEYS:
+        return 1.0
+    if key in _PPM_KEYS:
+        return 0.5
+    # Per-failure-mode float accumulators: fm_{name}_downtime / _mtbf / _mttr
+    if key.endswith("_downtime") or key.endswith("_mtbf") or key.endswith("_mttr"):
+        return 1.0
+    return None  # exact equality (integers, strings, bools, part counts)
+
 
 class CachedOpcuaNode:
-    """Wraps an OPC UA variable node, skipping set_value() when value unchanged."""
+    """Wraps an OPC UA variable node, skipping set_value() when value is unchanged.
 
-    __slots__ = ("_node", "_cached_value")
+    When dead_band is set, writes are also suppressed if the numeric change is
+    smaller than the band — prevents expensive set_value() calls for slowly-drifting
+    floats (OEE, time accumulators) that change by negligible amounts each step.
+    """
 
-    def __init__(self, node):
+    __slots__ = ("_node", "_cached_value", "_dead_band")
+
+    def __init__(self, node, dead_band=None):
         self._node = node
         self._cached_value = _SENTINEL
+        self._dead_band = dead_band
 
     def set_value(self, value):
+        # First call: always write unconditionally
+        if self._cached_value is _SENTINEL:
+            self._node.set_value(value)
+            self._cached_value = value
+            return
+        # Dead-band check for numeric values
+        if self._dead_band is not None:
+            try:
+                if abs(value - self._cached_value) < self._dead_band:
+                    return
+            except TypeError:
+                pass  # non-numeric: fall through to equality check
+        # Exact equality check (handles strings, bools, ints)
         if value is not self._cached_value:
             try:
                 if value != self._cached_value:
@@ -97,12 +155,17 @@ class CachedOpcuaNode:
 
 
 def _wrap_opcua_vars_with_cache(d):
-    """Recursively replace OPC UA node objects in a nested dict with CachedOpcuaNode."""
+    """Recursively replace OPC UA node objects in a nested dict with CachedOpcuaNode.
+
+    Dead-bands are assigned per key via _get_dead_band_for_key() to suppress writes
+    for slowly-changing floats (OEE, time accumulators) while preserving every-step
+    writes for discrete values (State, alarms, part counts).
+    """
     for k, v in d.items():
         if isinstance(v, dict):
             _wrap_opcua_vars_with_cache(v)
         elif hasattr(v, "set_value") and not isinstance(v, CachedOpcuaNode):
-            d[k] = CachedOpcuaNode(v)
+            d[k] = CachedOpcuaNode(v, dead_band=_get_dead_band_for_key(k))
 
 
 
