@@ -1183,15 +1183,17 @@ def collect_system_metrics(buffers, maintainer, machines=None):
             maint_queue_length = len(maintainer.get_queue())
         except (AttributeError, TypeError):
             maint_queue_length = 0
-        # Aggregate repair counts from machines (AdvancedMachine tracks cm/pm counts)
-        total_repairs = 0
-        if machines:
-            for m in machines.values():
-                total_repairs += getattr(m, 'total_cm_count', 0) + getattr(m, 'total_pm_count', 0)
     else:
         maint_active = False
         maint_queue_length = 0
-        total_repairs = 0
+
+    # Aggregate repair counts from all machines regardless of maintainer.
+    # External repair (machine_repair_remaining loop) increments total_cm_count
+    # on machines even when no Simantha Maintainer is configured.
+    total_repairs = 0
+    if machines:
+        for m in machines.values():
+            total_repairs += getattr(m, 'total_cm_count', 0) + getattr(m, 'total_pm_count', 0)
 
     return total_wip, maint_active, maint_queue_length, total_repairs
 

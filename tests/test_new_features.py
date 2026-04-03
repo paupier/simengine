@@ -27,6 +27,7 @@ from opcua_server import (
     build_simantha_system,
     calculate_oee_from_sim,
     process_machine_step,
+    collect_system_metrics,
 )
 
 
@@ -902,3 +903,52 @@ class TestCurrentShiftOEELive:
         mgr = self._make_manager()
         metrics = mgr.get_current_shift_metrics()
         assert metrics["oee"] == 0.0
+
+
+# ========== collect_system_metrics repair counting ==========
+
+
+class TestCollectSystemMetricsRepairs:
+    """total_repairs must count cm/pm even without a Simantha Maintainer."""
+
+    def _make_machine(self, cm=0, pm=0):
+        m = MagicMock()
+        m.level = 0
+        m.total_cm_count = cm
+        m.total_pm_count = pm
+        return m
+
+    def _make_buffer(self, level=0):
+        b = MagicMock()
+        b.level = level
+        return b
+
+    def test_no_maintainer_zero_repairs(self):
+        """Returns 0 repairs when no maintainer and machines have no repairs."""
+        buffers = {"B1": self._make_buffer(3)}
+        machines = {"M1": self._make_machine(0, 0), "M2": self._make_machine(0, 0)}
+        _, _, _, total_repairs = collect_system_metrics(buffers, None, machines)
+        assert total_repairs == 0
+
+    def test_no_maintainer_counts_cm_repairs(self):
+        """Returns correct repair count when maintainer=None but machines have cm_count > 0."""
+        buffers = {"B1": self._make_buffer(2)}
+        machines = {"M1": self._make_machine(cm=3), "M2": self._make_machine(cm=5)}
+        _, _, _, total_repairs = collect_system_metrics(buffers, None, machines)
+        assert total_repairs == 8
+
+    def test_with_maintainer_still_counts_repairs(self):
+        """Repair count is consistent whether or not a Simantha maintainer is present."""
+        buffers = {"B1": self._make_buffer(0)}
+        machines = {"M1": self._make_machine(cm=2, pm=1)}
+        maintainer = MagicMock()
+        maintainer.utilization = 0
+        maintainer.get_queue.return_value = []
+        _, _, _, total_repairs = collect_system_metrics(buffers, maintainer, machines)
+        assert total_repairs == 3
+
+    def test_no_machines_arg_returns_zero_repairs(self):
+        """When machines=None, repair count defaults to 0."""
+        buffers = {"B1": self._make_buffer(0)}
+        _, _, _, total_repairs = collect_system_metrics(buffers, None, None)
+        assert total_repairs == 0
