@@ -863,3 +863,42 @@ class TestCachedOpcuaNodeDeadBand:
         cached.set_value(1.0015)        # delta vs 1.000 = 0.0015 >= 0.001 → write (count=2)
         assert node.write_count == 2
         assert node.last_value == 1.0015
+
+
+# ---------------------------------------------------------------------------
+# ShiftManager.get_current_shift_metrics live OEE tests
+# ---------------------------------------------------------------------------
+
+class TestCurrentShiftOEELive:
+    """OEE is computed live mid-shift, not just at shift finalisation."""
+
+    def _make_manager(self):
+        from shift_manager import ShiftManager, ShiftDefinition
+        shifts = [ShiftDefinition(name="Day", duration=28800.0)]
+        return ShiftManager(shifts, machine_names=["M1", "M2"])
+
+    def test_oee_is_nonzero_during_active_shift(self):
+        """CurrShift_OEE is > 0 once machines have logged processing time."""
+        mgr = self._make_manager()
+        mgr.update_machine_time("M1", 500.0, "PROCESSING")
+        mgr.update_machine_time("M1", 100.0, "IDLE")
+        mgr.update_machine_time("M2", 400.0, "PROCESSING")
+        mgr.update_machine_time("M2", 200.0, "BLOCKED")
+        metrics = mgr.get_current_shift_metrics()
+        assert metrics["oee"] > 0.0, "OEE must be non-zero when machines have run"
+
+    def test_availability_computed_from_processing_fraction(self):
+        """Availability = processing / total time across all machines."""
+        mgr = self._make_manager()
+        mgr.update_machine_time("M1", 600.0, "PROCESSING")
+        mgr.update_machine_time("M1", 400.0, "FAILED")
+        mgr.update_machine_time("M2", 600.0, "PROCESSING")
+        mgr.update_machine_time("M2", 400.0, "FAILED")
+        metrics = mgr.get_current_shift_metrics()
+        assert abs(metrics["availability"] - 0.6) < 1e-9
+
+    def test_oee_zero_before_any_machine_time_logged(self):
+        """OEE is 0 at shift start before any state time is recorded."""
+        mgr = self._make_manager()
+        metrics = mgr.get_current_shift_metrics()
+        assert metrics["oee"] == 0.0

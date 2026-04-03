@@ -247,21 +247,43 @@ class ShiftManager:
         """
         Get current shift metrics for OPC UA.
 
+        OEE components are computed live from accumulated time counters so that
+        CurrShift_OEE / CurrShift_Avail reflect the in-progress shift, not just
+        the finalized value written at shift rotation.
+
         Returns:
             Dictionary with current shift metrics
         """
+        parts = self.current_metrics.parts_produced
+        defects = self.current_metrics.defective_parts
+        defect_rate = defects / parts if parts > 0 else 0.0
+
+        total_time = sum(
+            self.current_metrics.processing_time.get(m, 0) +
+            self.current_metrics.down_time.get(m, 0) +
+            self.current_metrics.blocked_time.get(m, 0) +
+            self.current_metrics.starved_time.get(m, 0) +
+            self.current_metrics.idle_time.get(m, 0)
+            for m in self.machine_names
+        )
+        if total_time > 0:
+            availability = sum(self.current_metrics.processing_time.values()) / total_time
+            quality = 1.0 - defect_rate
+            oee = availability * quality  # performance = 1.0 (simplified)
+        else:
+            availability = 0.0
+            quality = 1.0
+            oee = 0.0
+
         return {
-            "parts_produced": self.current_metrics.parts_produced,
+            "parts_produced": parts,
             "good_parts": self.current_metrics.good_parts,
-            "defective_parts": self.current_metrics.defective_parts,
-            "defect_rate": (
-                self.current_metrics.defective_parts / self.current_metrics.parts_produced
-                if self.current_metrics.parts_produced > 0 else 0.0
-            ),
-            "availability": self.current_metrics.availability,
-            "performance": self.current_metrics.performance,
-            "quality": self.current_metrics.quality,
-            "oee": self.current_metrics.oee,
+            "defective_parts": defects,
+            "defect_rate": defect_rate,
+            "availability": availability,
+            "performance": 1.0,
+            "quality": quality,
+            "oee": oee,
         }
 
     def get_shift_time_remaining(self, current_sim_time: float) -> float:
