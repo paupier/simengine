@@ -1623,6 +1623,1820 @@ full_feature_8_machine_line_rtf:
     - name: ScrapBin7
     - name: ScrapBin8
 
+# ---------------------------------------------------------------------------
+# 8-machine comparative scenarios
+#
+# Naming:  8m_{cbm|rtf}_{balanced|poor_quality|high_downtime}
+#   cbm = CBM maintainer (strategy: bottleneck, capacity 2)
+#   rtf = run-to-failure (no maintainer)
+#
+# Balanced reference:
+#   full_feature_8_machine_line        (CBM)
+#   full_feature_8_machine_line_rtf    (RTF)
+#
+# All variants share:
+#   • Same 8 cycle-times:  M1=1.0, M2=1.2, M3=0.9, M4=1.1,
+#                           M5=1.0, M6=0.8, M7=1.3, M8=1.0
+#   • Same buffer capacities, 3-shift schedule, CSV historian
+#   • SPC enabled on every machine (characteristic: cycle_time)
+# ---------------------------------------------------------------------------
+
+# ---- Poor Quality / CBM ---------------------------------------------------
+# Target profile: Availability ~88%, Quality ~70%, OEE ~62%
+# Machines are mechanically reliable (MTTF ~2× baseline) but produce high
+# defect rates (12% base, ×6 when degraded).  Rework success is low so most
+# defective parts become scrap.  CBM maintainer intervenes at health-state 2.
+8m_cbm_poor_quality:
+  description: "8-machine CBM line: good reliability, high defect rate. Comparative scenario for quality-driven OEE loss."
+  warm_up_time: 120
+  machines:
+    - name: M1
+      cycle_time: 1.0
+      enable_spc: true
+      spc:
+        characteristic: cycle_time
+        subgroup_size: 5
+        num_subgroups: 25
+        usl: 1.2
+        lsl: 0.8
+        target: 1.0
+        enable_western_electric: true
+      enable_degradation: true
+      health_states:
+        h_max: 3
+        p_degrade: 0.003
+        cbm_threshold: 2
+      enable_advanced_failures: true
+      failure_modes:
+        - name: mechanical
+          type: wearout
+          mttf:
+            distribution: weibull
+            shape: 2.5
+            scale: 1500
+          mttr:
+            distribution: lognormal
+            mean: 10
+            std: 3
+        - name: electrical
+          type: random
+          mttf:
+            distribution: exponential
+            mean: 2500
+          mttr:
+            distribution: lognormal
+            mean: 7
+            std: 2
+      maintenance_strategy:
+        type: predictive
+        cbm_threshold: 2
+      quality_routing:
+        enabled: true
+        mode: scrap_and_rework
+        defect_rate: 0.12
+        health_multiplier: 6
+        enable_health_correlation: true
+        rework_success_rate: 0.45
+        max_rework: 2
+        scrap_sink: ScrapBin1
+    - name: M2
+      cycle_time: 1.2
+      enable_spc: true
+      spc:
+        characteristic: cycle_time
+        subgroup_size: 5
+        num_subgroups: 25
+        usl: 1.4
+        lsl: 1.0
+        target: 1.2
+        enable_western_electric: true
+      enable_degradation: true
+      health_states:
+        h_max: 3
+        p_degrade: 0.003
+        cbm_threshold: 2
+      enable_advanced_failures: true
+      failure_modes:
+        - name: mechanical
+          type: wearout
+          mttf:
+            distribution: weibull
+            shape: 2.5
+            scale: 1500
+          mttr:
+            distribution: lognormal
+            mean: 10
+            std: 3
+        - name: electrical
+          type: random
+          mttf:
+            distribution: exponential
+            mean: 2500
+          mttr:
+            distribution: lognormal
+            mean: 7
+            std: 2
+      maintenance_strategy:
+        type: predictive
+        cbm_threshold: 2
+      quality_routing:
+        enabled: true
+        mode: scrap_and_rework
+        defect_rate: 0.12
+        health_multiplier: 6
+        enable_health_correlation: true
+        rework_success_rate: 0.45
+        max_rework: 2
+        scrap_sink: ScrapBin2
+    - name: M3
+      cycle_time: 0.9
+      enable_spc: true
+      spc:
+        characteristic: cycle_time
+        subgroup_size: 5
+        num_subgroups: 25
+        usl: 1.1
+        lsl: 0.7
+        target: 0.9
+        enable_western_electric: true
+      enable_degradation: true
+      health_states:
+        h_max: 3
+        p_degrade: 0.003
+        cbm_threshold: 2
+      enable_advanced_failures: true
+      failure_modes:
+        - name: mechanical
+          type: wearout
+          mttf:
+            distribution: weibull
+            shape: 2.5
+            scale: 1500
+          mttr:
+            distribution: lognormal
+            mean: 10
+            std: 3
+        - name: electrical
+          type: random
+          mttf:
+            distribution: exponential
+            mean: 2500
+          mttr:
+            distribution: lognormal
+            mean: 7
+            std: 2
+      maintenance_strategy:
+        type: predictive
+        cbm_threshold: 2
+      quality_routing:
+        enabled: true
+        mode: scrap_and_rework
+        defect_rate: 0.12
+        health_multiplier: 6
+        enable_health_correlation: true
+        rework_success_rate: 0.45
+        max_rework: 2
+        scrap_sink: ScrapBin3
+    - name: M4
+      cycle_time: 1.1
+      enable_spc: true
+      spc:
+        characteristic: cycle_time
+        subgroup_size: 5
+        num_subgroups: 25
+        usl: 1.3
+        lsl: 0.9
+        target: 1.1
+        enable_western_electric: true
+      enable_degradation: true
+      health_states:
+        h_max: 3
+        p_degrade: 0.003
+        cbm_threshold: 2
+      enable_advanced_failures: true
+      failure_modes:
+        - name: mechanical
+          type: wearout
+          mttf:
+            distribution: weibull
+            shape: 2.5
+            scale: 1500
+          mttr:
+            distribution: lognormal
+            mean: 10
+            std: 3
+        - name: electrical
+          type: random
+          mttf:
+            distribution: exponential
+            mean: 2500
+          mttr:
+            distribution: lognormal
+            mean: 7
+            std: 2
+      maintenance_strategy:
+        type: predictive
+        cbm_threshold: 2
+      quality_routing:
+        enabled: true
+        mode: scrap_and_rework
+        defect_rate: 0.12
+        health_multiplier: 6
+        enable_health_correlation: true
+        rework_success_rate: 0.45
+        max_rework: 2
+        scrap_sink: ScrapBin4
+    - name: M5
+      cycle_time: 1.0
+      enable_spc: true
+      spc:
+        characteristic: cycle_time
+        subgroup_size: 5
+        num_subgroups: 25
+        usl: 1.2
+        lsl: 0.8
+        target: 1.0
+        enable_western_electric: true
+      enable_degradation: true
+      health_states:
+        h_max: 3
+        p_degrade: 0.003
+        cbm_threshold: 2
+      enable_advanced_failures: true
+      failure_modes:
+        - name: mechanical
+          type: wearout
+          mttf:
+            distribution: weibull
+            shape: 2.5
+            scale: 1500
+          mttr:
+            distribution: lognormal
+            mean: 10
+            std: 3
+        - name: electrical
+          type: random
+          mttf:
+            distribution: exponential
+            mean: 2500
+          mttr:
+            distribution: lognormal
+            mean: 7
+            std: 2
+      maintenance_strategy:
+        type: predictive
+        cbm_threshold: 2
+      quality_routing:
+        enabled: true
+        mode: scrap_and_rework
+        defect_rate: 0.12
+        health_multiplier: 6
+        enable_health_correlation: true
+        rework_success_rate: 0.45
+        max_rework: 2
+        scrap_sink: ScrapBin5
+    - name: M6
+      cycle_time: 0.8
+      enable_spc: true
+      spc:
+        characteristic: cycle_time
+        subgroup_size: 5
+        num_subgroups: 25
+        usl: 1.0
+        lsl: 0.6
+        target: 0.8
+        enable_western_electric: true
+      enable_degradation: true
+      health_states:
+        h_max: 3
+        p_degrade: 0.003
+        cbm_threshold: 2
+      enable_advanced_failures: true
+      failure_modes:
+        - name: mechanical
+          type: wearout
+          mttf:
+            distribution: weibull
+            shape: 2.5
+            scale: 1500
+          mttr:
+            distribution: lognormal
+            mean: 10
+            std: 3
+        - name: electrical
+          type: random
+          mttf:
+            distribution: exponential
+            mean: 2500
+          mttr:
+            distribution: lognormal
+            mean: 7
+            std: 2
+      maintenance_strategy:
+        type: predictive
+        cbm_threshold: 2
+      quality_routing:
+        enabled: true
+        mode: scrap_and_rework
+        defect_rate: 0.12
+        health_multiplier: 6
+        enable_health_correlation: true
+        rework_success_rate: 0.45
+        max_rework: 2
+        scrap_sink: ScrapBin6
+    - name: M7
+      cycle_time: 1.3
+      enable_spc: true
+      spc:
+        characteristic: cycle_time
+        subgroup_size: 5
+        num_subgroups: 25
+        usl: 1.5
+        lsl: 1.1
+        target: 1.3
+        enable_western_electric: true
+      enable_degradation: true
+      health_states:
+        h_max: 3
+        p_degrade: 0.003
+        cbm_threshold: 2
+      enable_advanced_failures: true
+      failure_modes:
+        - name: mechanical
+          type: wearout
+          mttf:
+            distribution: weibull
+            shape: 2.5
+            scale: 1500
+          mttr:
+            distribution: lognormal
+            mean: 10
+            std: 3
+        - name: electrical
+          type: random
+          mttf:
+            distribution: exponential
+            mean: 2500
+          mttr:
+            distribution: lognormal
+            mean: 7
+            std: 2
+      maintenance_strategy:
+        type: predictive
+        cbm_threshold: 2
+      quality_routing:
+        enabled: true
+        mode: scrap_and_rework
+        defect_rate: 0.12
+        health_multiplier: 6
+        enable_health_correlation: true
+        rework_success_rate: 0.45
+        max_rework: 2
+        scrap_sink: ScrapBin7
+    - name: M8
+      cycle_time: 1.0
+      enable_spc: true
+      spc:
+        characteristic: cycle_time
+        subgroup_size: 5
+        num_subgroups: 25
+        usl: 1.2
+        lsl: 0.8
+        target: 1.0
+        enable_western_electric: true
+      enable_degradation: true
+      health_states:
+        h_max: 3
+        p_degrade: 0.003
+        cbm_threshold: 2
+      enable_advanced_failures: true
+      failure_modes:
+        - name: mechanical
+          type: wearout
+          mttf:
+            distribution: weibull
+            shape: 2.5
+            scale: 1500
+          mttr:
+            distribution: lognormal
+            mean: 10
+            std: 3
+        - name: electrical
+          type: random
+          mttf:
+            distribution: exponential
+            mean: 2500
+          mttr:
+            distribution: lognormal
+            mean: 7
+            std: 2
+      maintenance_strategy:
+        type: predictive
+        cbm_threshold: 2
+      quality_routing:
+        enabled: true
+        mode: scrap_and_rework
+        defect_rate: 0.12
+        health_multiplier: 6
+        enable_health_correlation: true
+        rework_success_rate: 0.45
+        max_rework: 2
+        scrap_sink: ScrapBin8
+  buffers:
+    - name: B1
+      capacity: 15
+      upstream: M1
+      downstream: M2
+    - name: B2
+      capacity: 12
+      upstream: M2
+      downstream: M3
+    - name: B3
+      capacity: 10
+      upstream: M3
+      downstream: M4
+    - name: B4
+      capacity: 15
+      upstream: M4
+      downstream: M5
+    - name: B5
+      capacity: 10
+      upstream: M5
+      downstream: M6
+    - name: B6
+      capacity: 12
+      upstream: M6
+      downstream: M7
+    - name: B7
+      capacity: 10
+      upstream: M7
+      downstream: M8
+  maintainer:
+    enabled: true
+    capacity: 2
+    strategy: bottleneck
+  shifts:
+    schedule:
+      - name: Day Shift
+        duration: 28800
+        start_offset: 0
+      - name: Evening Shift
+        duration: 28800
+        start_offset: 28800
+      - name: Night Shift
+        duration: 28800
+        start_offset: 57600
+  historian:
+    enabled: true
+    csv:
+      enabled: true
+      output_dir: results/historian
+      max_file_size_mb: 50
+      rotate_on_shift: true
+  scrap_sinks:
+    - name: ScrapBin1
+    - name: ScrapBin2
+    - name: ScrapBin3
+    - name: ScrapBin4
+    - name: ScrapBin5
+    - name: ScrapBin6
+    - name: ScrapBin7
+    - name: ScrapBin8
+
+# ---- Poor Quality / RTF ---------------------------------------------------
+# Same quality profile as 8m_cbm_poor_quality but run-to-failure (no CBM
+# maintainer). Machines degrade to h_max=3 before any repair is triggered,
+# so downtime events are longer and FAILED state is visible in Grafana.
+8m_rtf_poor_quality:
+  description: "8-machine RTF line: good reliability, high defect rate. No CBM — machines run to failure. Comparative scenario for quality-driven OEE loss with unplanned downtime."
+  warm_up_time: 120
+  machines:
+    - name: M1
+      cycle_time: 1.0
+      enable_spc: true
+      spc:
+        characteristic: cycle_time
+        subgroup_size: 5
+        num_subgroups: 25
+        usl: 1.2
+        lsl: 0.8
+        target: 1.0
+        enable_western_electric: true
+      enable_degradation: true
+      health_states:
+        h_max: 3
+        p_degrade: 0.003
+        cbm_threshold: 3
+      enable_advanced_failures: true
+      failure_modes:
+        - name: mechanical
+          type: wearout
+          mttf:
+            distribution: weibull
+            shape: 2.5
+            scale: 1500
+          mttr:
+            distribution: lognormal
+            mean: 10
+            std: 3
+        - name: electrical
+          type: random
+          mttf:
+            distribution: exponential
+            mean: 2500
+          mttr:
+            distribution: lognormal
+            mean: 7
+            std: 2
+      maintenance_strategy:
+        type: reactive
+      quality_routing:
+        enabled: true
+        mode: scrap_and_rework
+        defect_rate: 0.12
+        health_multiplier: 6
+        enable_health_correlation: true
+        rework_success_rate: 0.45
+        max_rework: 2
+        scrap_sink: ScrapBin1
+    - name: M2
+      cycle_time: 1.2
+      enable_spc: true
+      spc:
+        characteristic: cycle_time
+        subgroup_size: 5
+        num_subgroups: 25
+        usl: 1.4
+        lsl: 1.0
+        target: 1.2
+        enable_western_electric: true
+      enable_degradation: true
+      health_states:
+        h_max: 3
+        p_degrade: 0.003
+        cbm_threshold: 3
+      enable_advanced_failures: true
+      failure_modes:
+        - name: mechanical
+          type: wearout
+          mttf:
+            distribution: weibull
+            shape: 2.5
+            scale: 1500
+          mttr:
+            distribution: lognormal
+            mean: 10
+            std: 3
+        - name: electrical
+          type: random
+          mttf:
+            distribution: exponential
+            mean: 2500
+          mttr:
+            distribution: lognormal
+            mean: 7
+            std: 2
+      maintenance_strategy:
+        type: reactive
+      quality_routing:
+        enabled: true
+        mode: scrap_and_rework
+        defect_rate: 0.12
+        health_multiplier: 6
+        enable_health_correlation: true
+        rework_success_rate: 0.45
+        max_rework: 2
+        scrap_sink: ScrapBin2
+    - name: M3
+      cycle_time: 0.9
+      enable_spc: true
+      spc:
+        characteristic: cycle_time
+        subgroup_size: 5
+        num_subgroups: 25
+        usl: 1.1
+        lsl: 0.7
+        target: 0.9
+        enable_western_electric: true
+      enable_degradation: true
+      health_states:
+        h_max: 3
+        p_degrade: 0.003
+        cbm_threshold: 3
+      enable_advanced_failures: true
+      failure_modes:
+        - name: mechanical
+          type: wearout
+          mttf:
+            distribution: weibull
+            shape: 2.5
+            scale: 1500
+          mttr:
+            distribution: lognormal
+            mean: 10
+            std: 3
+        - name: electrical
+          type: random
+          mttf:
+            distribution: exponential
+            mean: 2500
+          mttr:
+            distribution: lognormal
+            mean: 7
+            std: 2
+      maintenance_strategy:
+        type: reactive
+      quality_routing:
+        enabled: true
+        mode: scrap_and_rework
+        defect_rate: 0.12
+        health_multiplier: 6
+        enable_health_correlation: true
+        rework_success_rate: 0.45
+        max_rework: 2
+        scrap_sink: ScrapBin3
+    - name: M4
+      cycle_time: 1.1
+      enable_spc: true
+      spc:
+        characteristic: cycle_time
+        subgroup_size: 5
+        num_subgroups: 25
+        usl: 1.3
+        lsl: 0.9
+        target: 1.1
+        enable_western_electric: true
+      enable_degradation: true
+      health_states:
+        h_max: 3
+        p_degrade: 0.003
+        cbm_threshold: 3
+      enable_advanced_failures: true
+      failure_modes:
+        - name: mechanical
+          type: wearout
+          mttf:
+            distribution: weibull
+            shape: 2.5
+            scale: 1500
+          mttr:
+            distribution: lognormal
+            mean: 10
+            std: 3
+        - name: electrical
+          type: random
+          mttf:
+            distribution: exponential
+            mean: 2500
+          mttr:
+            distribution: lognormal
+            mean: 7
+            std: 2
+      maintenance_strategy:
+        type: reactive
+      quality_routing:
+        enabled: true
+        mode: scrap_and_rework
+        defect_rate: 0.12
+        health_multiplier: 6
+        enable_health_correlation: true
+        rework_success_rate: 0.45
+        max_rework: 2
+        scrap_sink: ScrapBin4
+    - name: M5
+      cycle_time: 1.0
+      enable_spc: true
+      spc:
+        characteristic: cycle_time
+        subgroup_size: 5
+        num_subgroups: 25
+        usl: 1.2
+        lsl: 0.8
+        target: 1.0
+        enable_western_electric: true
+      enable_degradation: true
+      health_states:
+        h_max: 3
+        p_degrade: 0.003
+        cbm_threshold: 3
+      enable_advanced_failures: true
+      failure_modes:
+        - name: mechanical
+          type: wearout
+          mttf:
+            distribution: weibull
+            shape: 2.5
+            scale: 1500
+          mttr:
+            distribution: lognormal
+            mean: 10
+            std: 3
+        - name: electrical
+          type: random
+          mttf:
+            distribution: exponential
+            mean: 2500
+          mttr:
+            distribution: lognormal
+            mean: 7
+            std: 2
+      maintenance_strategy:
+        type: reactive
+      quality_routing:
+        enabled: true
+        mode: scrap_and_rework
+        defect_rate: 0.12
+        health_multiplier: 6
+        enable_health_correlation: true
+        rework_success_rate: 0.45
+        max_rework: 2
+        scrap_sink: ScrapBin5
+    - name: M6
+      cycle_time: 0.8
+      enable_spc: true
+      spc:
+        characteristic: cycle_time
+        subgroup_size: 5
+        num_subgroups: 25
+        usl: 1.0
+        lsl: 0.6
+        target: 0.8
+        enable_western_electric: true
+      enable_degradation: true
+      health_states:
+        h_max: 3
+        p_degrade: 0.003
+        cbm_threshold: 3
+      enable_advanced_failures: true
+      failure_modes:
+        - name: mechanical
+          type: wearout
+          mttf:
+            distribution: weibull
+            shape: 2.5
+            scale: 1500
+          mttr:
+            distribution: lognormal
+            mean: 10
+            std: 3
+        - name: electrical
+          type: random
+          mttf:
+            distribution: exponential
+            mean: 2500
+          mttr:
+            distribution: lognormal
+            mean: 7
+            std: 2
+      maintenance_strategy:
+        type: reactive
+      quality_routing:
+        enabled: true
+        mode: scrap_and_rework
+        defect_rate: 0.12
+        health_multiplier: 6
+        enable_health_correlation: true
+        rework_success_rate: 0.45
+        max_rework: 2
+        scrap_sink: ScrapBin6
+    - name: M7
+      cycle_time: 1.3
+      enable_spc: true
+      spc:
+        characteristic: cycle_time
+        subgroup_size: 5
+        num_subgroups: 25
+        usl: 1.5
+        lsl: 1.1
+        target: 1.3
+        enable_western_electric: true
+      enable_degradation: true
+      health_states:
+        h_max: 3
+        p_degrade: 0.003
+        cbm_threshold: 3
+      enable_advanced_failures: true
+      failure_modes:
+        - name: mechanical
+          type: wearout
+          mttf:
+            distribution: weibull
+            shape: 2.5
+            scale: 1500
+          mttr:
+            distribution: lognormal
+            mean: 10
+            std: 3
+        - name: electrical
+          type: random
+          mttf:
+            distribution: exponential
+            mean: 2500
+          mttr:
+            distribution: lognormal
+            mean: 7
+            std: 2
+      maintenance_strategy:
+        type: reactive
+      quality_routing:
+        enabled: true
+        mode: scrap_and_rework
+        defect_rate: 0.12
+        health_multiplier: 6
+        enable_health_correlation: true
+        rework_success_rate: 0.45
+        max_rework: 2
+        scrap_sink: ScrapBin7
+    - name: M8
+      cycle_time: 1.0
+      enable_spc: true
+      spc:
+        characteristic: cycle_time
+        subgroup_size: 5
+        num_subgroups: 25
+        usl: 1.2
+        lsl: 0.8
+        target: 1.0
+        enable_western_electric: true
+      enable_degradation: true
+      health_states:
+        h_max: 3
+        p_degrade: 0.003
+        cbm_threshold: 3
+      enable_advanced_failures: true
+      failure_modes:
+        - name: mechanical
+          type: wearout
+          mttf:
+            distribution: weibull
+            shape: 2.5
+            scale: 1500
+          mttr:
+            distribution: lognormal
+            mean: 10
+            std: 3
+        - name: electrical
+          type: random
+          mttf:
+            distribution: exponential
+            mean: 2500
+          mttr:
+            distribution: lognormal
+            mean: 7
+            std: 2
+      maintenance_strategy:
+        type: reactive
+      quality_routing:
+        enabled: true
+        mode: scrap_and_rework
+        defect_rate: 0.12
+        health_multiplier: 6
+        enable_health_correlation: true
+        rework_success_rate: 0.45
+        max_rework: 2
+        scrap_sink: ScrapBin8
+  buffers:
+    - name: B1
+      capacity: 15
+      upstream: M1
+      downstream: M2
+    - name: B2
+      capacity: 12
+      upstream: M2
+      downstream: M3
+    - name: B3
+      capacity: 10
+      upstream: M3
+      downstream: M4
+    - name: B4
+      capacity: 15
+      upstream: M4
+      downstream: M5
+    - name: B5
+      capacity: 10
+      upstream: M5
+      downstream: M6
+    - name: B6
+      capacity: 12
+      upstream: M6
+      downstream: M7
+    - name: B7
+      capacity: 10
+      upstream: M7
+      downstream: M8
+  maintainer:
+    enabled: false
+  shifts:
+    schedule:
+      - name: Day Shift
+        duration: 28800
+        start_offset: 0
+      - name: Evening Shift
+        duration: 28800
+        start_offset: 28800
+      - name: Night Shift
+        duration: 28800
+        start_offset: 57600
+  historian:
+    enabled: true
+    csv:
+      enabled: true
+      output_dir: results/historian
+      max_file_size_mb: 50
+      rotate_on_shift: true
+  scrap_sinks:
+    - name: ScrapBin1
+    - name: ScrapBin2
+    - name: ScrapBin3
+    - name: ScrapBin4
+    - name: ScrapBin5
+    - name: ScrapBin6
+    - name: ScrapBin7
+    - name: ScrapBin8
+
+# ---- High Downtime / CBM --------------------------------------------------
+# Target profile: Availability ~65%, Quality ~97%, OEE ~63%
+# Machines degrade quickly (p_degrade 5× baseline) and take a long time to
+# repair (MTTR ~65s mechanical, ~45s electrical).  Quality is good when
+# running — defect rate is low and health-quality correlation is weak.
+# CBM maintainer intervenes at health-state 2 (before failure), so downtime
+# events are frequent but shorter than RTF equivalent.
+8m_cbm_high_downtime:
+  description: "8-machine CBM line: frequent failures, long repairs, good quality. Comparative scenario for availability-driven OEE loss with planned interventions."
+  warm_up_time: 120
+  machines:
+    - name: M1
+      cycle_time: 1.0
+      enable_spc: true
+      spc:
+        characteristic: cycle_time
+        subgroup_size: 5
+        num_subgroups: 25
+        usl: 1.2
+        lsl: 0.8
+        target: 1.0
+        enable_western_electric: true
+      enable_degradation: true
+      health_states:
+        h_max: 3
+        p_degrade: 0.015
+        cbm_threshold: 2
+      enable_advanced_failures: true
+      failure_modes:
+        - name: mechanical
+          type: wearout
+          mttf:
+            distribution: weibull
+            shape: 1.8
+            scale: 180
+          mttr:
+            distribution: lognormal
+            mean: 65
+            std: 20
+        - name: electrical
+          type: random
+          mttf:
+            distribution: exponential
+            mean: 280
+          mttr:
+            distribution: lognormal
+            mean: 45
+            std: 12
+      maintenance_strategy:
+        type: predictive
+        cbm_threshold: 2
+      quality_routing:
+        enabled: true
+        mode: scrap
+        defect_rate: 0.01
+        health_multiplier: 2
+        enable_health_correlation: true
+        scrap_sink: ScrapBin1
+    - name: M2
+      cycle_time: 1.2
+      enable_spc: true
+      spc:
+        characteristic: cycle_time
+        subgroup_size: 5
+        num_subgroups: 25
+        usl: 1.4
+        lsl: 1.0
+        target: 1.2
+        enable_western_electric: true
+      enable_degradation: true
+      health_states:
+        h_max: 3
+        p_degrade: 0.015
+        cbm_threshold: 2
+      enable_advanced_failures: true
+      failure_modes:
+        - name: mechanical
+          type: wearout
+          mttf:
+            distribution: weibull
+            shape: 1.8
+            scale: 180
+          mttr:
+            distribution: lognormal
+            mean: 65
+            std: 20
+        - name: electrical
+          type: random
+          mttf:
+            distribution: exponential
+            mean: 280
+          mttr:
+            distribution: lognormal
+            mean: 45
+            std: 12
+      maintenance_strategy:
+        type: predictive
+        cbm_threshold: 2
+      quality_routing:
+        enabled: true
+        mode: scrap
+        defect_rate: 0.01
+        health_multiplier: 2
+        enable_health_correlation: true
+        scrap_sink: ScrapBin2
+    - name: M3
+      cycle_time: 0.9
+      enable_spc: true
+      spc:
+        characteristic: cycle_time
+        subgroup_size: 5
+        num_subgroups: 25
+        usl: 1.1
+        lsl: 0.7
+        target: 0.9
+        enable_western_electric: true
+      enable_degradation: true
+      health_states:
+        h_max: 3
+        p_degrade: 0.015
+        cbm_threshold: 2
+      enable_advanced_failures: true
+      failure_modes:
+        - name: mechanical
+          type: wearout
+          mttf:
+            distribution: weibull
+            shape: 1.8
+            scale: 180
+          mttr:
+            distribution: lognormal
+            mean: 65
+            std: 20
+        - name: electrical
+          type: random
+          mttf:
+            distribution: exponential
+            mean: 280
+          mttr:
+            distribution: lognormal
+            mean: 45
+            std: 12
+      maintenance_strategy:
+        type: predictive
+        cbm_threshold: 2
+      quality_routing:
+        enabled: true
+        mode: scrap
+        defect_rate: 0.01
+        health_multiplier: 2
+        enable_health_correlation: true
+        scrap_sink: ScrapBin3
+    - name: M4
+      cycle_time: 1.1
+      enable_spc: true
+      spc:
+        characteristic: cycle_time
+        subgroup_size: 5
+        num_subgroups: 25
+        usl: 1.3
+        lsl: 0.9
+        target: 1.1
+        enable_western_electric: true
+      enable_degradation: true
+      health_states:
+        h_max: 3
+        p_degrade: 0.015
+        cbm_threshold: 2
+      enable_advanced_failures: true
+      failure_modes:
+        - name: mechanical
+          type: wearout
+          mttf:
+            distribution: weibull
+            shape: 1.8
+            scale: 180
+          mttr:
+            distribution: lognormal
+            mean: 65
+            std: 20
+        - name: electrical
+          type: random
+          mttf:
+            distribution: exponential
+            mean: 280
+          mttr:
+            distribution: lognormal
+            mean: 45
+            std: 12
+      maintenance_strategy:
+        type: predictive
+        cbm_threshold: 2
+      quality_routing:
+        enabled: true
+        mode: scrap
+        defect_rate: 0.01
+        health_multiplier: 2
+        enable_health_correlation: true
+        scrap_sink: ScrapBin4
+    - name: M5
+      cycle_time: 1.0
+      enable_spc: true
+      spc:
+        characteristic: cycle_time
+        subgroup_size: 5
+        num_subgroups: 25
+        usl: 1.2
+        lsl: 0.8
+        target: 1.0
+        enable_western_electric: true
+      enable_degradation: true
+      health_states:
+        h_max: 3
+        p_degrade: 0.015
+        cbm_threshold: 2
+      enable_advanced_failures: true
+      failure_modes:
+        - name: mechanical
+          type: wearout
+          mttf:
+            distribution: weibull
+            shape: 1.8
+            scale: 180
+          mttr:
+            distribution: lognormal
+            mean: 65
+            std: 20
+        - name: electrical
+          type: random
+          mttf:
+            distribution: exponential
+            mean: 280
+          mttr:
+            distribution: lognormal
+            mean: 45
+            std: 12
+      maintenance_strategy:
+        type: predictive
+        cbm_threshold: 2
+      quality_routing:
+        enabled: true
+        mode: scrap
+        defect_rate: 0.01
+        health_multiplier: 2
+        enable_health_correlation: true
+        scrap_sink: ScrapBin5
+    - name: M6
+      cycle_time: 0.8
+      enable_spc: true
+      spc:
+        characteristic: cycle_time
+        subgroup_size: 5
+        num_subgroups: 25
+        usl: 1.0
+        lsl: 0.6
+        target: 0.8
+        enable_western_electric: true
+      enable_degradation: true
+      health_states:
+        h_max: 3
+        p_degrade: 0.015
+        cbm_threshold: 2
+      enable_advanced_failures: true
+      failure_modes:
+        - name: mechanical
+          type: wearout
+          mttf:
+            distribution: weibull
+            shape: 1.8
+            scale: 180
+          mttr:
+            distribution: lognormal
+            mean: 65
+            std: 20
+        - name: electrical
+          type: random
+          mttf:
+            distribution: exponential
+            mean: 280
+          mttr:
+            distribution: lognormal
+            mean: 45
+            std: 12
+      maintenance_strategy:
+        type: predictive
+        cbm_threshold: 2
+      quality_routing:
+        enabled: true
+        mode: scrap
+        defect_rate: 0.01
+        health_multiplier: 2
+        enable_health_correlation: true
+        scrap_sink: ScrapBin6
+    - name: M7
+      cycle_time: 1.3
+      enable_spc: true
+      spc:
+        characteristic: cycle_time
+        subgroup_size: 5
+        num_subgroups: 25
+        usl: 1.5
+        lsl: 1.1
+        target: 1.3
+        enable_western_electric: true
+      enable_degradation: true
+      health_states:
+        h_max: 3
+        p_degrade: 0.015
+        cbm_threshold: 2
+      enable_advanced_failures: true
+      failure_modes:
+        - name: mechanical
+          type: wearout
+          mttf:
+            distribution: weibull
+            shape: 1.8
+            scale: 180
+          mttr:
+            distribution: lognormal
+            mean: 65
+            std: 20
+        - name: electrical
+          type: random
+          mttf:
+            distribution: exponential
+            mean: 280
+          mttr:
+            distribution: lognormal
+            mean: 45
+            std: 12
+      maintenance_strategy:
+        type: predictive
+        cbm_threshold: 2
+      quality_routing:
+        enabled: true
+        mode: scrap
+        defect_rate: 0.01
+        health_multiplier: 2
+        enable_health_correlation: true
+        scrap_sink: ScrapBin7
+    - name: M8
+      cycle_time: 1.0
+      enable_spc: true
+      spc:
+        characteristic: cycle_time
+        subgroup_size: 5
+        num_subgroups: 25
+        usl: 1.2
+        lsl: 0.8
+        target: 1.0
+        enable_western_electric: true
+      enable_degradation: true
+      health_states:
+        h_max: 3
+        p_degrade: 0.015
+        cbm_threshold: 2
+      enable_advanced_failures: true
+      failure_modes:
+        - name: mechanical
+          type: wearout
+          mttf:
+            distribution: weibull
+            shape: 1.8
+            scale: 180
+          mttr:
+            distribution: lognormal
+            mean: 65
+            std: 20
+        - name: electrical
+          type: random
+          mttf:
+            distribution: exponential
+            mean: 280
+          mttr:
+            distribution: lognormal
+            mean: 45
+            std: 12
+      maintenance_strategy:
+        type: predictive
+        cbm_threshold: 2
+      quality_routing:
+        enabled: true
+        mode: scrap
+        defect_rate: 0.01
+        health_multiplier: 2
+        enable_health_correlation: true
+        scrap_sink: ScrapBin8
+  buffers:
+    - name: B1
+      capacity: 15
+      upstream: M1
+      downstream: M2
+    - name: B2
+      capacity: 12
+      upstream: M2
+      downstream: M3
+    - name: B3
+      capacity: 10
+      upstream: M3
+      downstream: M4
+    - name: B4
+      capacity: 15
+      upstream: M4
+      downstream: M5
+    - name: B5
+      capacity: 10
+      upstream: M5
+      downstream: M6
+    - name: B6
+      capacity: 12
+      upstream: M6
+      downstream: M7
+    - name: B7
+      capacity: 10
+      upstream: M7
+      downstream: M8
+  maintainer:
+    enabled: true
+    capacity: 2
+    strategy: bottleneck
+  shifts:
+    schedule:
+      - name: Day Shift
+        duration: 28800
+        start_offset: 0
+      - name: Evening Shift
+        duration: 28800
+        start_offset: 28800
+      - name: Night Shift
+        duration: 28800
+        start_offset: 57600
+  historian:
+    enabled: true
+    csv:
+      enabled: true
+      output_dir: results/historian
+      max_file_size_mb: 50
+      rotate_on_shift: true
+  scrap_sinks:
+    - name: ScrapBin1
+    - name: ScrapBin2
+    - name: ScrapBin3
+    - name: ScrapBin4
+    - name: ScrapBin5
+    - name: ScrapBin6
+    - name: ScrapBin7
+    - name: ScrapBin8
+
+# ---- High Downtime / RTF --------------------------------------------------
+# Same downtime profile as 8m_cbm_high_downtime but run-to-failure (no CBM
+# maintainer). Machines run all the way to h_max before repair, producing
+# longer individual downtime events and clear FAILED state periods.
+8m_rtf_high_downtime:
+  description: "8-machine RTF line: frequent failures, long repairs, good quality. No CBM — machines run to failure. Comparative scenario for availability-driven OEE loss with unplanned downtime."
+  warm_up_time: 120
+  machines:
+    - name: M1
+      cycle_time: 1.0
+      enable_spc: true
+      spc:
+        characteristic: cycle_time
+        subgroup_size: 5
+        num_subgroups: 25
+        usl: 1.2
+        lsl: 0.8
+        target: 1.0
+        enable_western_electric: true
+      enable_degradation: true
+      health_states:
+        h_max: 3
+        p_degrade: 0.015
+        cbm_threshold: 3
+      enable_advanced_failures: true
+      failure_modes:
+        - name: mechanical
+          type: wearout
+          mttf:
+            distribution: weibull
+            shape: 1.8
+            scale: 180
+          mttr:
+            distribution: lognormal
+            mean: 65
+            std: 20
+        - name: electrical
+          type: random
+          mttf:
+            distribution: exponential
+            mean: 280
+          mttr:
+            distribution: lognormal
+            mean: 45
+            std: 12
+      maintenance_strategy:
+        type: reactive
+      quality_routing:
+        enabled: true
+        mode: scrap
+        defect_rate: 0.01
+        health_multiplier: 2
+        enable_health_correlation: true
+        scrap_sink: ScrapBin1
+    - name: M2
+      cycle_time: 1.2
+      enable_spc: true
+      spc:
+        characteristic: cycle_time
+        subgroup_size: 5
+        num_subgroups: 25
+        usl: 1.4
+        lsl: 1.0
+        target: 1.2
+        enable_western_electric: true
+      enable_degradation: true
+      health_states:
+        h_max: 3
+        p_degrade: 0.015
+        cbm_threshold: 3
+      enable_advanced_failures: true
+      failure_modes:
+        - name: mechanical
+          type: wearout
+          mttf:
+            distribution: weibull
+            shape: 1.8
+            scale: 180
+          mttr:
+            distribution: lognormal
+            mean: 65
+            std: 20
+        - name: electrical
+          type: random
+          mttf:
+            distribution: exponential
+            mean: 280
+          mttr:
+            distribution: lognormal
+            mean: 45
+            std: 12
+      maintenance_strategy:
+        type: reactive
+      quality_routing:
+        enabled: true
+        mode: scrap
+        defect_rate: 0.01
+        health_multiplier: 2
+        enable_health_correlation: true
+        scrap_sink: ScrapBin2
+    - name: M3
+      cycle_time: 0.9
+      enable_spc: true
+      spc:
+        characteristic: cycle_time
+        subgroup_size: 5
+        num_subgroups: 25
+        usl: 1.1
+        lsl: 0.7
+        target: 0.9
+        enable_western_electric: true
+      enable_degradation: true
+      health_states:
+        h_max: 3
+        p_degrade: 0.015
+        cbm_threshold: 3
+      enable_advanced_failures: true
+      failure_modes:
+        - name: mechanical
+          type: wearout
+          mttf:
+            distribution: weibull
+            shape: 1.8
+            scale: 180
+          mttr:
+            distribution: lognormal
+            mean: 65
+            std: 20
+        - name: electrical
+          type: random
+          mttf:
+            distribution: exponential
+            mean: 280
+          mttr:
+            distribution: lognormal
+            mean: 45
+            std: 12
+      maintenance_strategy:
+        type: reactive
+      quality_routing:
+        enabled: true
+        mode: scrap
+        defect_rate: 0.01
+        health_multiplier: 2
+        enable_health_correlation: true
+        scrap_sink: ScrapBin3
+    - name: M4
+      cycle_time: 1.1
+      enable_spc: true
+      spc:
+        characteristic: cycle_time
+        subgroup_size: 5
+        num_subgroups: 25
+        usl: 1.3
+        lsl: 0.9
+        target: 1.1
+        enable_western_electric: true
+      enable_degradation: true
+      health_states:
+        h_max: 3
+        p_degrade: 0.015
+        cbm_threshold: 3
+      enable_advanced_failures: true
+      failure_modes:
+        - name: mechanical
+          type: wearout
+          mttf:
+            distribution: weibull
+            shape: 1.8
+            scale: 180
+          mttr:
+            distribution: lognormal
+            mean: 65
+            std: 20
+        - name: electrical
+          type: random
+          mttf:
+            distribution: exponential
+            mean: 280
+          mttr:
+            distribution: lognormal
+            mean: 45
+            std: 12
+      maintenance_strategy:
+        type: reactive
+      quality_routing:
+        enabled: true
+        mode: scrap
+        defect_rate: 0.01
+        health_multiplier: 2
+        enable_health_correlation: true
+        scrap_sink: ScrapBin4
+    - name: M5
+      cycle_time: 1.0
+      enable_spc: true
+      spc:
+        characteristic: cycle_time
+        subgroup_size: 5
+        num_subgroups: 25
+        usl: 1.2
+        lsl: 0.8
+        target: 1.0
+        enable_western_electric: true
+      enable_degradation: true
+      health_states:
+        h_max: 3
+        p_degrade: 0.015
+        cbm_threshold: 3
+      enable_advanced_failures: true
+      failure_modes:
+        - name: mechanical
+          type: wearout
+          mttf:
+            distribution: weibull
+            shape: 1.8
+            scale: 180
+          mttr:
+            distribution: lognormal
+            mean: 65
+            std: 20
+        - name: electrical
+          type: random
+          mttf:
+            distribution: exponential
+            mean: 280
+          mttr:
+            distribution: lognormal
+            mean: 45
+            std: 12
+      maintenance_strategy:
+        type: reactive
+      quality_routing:
+        enabled: true
+        mode: scrap
+        defect_rate: 0.01
+        health_multiplier: 2
+        enable_health_correlation: true
+        scrap_sink: ScrapBin5
+    - name: M6
+      cycle_time: 0.8
+      enable_spc: true
+      spc:
+        characteristic: cycle_time
+        subgroup_size: 5
+        num_subgroups: 25
+        usl: 1.0
+        lsl: 0.6
+        target: 0.8
+        enable_western_electric: true
+      enable_degradation: true
+      health_states:
+        h_max: 3
+        p_degrade: 0.015
+        cbm_threshold: 3
+      enable_advanced_failures: true
+      failure_modes:
+        - name: mechanical
+          type: wearout
+          mttf:
+            distribution: weibull
+            shape: 1.8
+            scale: 180
+          mttr:
+            distribution: lognormal
+            mean: 65
+            std: 20
+        - name: electrical
+          type: random
+          mttf:
+            distribution: exponential
+            mean: 280
+          mttr:
+            distribution: lognormal
+            mean: 45
+            std: 12
+      maintenance_strategy:
+        type: reactive
+      quality_routing:
+        enabled: true
+        mode: scrap
+        defect_rate: 0.01
+        health_multiplier: 2
+        enable_health_correlation: true
+        scrap_sink: ScrapBin6
+    - name: M7
+      cycle_time: 1.3
+      enable_spc: true
+      spc:
+        characteristic: cycle_time
+        subgroup_size: 5
+        num_subgroups: 25
+        usl: 1.5
+        lsl: 1.1
+        target: 1.3
+        enable_western_electric: true
+      enable_degradation: true
+      health_states:
+        h_max: 3
+        p_degrade: 0.015
+        cbm_threshold: 3
+      enable_advanced_failures: true
+      failure_modes:
+        - name: mechanical
+          type: wearout
+          mttf:
+            distribution: weibull
+            shape: 1.8
+            scale: 180
+          mttr:
+            distribution: lognormal
+            mean: 65
+            std: 20
+        - name: electrical
+          type: random
+          mttf:
+            distribution: exponential
+            mean: 280
+          mttr:
+            distribution: lognormal
+            mean: 45
+            std: 12
+      maintenance_strategy:
+        type: reactive
+      quality_routing:
+        enabled: true
+        mode: scrap
+        defect_rate: 0.01
+        health_multiplier: 2
+        enable_health_correlation: true
+        scrap_sink: ScrapBin7
+    - name: M8
+      cycle_time: 1.0
+      enable_spc: true
+      spc:
+        characteristic: cycle_time
+        subgroup_size: 5
+        num_subgroups: 25
+        usl: 1.2
+        lsl: 0.8
+        target: 1.0
+        enable_western_electric: true
+      enable_degradation: true
+      health_states:
+        h_max: 3
+        p_degrade: 0.015
+        cbm_threshold: 3
+      enable_advanced_failures: true
+      failure_modes:
+        - name: mechanical
+          type: wearout
+          mttf:
+            distribution: weibull
+            shape: 1.8
+            scale: 180
+          mttr:
+            distribution: lognormal
+            mean: 65
+            std: 20
+        - name: electrical
+          type: random
+          mttf:
+            distribution: exponential
+            mean: 280
+          mttr:
+            distribution: lognormal
+            mean: 45
+            std: 12
+      maintenance_strategy:
+        type: reactive
+      quality_routing:
+        enabled: true
+        mode: scrap
+        defect_rate: 0.01
+        health_multiplier: 2
+        enable_health_correlation: true
+        scrap_sink: ScrapBin8
+  buffers:
+    - name: B1
+      capacity: 15
+      upstream: M1
+      downstream: M2
+    - name: B2
+      capacity: 12
+      upstream: M2
+      downstream: M3
+    - name: B3
+      capacity: 10
+      upstream: M3
+      downstream: M4
+    - name: B4
+      capacity: 15
+      upstream: M4
+      downstream: M5
+    - name: B5
+      capacity: 10
+      upstream: M5
+      downstream: M6
+    - name: B6
+      capacity: 12
+      upstream: M6
+      downstream: M7
+    - name: B7
+      capacity: 10
+      upstream: M7
+      downstream: M8
+  maintainer:
+    enabled: false
+  shifts:
+    schedule:
+      - name: Day Shift
+        duration: 28800
+        start_offset: 0
+      - name: Evening Shift
+        duration: 28800
+        start_offset: 28800
+      - name: Night Shift
+        duration: 28800
+        start_offset: 57600
+  historian:
+    enabled: true
+    csv:
+      enabled: true
+      output_dir: results/historian
+      max_file_size_mb: 50
+      rotate_on_shift: true
+  scrap_sinks:
+    - name: ScrapBin1
+    - name: ScrapBin2
+    - name: ScrapBin3
+    - name: ScrapBin4
+    - name: ScrapBin5
+    - name: ScrapBin6
+    - name: ScrapBin7
+    - name: ScrapBin8
+
 # Warm-up period scenario
 warm_up_line:
   warm_up_time: 300
