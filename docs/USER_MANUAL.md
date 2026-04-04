@@ -1,7 +1,7 @@
 # Simantha OPC UA - Complete User Manual
 
-**Version:** 2.7
-**Last Updated:** 2026-03-26
+**Version:** 2.8
+**Last Updated:** 2026-04-04
 **Difficulty:** Beginner to Advanced
 
 ---
@@ -1361,7 +1361,7 @@ python src/opcua_server.py --scenario full_feature_line --seed 42
 
 ---
 
-### Scenario N: Full Feature 8-Machine Line
+### Scenario N: Full Feature 8-Machine Line (CBM — Balanced Reference)
 
 **File:** `full_feature_8_machine_line`
 **Complexity:** Expert
@@ -1370,14 +1370,58 @@ python src/opcua_server.py --scenario full_feature_line --seed 42
 - 8 machines in serial with 7 buffers
 - All features: advanced failures, SPC on all 8 machines, quality routing, 3-shift rotation, CSV historian
 - Scrap sinks per machine, rework on selected machines
-- Predictive and corrective maintenance strategies
+- CBM maintainer (capacity 2, bottleneck-first strategy)
+- Target profile: Availability ~85%, Quality ~97%, OEE ~82%
 
 **Run it:**
 ```bash
 python src/opcua_server.py --scenario full_feature_8_machine_line --seed 42
 ```
 
-**Use case:** Full-scale digital twin at production line scale. Stress-testing OPC UA address space, Telegraf polling, and Grafana dashboards with many machines.
+**Use case:** Full-scale digital twin at production line scale. Balanced reference for comparing the four variant scenarios below.
+
+---
+
+### Scenario N2: Full Feature 8-Machine Line (RTF — Balanced Reference)
+
+**File:** `full_feature_8_machine_line_rtf`
+**Complexity:** Expert
+
+**Characteristics:**
+- Same topology and parameters as `full_feature_8_machine_line`
+- Run-to-failure: `cbm_threshold == h_max` on all machines — no early CBM intervention
+- No Simantha maintainer; external repair countdown handles UNDER_REPAIR state
+- Target profile: Availability ~80%, Quality ~95%, OEE ~76%
+
+**Run it:**
+```bash
+python src/opcua_server.py --scenario full_feature_8_machine_line_rtf --seed 42
+```
+
+**Use case:** Comparing planned (CBM) vs unplanned (RTF) downtime impact. Clear FAILED state events visible in Grafana State Timeline.
+
+---
+
+### Scenario N3–N6: 8-Machine Comparative Scenarios
+
+Four additional scenarios designed for direct OEE comparison. All share the same 8 cycle times (M1=1.0, M2=1.2, M3=0.9, M4=1.1, M5=1.0, M6=0.8, M7=1.3, M8=1.0), buffer sizes, 3-shift schedule, and CSV historian as the balanced reference, so per-shift throughput and OEE numbers are directly comparable across runs.
+
+| Scenario | Maintenance | Availability | Quality | OEE | What drives the loss |
+|----------|-------------|:---:|:---:|:---:|---|
+| `8m_cbm_poor_quality` | CBM | ~88% | ~70% | ~62% | 12% base defect rate, ×6 health multiplier, 45% rework success |
+| `8m_rtf_poor_quality` | RTF | ~84% | ~70% | ~59% | Same quality profile, unplanned downtime added |
+| `8m_cbm_high_downtime` | CBM | ~65% | ~97% | ~63% | p_degrade 5× baseline, MTTR 65s mechanical / 45s electrical |
+| `8m_rtf_high_downtime` | RTF | ~55% | ~97% | ~53% | Same downtime profile, longer FAILED events (no early intervention) |
+
+**Run them:**
+```bash
+python src/opcua_server.py --scenario 8m_cbm_poor_quality --seed 42
+python src/opcua_server.py --scenario 8m_rtf_poor_quality --seed 42
+python src/opcua_server.py --scenario 8m_cbm_high_downtime --seed 42
+python src/opcua_server.py --scenario 8m_rtf_high_downtime --seed 42
+```
+
+**Use case:** Comparative OEE analysis. Run each scenario with the same `--seed` for a controlled experiment isolating availability loss vs quality loss, and CBM vs RTF maintenance impact.
 
 ---
 
@@ -1407,6 +1451,7 @@ The following scenarios are also available in `config/line_models.yaml`:
 | Scenario | Description |
 |----------|-------------|
 | `priority_maintenance_line` | PriorityMaintainer with configurable scheduling (FIFO, SPT, priority, bottleneck) |
+| `priority_user_line` | PriorityMaintainer with user-defined machine priorities |
 | `multi_state_degradation_line` | Multi-state health degradation (0 → 1 → 2 → ... → h_max) with DEGRADED state |
 | `historian_line` | Basic CSV historian without other advanced features |
 | `influxdb_historian_line` | InfluxDB historian backend |
@@ -2452,7 +2497,7 @@ ModuleNotFoundError: No module named 'simantha'
 - *Old O(N²) architecture (pre-v2.6):* Each step K called `system.simulate(simulation_time=K)`, replaying the entire history. After thousands of steps each iteration consumed seconds.
 - *OPC UA write overhead (pre-v2.7):* With ~600 OPC UA nodes, every `set_value()` call over the loopback socket takes 2–3 ms even when the value hasn't changed. 600 writes × 2.5 ms = 1.5 s per step, pushing the budget over the 1-second target.
 
-**The current server (v2.7+) does not have either problem.** It uses per-step `simulate(1)` (O(1)) and `CachedOpcuaNode` write caching (skips `set_value()` when the value is unchanged, reducing ~600 writes to ~150 per step). If you see this issue you are likely running an old Docker image.
+**The current server (v2.8+) does not have either problem.** It uses per-step `simulate(1)` (O(1)) and `CachedOpcuaNode` dead-band write caching (skips `set_value()` when the new value is within tolerance of the last-written value, reducing ~600 writes to ~150 per step). If you see this issue you are likely running an old Docker image.
 
 **Solutions:**
 
@@ -2482,7 +2527,27 @@ Or the process is killed by the OS after running for thousands of simulation ste
 
 ---
 
-#### Issue 7: Variables Not Updating
+#### Issue 7: Grafana Shift Comparison Shows "No Data" or 0% OEE for Current Shift
+
+**Symptom:** The Shift Comparison dashboard shows `No data` or 0% for Availability/OEE panels while the simulation is running.
+
+**Cause (pre-v2.8):** `ShiftManager.get_current_shift_metrics()` returned the `ShiftMetrics.oee` field, which is only written when a shift completes (`_finalize_current_shift()`). For the active shift this was always 0.0. Grafana's `|> filter(r._value > 0.0)` then dropped all rows.
+
+**Fix:** Update to v2.8+. The current implementation computes OEE, Availability, and Quality live from the accumulated time counters on every call, so in-progress shift OEE is always non-zero once machines have run.
+
+---
+
+#### Issue 8: `Sys_TotalRepairs` Always Shows 0 for RTF Scenarios
+
+**Symptom:** The Maintenance panel in Grafana shows 0 total repairs for `full_feature_8_machine_line_rtf`, `8m_rtf_*`, or any scenario with `maintainer: {enabled: false}`, even after many hours of running.
+
+**Cause (pre-v2.8):** `collect_system_metrics()` had a hardcoded `total_repairs = 0` in the no-maintainer branch. The external repair countdown loop (`machine_repair_remaining`) correctly incremented `total_cm_count` on each machine, but the value was never read.
+
+**Fix:** Update to v2.8+. The repair count aggregation now runs regardless of whether a Simantha `Maintainer` object is present.
+
+---
+
+#### Issue 9: Variables Not Updating
 
 **Symptom:** Values in OPC UA client are stuck/frozen
 
@@ -2712,5 +2777,5 @@ For updates and contributions:
 
 ---
 
-*Document Version: 2.4*
-*Last Updated: 2026-02-28*
+*Document Version: 2.8*
+*Last Updated: 2026-04-04*
