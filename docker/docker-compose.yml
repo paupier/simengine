@@ -73,6 +73,7 @@ services:
       - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=simantha-dev-token
     volumes:
       - influx-data:/var/lib/influxdb2
+      - /etc/localtime:/etc/localtime:ro
     networks:
       - simantha-net
     healthcheck:
@@ -99,6 +100,7 @@ services:
       - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - grafana-data:/var/lib/grafana
+      - /etc/localtime:/etc/localtime:ro
     depends_on:
       influxdb:
         condition: service_healthy
@@ -115,6 +117,7 @@ services:
     command: ["telegraf", "--watch-config", "poll"]
     volumes:
       - telegraf-conf:/etc/telegraf
+      - /etc/localtime:/etc/localtime:ro
     depends_on:
       - simantha
       - influxdb
@@ -138,6 +141,7 @@ services:
     volumes:
       - neo4j-data:/data
       - neo4j-logs:/logs
+      - /etc/localtime:/etc/localtime:ro
     networks:
       - simantha-net
     restart: unless-stopped
@@ -150,6 +154,8 @@ services:
     container_name: simantha-neodash
     ports:
       - "5005:5005"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
     depends_on:
       - neo4j
     networks:
@@ -165,6 +171,7 @@ services:
     volumes:
       - ./prometheus:/etc/prometheus:ro
       - prometheus-data:/prometheus
+      - /etc/localtime:/etc/localtime:ro
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
@@ -188,6 +195,7 @@ services:
       - /sys:/sys:ro
       - /var/lib/docker/:/var/lib/docker:ro
       - /cgroup:/cgroup:ro
+      - /etc/localtime:/etc/localtime:ro
     networks:
       - simantha-net
     restart: unless-stopped
@@ -203,6 +211,7 @@ services:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
       - /:/rootfs:ro
+      - /etc/localtime:/etc/localtime:ro
     command:
       - '--path.procfs=/host/proc'
       - '--path.rootfs=/rootfs'
@@ -225,6 +234,7 @@ services:
       - ./mosquitto:/mosquitto/config:ro
       - mosquitto-data:/mosquitto/data
       - mosquitto-log:/mosquitto/log
+      - /etc/localtime:/etc/localtime:ro
     networks:
       - simantha-net
     restart: unless-stopped
