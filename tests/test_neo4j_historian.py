@@ -1,7 +1,9 @@
 """Tests for Neo4j Graph Database Historian (rewritten for batch + causal engine)."""
 
 import os
+import queue as _queue
 import sys
+import threading
 import pytest
 from collections import deque
 from unittest.mock import MagicMock, patch, call
@@ -37,6 +39,10 @@ def _make_historian(scenario="test_scenario", run_id="run_001"):
     h._recent_events = {}
     h._upstream = {"M2": "M1", "M3": "M2"}
     h._downstream = {"M1": "M2", "M2": "M3"}
+    # Background writer required after async refactor
+    h._write_queue = _queue.SimpleQueue()
+    h._writer = threading.Thread(target=h._writer_loop, daemon=True, name="neo4j-test")
+    h._writer.start()
     return h, mock_driver, mock_session
 
 
@@ -60,6 +66,7 @@ class TestRecordEventsBuffering:
         h, _, mock_session = _make_historian()
         events = [make_event(source="M1") for _ in range(10)]
         h.record_events(events)
+        h._drain()  # wait for worker to extend buffer (no flush — 10 < 50)
         assert len(h._buffer) == 10
         mock_session.run.assert_not_called()  # no flush yet
 
@@ -67,17 +74,20 @@ class TestRecordEventsBuffering:
         h, _, mock_session = _make_historian()
         h._buffer = [make_event(source="M1") for _ in range(49)]
         h.record_events([make_event(source="M1")])  # 50th event
+        h.flush()  # wait for worker to extend, flush, and signal done
         assert len(h._buffer) == 0  # flushed
 
     def test_flush_triggered_when_buffer_exceeds_batch_size(self):
         h, _, mock_session = _make_historian()
         events = [make_event(source="M1") for _ in range(55)]
         h.record_events(events)
+        h.flush()  # wait for worker to extend (55 >= 50) and flush
         assert len(h._buffer) == 0  # flushed (55 >= 50)
 
     def test_record_events_empty_list(self):
         h, _, mock_session = _make_historian()
         h.record_events([])
+        h._drain()
         assert len(h._buffer) == 0
         mock_session.run.assert_not_called()
 
@@ -89,14 +99,15 @@ class TestRecordEventsBuffering:
 class TestFlush:
     def test_flush_writes_buffer_to_neo4j(self):
         h, mock_driver, mock_session = _make_historian()
+        # Pre-populate buffer directly (worker is idle; safe before any queue op).
         h._buffer = [make_event(source="M1", event_type="STATE_CHANGE")]
-        h.flush()
+        h.flush()  # sends sentinel → worker flushes buffer, signals done
         assert len(h._buffer) == 0
         assert mock_driver.session.called
 
     def test_flush_empty_buffer_is_noop(self):
         h, mock_driver, _ = _make_historian()
-        h.flush()
+        h.flush()  # empty buffer → worker skips _flush_batch, signals done
         mock_driver.session.assert_not_called()
 
 

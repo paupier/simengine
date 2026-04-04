@@ -10,8 +10,10 @@ Dependencies: pip install neo4j>=5.0.0  (lazy import — optional)
 """
 
 import os
+import queue as _queue
 import re
 import logging
+import threading
 from collections import deque
 from typing import Optional
 
@@ -27,6 +29,13 @@ except ImportError:
 
 BATCH_SIZE = 50
 _MAX_RECENT = 100  # per-machine sliding window depth
+
+
+class _DrainMarker:
+    """Sent to _write_queue to wait for the worker to process all pending items
+    WITHOUT triggering a flush. Used only by Neo4jHistorian._drain() in tests."""
+    def __init__(self):
+        self.done = threading.Event()
 
 # Causal rule definitions:
 # (target_val, target_field, trigger_field, trigger_values, window_s, edge_type, neighbour_dir)
@@ -102,6 +111,15 @@ class Neo4jHistorian:
         self._recent_events: dict = {}    # machine_name -> deque of (SimEvent, eid) tuples
         self._upstream: dict = {}         # machine_name -> upstream machine_name
         self._downstream: dict = {}       # machine_name -> downstream machine_name
+
+        # Background writer — keeps Neo4j flushes off the simulation main thread.
+        # SimpleQueue is thread-safe; _buffer/_last_event_eid/_recent_events are
+        # only ever accessed by the writer thread, so no additional lock is needed.
+        self._write_queue: _queue.SimpleQueue = _queue.SimpleQueue()
+        self._writer = threading.Thread(
+            target=self._writer_loop, daemon=True, name="neo4j-historian"
+        )
+        self._writer.start()
 
     def describe(self) -> str:
         return f"Neo4jHistorian(scenario={self._scenario}, batch={BATCH_SIZE})"
@@ -188,22 +206,67 @@ class Neo4jHistorian:
                     )
 
     # ------------------------------------------------------------------
+    # Background writer thread
+    # ------------------------------------------------------------------
+
+    def _writer_loop(self) -> None:
+        """Drain the write queue. Runs in a background daemon thread.
+
+        Items are either:
+          - list[SimEvent]      → extend buffer, flush when BATCH_SIZE reached
+          - threading.Event     → flush buffer now, then signal the event (flush() caller)
+          - _DrainMarker        → signal without flushing (used by _drain() in tests)
+          - None                → shutdown sentinel: flush remainder and exit
+        """
+        while True:
+            item = self._write_queue.get()
+            if item is None:
+                # Shutdown: flush whatever remains, then exit the loop.
+                if self._buffer:
+                    self._flush_batch()
+                break
+            if isinstance(item, _DrainMarker):
+                # Drain-only sync: signal caller without flushing the buffer.
+                item.done.set()
+                continue
+            if isinstance(item, threading.Event):
+                # Flush sync: flush buffer then unblock the caller.
+                if self._buffer:
+                    self._flush_batch()
+                item.set()
+                continue
+            # Normal batch of events from the simulation main thread.
+            self._buffer.extend(item)
+            if len(self._buffer) >= BATCH_SIZE:
+                self._flush_batch()
+
+    # ------------------------------------------------------------------
     # Public recording interface
     # ------------------------------------------------------------------
 
     def record_events(self, events: list) -> None:
-        if not events:
-            return
-        self._buffer.extend(events)
-        if len(self._buffer) >= BATCH_SIZE:
-            self._flush_batch()
+        """Non-blocking: enqueue events for the background writer."""
+        if events:
+            self._write_queue.put(list(events))
 
     def flush(self) -> None:
-        if self._buffer:
-            self._flush_batch()
+        """Block until all queued events are written to Neo4j (max 120 s)."""
+        done = threading.Event()
+        self._write_queue.put(done)
+        done.wait(timeout=120.0)
+
+    def _drain(self) -> None:
+        """Wait for all queued items to reach the buffer WITHOUT flushing.
+        Used only in tests — lets tests inspect _buffer state after record_events()
+        without triggering a premature batch write."""
+        marker = _DrainMarker()
+        self._write_queue.put(marker)
+        marker.done.wait(timeout=5.0)
 
     def close(self) -> None:
         self.flush()
+        self._write_queue.put(None)  # stop writer thread
+        self._writer.join(timeout=30.0)
         try:
             with self._driver.session() as session:
                 session.run(
@@ -400,14 +463,17 @@ class Neo4jHistorian:
 def create_neo4j_historian_from_config(
     config: dict, scenario_name: str, run_id: str = ""
 ) -> Optional[Neo4jHistorian]:
-    """Create Neo4jHistorian from YAML config. Returns None if neo4j key absent.
+    """Create Neo4jHistorian from YAML config. Returns None if disabled or absent.
 
-    Presence of the `neo4j:` key under `historian:` enables the historian.
-    No separate `enabled` flag needed — remove the key to disable.
+    Enabled when the `neo4j:` key is present under `historian:` AND either no
+    `enabled` sub-key is set (default on) OR `enabled: true` is explicitly set.
+    Set `enabled: false` to disable without removing the connection config.
     """
     historian_cfg = config.get("historian") or {}
     neo4j_cfg = historian_cfg.get("neo4j")
     if not neo4j_cfg:
+        return None
+    if not neo4j_cfg.get("enabled", True):
         return None
 
     try:
