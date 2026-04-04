@@ -46,6 +46,7 @@ services:
     volumes:
       - sim-data:/app/results
       - telegraf-conf:/etc/telegraf
+      - /etc/localtime:/etc/localtime:ro
     depends_on:
       influxdb:
         condition: service_healthy
