@@ -6,23 +6,21 @@ LABEL description="Simantha OPC UA Digital Twin - Manufacturing Simulation"
 WORKDIR /app
 
 # Bake git commit SHA into the image for the UI header
-COPY .git/HEAD .git/HEAD
-COPY .git/refs .git/refs
-COPY .git/packed-refs .git/packed-refs 2>/dev/null || true
-RUN python3 -c "
-import re, os
-head = open('.git/HEAD').read().strip()
-if re.fullmatch(r'[0-9a-f]{40}', head):
-    sha = head[:7]
-else:
-    ref = head.split('ref: ')[1]
-    try:
-        sha = open(f'.git/{ref}').read().strip()[:7]
-    except FileNotFoundError:
-        sha = open('.git/packed-refs').read()
-        sha = next((l.split()[0][:7] for l in sha.splitlines() if ref in l), 'dev')
-open('/app/BUILD_SHA', 'w').write(sha)
-" && rm -rf .git
+# (.git/objects and .git/logs are excluded by .dockerignore — only metadata is sent)
+COPY .git /tmp/gitdata/
+RUN head=$(cat /tmp/gitdata/HEAD) && \
+    if echo "$head" | grep -qE '^[0-9a-f]{40}$'; then \
+        printf '%.7s' "$head" > /app/BUILD_SHA; \
+    else \
+        ref=$(echo "$head" | cut -c6-); \
+        if [ -f "/tmp/gitdata/$ref" ]; then \
+            cut -c1-7 "/tmp/gitdata/$ref" > /app/BUILD_SHA; \
+        elif [ -f "/tmp/gitdata/packed-refs" ]; then \
+            grep " $ref$" /tmp/gitdata/packed-refs | cut -c1-7 > /app/BUILD_SHA; \
+        else \
+            echo "dev" > /app/BUILD_SHA; \
+        fi; \
+    fi && rm -rf /tmp/gitdata
 
 # Install core simulation dependencies
 COPY requirements.txt .
