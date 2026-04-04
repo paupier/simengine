@@ -5,9 +5,24 @@ LABEL description="Simantha OPC UA Digital Twin - Manufacturing Simulation"
 
 WORKDIR /app
 
-# Build-time SHA for UI header (pass via --build-arg BUILD_SHA=$(git rev-parse --short HEAD))
-ARG BUILD_SHA=dev
-ENV BUILD_SHA=${BUILD_SHA}
+# Bake git commit SHA into the image for the UI header
+COPY .git/HEAD .git/HEAD
+COPY .git/refs .git/refs
+COPY .git/packed-refs .git/packed-refs 2>/dev/null || true
+RUN python3 -c "
+import re, os
+head = open('.git/HEAD').read().strip()
+if re.fullmatch(r'[0-9a-f]{40}', head):
+    sha = head[:7]
+else:
+    ref = head.split('ref: ')[1]
+    try:
+        sha = open(f'.git/{ref}').read().strip()[:7]
+    except FileNotFoundError:
+        sha = open('.git/packed-refs').read()
+        sha = next((l.split()[0][:7] for l in sha.splitlines() if ref in l), 'dev')
+open('/app/BUILD_SHA', 'w').write(sha)
+" && rm -rf .git
 
 # Install core simulation dependencies
 COPY requirements.txt .
