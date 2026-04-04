@@ -5,6 +5,10 @@ LABEL description="Simantha OPC UA Digital Twin - Manufacturing Simulation"
 
 WORKDIR /app
 
+# Build-time SHA for UI header (pass via --build-arg BUILD_SHA=$(git rev-parse --short HEAD))
+ARG BUILD_SHA=dev
+ENV BUILD_SHA=${BUILD_SHA}
+
 # Install core simulation dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

@@ -28,6 +28,8 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+      args:
+        - BUILD_SHA=${BUILD_SHA:-dev}
     container_name: simantha-sim
     ports:
       - "8080:8080"    # Web UI - scenario selection, controls, live KPIs
