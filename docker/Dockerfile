@@ -5,6 +5,9 @@ LABEL description="Simantha OPC UA Digital Twin - Manufacturing Simulation"
 
 WORKDIR /app
 
+# Embed version file (update docker/VERSION before each push)
+COPY docker/VERSION /app/BUILD_SHA
+
 # Install core simulation dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
