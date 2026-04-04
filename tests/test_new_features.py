@@ -28,6 +28,8 @@ from opcua_server import (
     calculate_oee_from_sim,
     process_machine_step,
     collect_system_metrics,
+    _get_dead_band_for_key,
+    CachedOpcuaNode,
 )
 
 
@@ -952,3 +954,75 @@ class TestCollectSystemMetricsRepairs:
         buffers = {"B1": self._make_buffer(0)}
         _, _, _, total_repairs = collect_system_metrics(buffers, None, None)
         assert total_repairs == 0
+
+
+# ========== Dead-Band Key Mapping ==========
+
+
+class TestDeadBandKeyMapping:
+    """Test that _get_dead_band_for_key returns the correct band values."""
+
+    def test_time_accumulator_returns_5(self):
+        """Time accumulator keys must return 5.0, not 1.0 (sim_step == 1.0)."""
+        assert _get_dead_band_for_key("blocked_time") == 5.0
+        assert _get_dead_band_for_key("starved_time") == 5.0
+        assert _get_dead_band_for_key("idle_time") == 5.0
+        assert _get_dead_band_for_key("processing_time") == 5.0
+        assert _get_dead_band_for_key("down_time") == 5.0
+
+    def test_oee_float_returns_0001(self):
+        """OEE float keys use a tight 0.001 band."""
+        assert _get_dead_band_for_key("oee") == 0.001
+        assert _get_dead_band_for_key("availability") == 0.001
+        assert _get_dead_band_for_key("performance") == 0.001
+        assert _get_dead_band_for_key("quality") == 0.001
+
+    def test_fm_suffix_accumulators_return_5(self):
+        """Failure-mode float accumulators (downtime / mtbf / mttr) use 5.0 band."""
+        assert _get_dead_band_for_key("fm_bearing_wear_downtime") == 5.0
+        assert _get_dead_band_for_key("fm_bearing_wear_mtbf") == 5.0
+        assert _get_dead_band_for_key("fm_bearing_wear_mttr") == 5.0
+
+    def test_integer_and_string_keys_return_none(self):
+        """Integer / string / boolean keys return None (exact equality check only)."""
+        assert _get_dead_band_for_key("state") is None
+        assert _get_dead_band_for_key("part_count") is None
+        assert _get_dead_band_for_key("health_state") is None
+
+
+class TestCachedOpcuaNodeDeadBand:
+    """Verify CachedOpcuaNode suppresses writes correctly with a 5.0 dead-band."""
+
+    def _make_node(self):
+        return MagicMock()
+
+    def test_first_write_always_goes_through(self):
+        node = self._make_node()
+        cached = CachedOpcuaNode(node, dead_band=5.0)
+        cached.set_value(0.0)
+        node.set_value.assert_called_once_with(0.0)
+
+    def test_small_deltas_are_suppressed(self):
+        """Four +1.0 increments stay within the 5.0 band — no extra writes."""
+        node = self._make_node()
+        cached = CachedOpcuaNode(node, dead_band=5.0)
+        cached.set_value(0.0)   # write #1 (sentinel)
+        for i in range(1, 5):
+            cached.set_value(float(i))  # delta < 5.0 → suppressed
+        assert node.set_value.call_count == 1
+
+    def test_delta_at_band_boundary_is_suppressed(self):
+        """abs(5.0 - 0.0) == 5.0 is NOT < 5.0, so it should write."""
+        node = self._make_node()
+        cached = CachedOpcuaNode(node, dead_band=5.0)
+        cached.set_value(0.0)
+        cached.set_value(5.0)  # abs delta == band → write
+        assert node.set_value.call_count == 2
+
+    def test_large_delta_forces_write(self):
+        """A delta larger than the band triggers a write."""
+        node = self._make_node()
+        cached = CachedOpcuaNode(node, dead_band=5.0)
+        cached.set_value(0.0)
+        cached.set_value(10.0)
+        assert node.set_value.call_count == 2

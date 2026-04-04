@@ -95,16 +95,20 @@ def _get_dead_band_for_key(key: str):
     """Return dead-band for a given opcua_vars dict key, or None for exact-match caching.
 
     None means use equality check only (integers, strings, booleans, part counts).
+
+    Time accumulators use 5.0 s (not 1.0 s) because sim_step == 1.0 s, so a 1.0 band
+    produces abs(delta) == band — never satisfies the strict < check — writing every step.
+    At 5.0 s each accumulator writes at most once every 5 sim-seconds (80% fewer writes).
     """
     if key in _OEE_FLOAT_KEYS:
         return 0.001
     if key in _TIME_ACC_KEYS:
-        return 1.0
+        return 5.0
     if key in _PPM_KEYS:
         return 0.5
     # Per-failure-mode float accumulators: fm_{name}_downtime / _mtbf / _mttr
     if key.endswith("_downtime") or key.endswith("_mtbf") or key.endswith("_mttr"):
-        return 1.0
+        return 5.0
     return None  # exact equality (integers, strings, bools, part counts)
 
 
@@ -2385,13 +2389,30 @@ def run_segment(
     stop_reason = "interrupted"
     line_oee = 0.0
 
+    _overrun_warn_interval = 60   # print at most one overrun warning per minute
+    _last_overrun_warn = 0.0
+
     while True:
         # Pace wall-clock: sleep for whatever remains of the 1-second budget
         # after the previous iteration's work.  This keeps sim-time and
         # wall-clock tightly in sync even when the simulate step is slow.
         elapsed = time.time() - step_wall_start
-        time.sleep(max(0.0, real_step - elapsed))
+        sleep_time = max(0.0, real_step - elapsed)
+        time.sleep(sleep_time)
         step_wall_start = time.time()
+
+        # Warn when a step overruns its budget — indicates OPC UA write or
+        # simulation compute is taking longer than real_step.  Throttled to
+        # one message per minute to avoid log spam.
+        if sleep_time == 0.0 and elapsed > real_step * 1.2:
+            _now = time.time()
+            if _now - _last_overrun_warn >= _overrun_warn_interval:
+                logging.warning(
+                    "Step overrun: %.3fs elapsed (budget %.3fs). "
+                    "Sim clock will lag wall clock. sim_time=%.0f",
+                    elapsed, real_step, sim_time
+                )
+                _last_overrun_warn = _now
 
         # Check stop conditions
         if sim_time >= max_sim_time:
