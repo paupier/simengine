@@ -33,6 +33,7 @@ services:
       - "8080:8080"    # Web UI - scenario selection, controls, live KPIs
       - "4840:4840"    # OPC UA - connect with UA Expert, Node-RED, SCADA
     environment:
+      - BUILD_SHA=${BUILD_SHA:-dev}
       - INFLUXDB_URL=http://influxdb:8086
       - INFLUXDB_TOKEN=simantha-dev-token
       - INFLUXDB_ORG=simantha

@@ -146,6 +146,39 @@ TELEGRAF_CONF_PATH = os.environ.get(
 
 sys.path.insert(0, str(_PROJECT_ROOT / "docker" / "telegraf"))
 
+# ── Build info (shown in UI header) ─────────────────────────────────────────
+def _resolve_build_sha() -> str:
+    """Return a short build identifier for the UI header.
+
+    Priority:
+      1. BUILD_SHA env var  (set in Portainer stack env or docker-compose env)
+      2. git rev-parse at runtime (works locally when .git is present)
+      3. Container start timestamp (always available; changes on every redeploy)
+    """
+    sha = os.environ.get("BUILD_SHA", "").strip()
+    if sha:
+        return sha[:7]
+    try:
+        result = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=str(_PROJECT_ROOT),
+            stderr=subprocess.DEVNULL,
+            timeout=2,
+        )
+        return result.decode().strip()
+    except Exception:
+        pass
+    return dt.now(timezone.utc).strftime("started %H:%M")
+
+
+BUILD_SHA = _resolve_build_sha()
+
+
+@app.context_processor
+def inject_build_info():
+    return {"build_sha": BUILD_SHA}
+
+
 # ── Demo mode settings ──────────────────────────────────────────────────────
 _SETTINGS_PATH = _SCRIPT_DIR / "demo_settings.json"
 _SETTINGS_DEFAULTS = {"demo_mode": False, "retention_days": 30}
