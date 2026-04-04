@@ -151,12 +151,12 @@ def _resolve_build_sha() -> str:
     """Return a short build identifier for the UI header.
 
     Priority:
-      1. BUILD_SHA env var  (set in Portainer stack env or docker-compose env)
+      1. BUILD_SHA env var when explicitly set to a real value (not 'dev')
       2. git rev-parse at runtime (works locally when .git is present)
-      3. Container start timestamp (always available; changes on every redeploy)
+      3. Container start timestamp — always available, changes on every redeploy
     """
     sha = os.environ.get("BUILD_SHA", "").strip()
-    if sha:
+    if sha and sha != "dev":
         return sha[:7]
     try:
         result = subprocess.check_output(
@@ -168,7 +168,7 @@ def _resolve_build_sha() -> str:
         return result.decode().strip()
     except Exception:
         pass
-    return dt.now(timezone.utc).strftime("started %H:%M")
+    return dt.now(timezone.utc).strftime("up %H:%M")
 
 
 BUILD_SHA = _resolve_build_sha()
