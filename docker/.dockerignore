@@ -1,9 +1,7 @@
 __pycache__
 *.pyc
 *.pyo
-.git/objects
-.git/logs
-.git/lfs
+.git
 .github
 .vscode
 .idea

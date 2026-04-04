@@ -5,23 +5,6 @@ LABEL description="Simantha OPC UA Digital Twin - Manufacturing Simulation"
 
 WORKDIR /app
 
-# Bake git commit SHA into the image for the UI header
-# (.git/objects and .git/logs are excluded by .dockerignore — only metadata is sent)
-COPY .git /tmp/gitdata/
-RUN head=$(cat /tmp/gitdata/HEAD) && \
-    if echo "$head" | grep -qE '^[0-9a-f]{40}$'; then \
-        printf '%.7s' "$head" > /app/BUILD_SHA; \
-    else \
-        ref=$(echo "$head" | cut -c6-); \
-        if [ -f "/tmp/gitdata/$ref" ]; then \
-            cut -c1-7 "/tmp/gitdata/$ref" > /app/BUILD_SHA; \
-        elif [ -f "/tmp/gitdata/packed-refs" ]; then \
-            grep " $ref$" /tmp/gitdata/packed-refs | cut -c1-7 > /app/BUILD_SHA; \
-        else \
-            echo "dev" > /app/BUILD_SHA; \
-        fi; \
-    fi && rm -rf /tmp/gitdata
-
 # Install core simulation dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
