@@ -162,7 +162,7 @@ Shared test factories live in `tests/factories.py`:
 
 ### Configuration
 
-`config/line_models.yaml` defines 20 scenarios (balanced, bottleneck, failure, SPC, shifts, historian, scrap, rework, full_feature, warm_up, priority_maintenance, multi_state_degradation, full_feature_8_machine, etc.). Each scenario specifies machines, buffers, optional maintainer, failure_modes, quality_routing, shifts, historian backends, and SPC config.
+`config/line_models.yaml` defines 25 scenarios (balanced, bottleneck, failure, SPC, shifts, historian, scrap, rework, full_feature, warm_up, priority_maintenance, multi_state_degradation, full_feature_8_machine, full_feature_8_machine_rtf, plus four comparative 8-machine variants: `8m_cbm_poor_quality`, `8m_rtf_poor_quality`, `8m_cbm_high_downtime`, `8m_rtf_high_downtime`). Each scenario specifies machines, buffers, optional maintainer, failure_modes, quality_routing, shifts, historian backends, and SPC config.
 
 Per-machine options include:
 - `cycle_time` — direct cycle time in seconds

@@ -11,13 +11,13 @@ A real-time **digital twin** of a manufacturing production line using [Simantha]
 ## 📋 Project Status
 
 **Status:** Feature-complete manufacturing digital twin
-**Last Updated:** 2026-03-26
+**Last Updated:** 2026-04-03
 
 ### Key Capabilities
 
 | Area | Features |
 |------|----------|
-| **Simulation** | N-machine serial lines (2-10+), config-driven topologies, 21 built-in scenarios, run recipes, per-step real-time architecture (O(1)/step, sim clock locked to wall clock) |
+| **Simulation** | N-machine serial lines (2-10+), config-driven topologies, 25 built-in scenarios, run recipes, per-step real-time architecture (O(1)/step, sim clock locked to wall clock) |
 | **OPC UA** | ISA-95/ISO 23247 aligned address space; `SetInterarrivalTime` configurable at run start |
 | **Reliability** | Multi-state health degradation, advanced failure modes (Weibull, exponential, lognormal), competing risks |
 | **Maintenance** | Corrective/preventive/predictive strategies, priority maintainer (FIFO, SPT, priority, bottleneck) |
@@ -291,7 +291,7 @@ All OPC UA variables are **read-only** during a run. `SetInterarrivalTime` (unde
 
 ## 🧪 Testing & Scenarios
 
-### Available Scenarios (21 total)
+### Available Scenarios (25 total)
 
 | Scenario | Machines | Features | Complexity |
 |----------|----------|----------|------------|
@@ -310,12 +310,29 @@ All OPC UA variables are **read-only** during a run. `SetInterarrivalTime` (unde
 | `scrap_line` | 2 | Scrap sinks + health-correlated routing | Intermediate |
 | `rework_line` | 2 | Virtual rework before scrapping | Intermediate |
 | `full_feature_line` | 2 | **All features combined** (failures, SPC, shifts, historian, scrap/rework) | Expert |
-| `full_feature_8_machine_line` | 8 | Max-scale: all features on 8 machines with CBM | Expert |
-| `full_feature_8_machine_line_rtf` | 8 | Same as above but run-to-failure (no CBM) — for MTTR/downtime analysis | Expert |
+| `full_feature_8_machine_line` | 8 | Max-scale: all features on 8 machines with CBM — **balanced reference** | Expert |
+| `full_feature_8_machine_line_rtf` | 8 | Balanced 8-machine line, run-to-failure (no CBM) — MTTR/downtime analysis | Expert |
+| `8m_cbm_poor_quality` | 8 | Good reliability, high defect rate (12% base, ×6 health multiplier) with CBM | Expert |
+| `8m_rtf_poor_quality` | 8 | Same quality profile as above, run-to-failure (no CBM) | Expert |
+| `8m_cbm_high_downtime` | 8 | Frequent failures, long MTTR (~65s), good quality with CBM | Expert |
+| `8m_rtf_high_downtime` | 8 | Same downtime profile as above, run-to-failure (no CBM) | Expert |
 | `warm_up_line` | 2 | Warm-up period for steady-state metrics | Intermediate |
 | `priority_maintenance_line` | 3 | Priority maintainer with bottleneck-first strategy | Advanced |
 | `priority_user_line` | 3 | Priority maintainer with user-defined priorities | Advanced |
 | `multi_state_degradation_line` | 2 | Multi-state health degradation (5 states) | Advanced |
+
+#### 8-Machine Comparative Matrix
+
+All six 8-machine scenarios share identical cycle times and buffer layout so metrics are directly comparable:
+
+| Scenario | Maintenance | Target Availability | Target Quality | Target OEE | What drives the loss |
+|----------|-------------|--------------------:|---------------:|----------:|---------------------|
+| `full_feature_8_machine_line` | CBM | ~85% | ~97% | ~82% | Balanced reference |
+| `full_feature_8_machine_line_rtf` | RTF | ~80% | ~95% | ~76% | Balanced reference |
+| `8m_cbm_poor_quality` | CBM | ~88% | ~70% | ~62% | Quality (high defects, low rework success) |
+| `8m_rtf_poor_quality` | RTF | ~84% | ~70% | ~59% | Quality + unplanned downtime |
+| `8m_cbm_high_downtime` | CBM | ~65% | ~97% | ~63% | Availability (frequent failures, long MTTR) |
+| `8m_rtf_high_downtime` | RTF | ~55% | ~97% | ~53% | Availability (longer FAILED events, no early intervention) |
 
 ### Run Tests
 
@@ -324,7 +341,7 @@ All OPC UA variables are **read-only** during a run. `SetInterarrivalTime` (unde
 pytest tests/ -v --ignore=tests/test_advanced_scenarios.py --ignore=tests/test_opcua_integration.py
 
 # Specific test suites
-pytest tests/test_new_features.py -v          # Warm-up, degradation, MTTF scaling (57 tests)
+pytest tests/test_new_features.py -v          # Warm-up, degradation, dead-band, shift OEE, repair counting (72 tests)
 pytest tests/test_config_validation.py -v     # Config validation (48 tests)
 pytest tests/test_telegraf_generator.py -v    # Telegraf config gen (49 tests)
 pytest tests/test_event_historian.py -v       # Event historian (38 tests)
@@ -478,13 +495,13 @@ simantha-opcua/
 │   └─ simantha_baseline.py       # Standalone baseline scenarios (batch mode)
 │
 ├─ config/
-│   ├─ line_models.yaml           # Scenario definitions (21 scenarios)
+│   ├─ line_models.yaml           # Scenario definitions (25 scenarios)
 │   └─ recipes/                   # Recipe YAML files (multi-segment schedules)
 │       ├─ monday_schedule.yaml   # 3-segment: Product A → B → A with changeovers
 │       ├─ single_product.yaml    # 1-segment batch
 │       └─ quick_test.yaml        # 2-segment short recipe for testing
 │
-├─ tests/                          # 511 tests (excluding integration)
+├─ tests/                          # 598 tests (excluding integration)
 │   ├─ factories.py               # Shared test factories (make_event, make_part, etc.)
 │   ├─ test_new_features.py       # Warm-up, priority maintainer, degradation, MTTF scaling (57 tests)
 │   ├─ test_config_validation.py  # Configuration validation (48 tests)
@@ -749,11 +766,18 @@ The following are identified for future phases (out of scope for current impleme
 
 ## 🗺️ Roadmap
 
-### Recent Changes (2026-03-30)
+### Recent Changes (2026-04-04)
 
-- **OPC UA write caching** — `CachedOpcuaNode` wrapper in `src/opcua_server.py` and `src/recipe_runner.py` skips `set_value()` calls when the value is unchanged since the last write. Reduces per-step OPC UA writes from ~600 to ~150, keeping sim-clock and wall-clock in tight 1:1 sync on long runs.
-- **Grafana dashboard redesigns** — Shift Comparison rebuilt with proper Current vs Previous shift comparison (bar gauges for A/P/Q/OEE, step charts for completed-shift history). Alarm Event Log rebuilt with live Machine Failure Status bar gauges, machine failure timeline, alarm rate-over-time chart, and colour-coded event table.
-- **SPC ViolationCount fix** — `M{N}_SPC_ViolationCount` (integer) restored in `telegraf.conf`; the previous revision had replaced it with `M{N}_SPC_Violations` (string), causing Grafana's Violations stat to show 0.
+- **4 comparative 8-machine scenarios** — `8m_cbm_poor_quality`, `8m_rtf_poor_quality`, `8m_cbm_high_downtime`, `8m_rtf_high_downtime`. All share the same cycle times and buffer layout as the balanced reference for direct OEE comparison across availability-loss vs quality-loss profiles and CBM vs RTF maintenance strategies.
+- **`Sys_TotalRepairs` fix** — `collect_system_metrics()` now reads `total_cm_count` from machines regardless of whether a Simantha `Maintainer` object is configured. Previously the no-maintainer branch hardcoded `total_repairs = 0`, so RTF and no-CBM scenarios always showed 0 repairs in the Grafana Maintenance panel.
+- **Current shift OEE live computation** — `ShiftManager.get_current_shift_metrics()` now computes Availability, Quality, and OEE live from accumulated time counters on every call instead of returning the stale 0.0 stored in `ShiftMetrics.oee` (only written at shift rotation). Fixes Grafana Shift Comparison "No data" / 0% OEE for the active shift.
+- **Dead-band OPC UA writes** — `CachedOpcuaNode` extended with per-key tolerance bands (OEE floats: 0.001, time accumulators: 1.0 s, ActualPPM: 0.5). Suppresses `set_value()` calls when the new value hasn't moved enough to matter, reducing per-step writes from ~600 to ~150 and keeping sim-clock and wall-clock in tight 1:1 sync on long runs.
+
+### Previous Changes (2026-03-30)
+
+- **OPC UA write caching** — `CachedOpcuaNode` wrapper skips `set_value()` when value is unchanged since last write.
+- **Grafana dashboard redesigns** — Shift Comparison rebuilt (Current vs Previous, bar gauges, step charts). Alarm Event Log rebuilt with live failure status, timeline, and colour-coded event table.
+- **SPC ViolationCount fix** — `M{N}_SPC_ViolationCount` (integer) restored in `telegraf.conf`.
 
 ### Previous Changes (2026-03-26)
 
