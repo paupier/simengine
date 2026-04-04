@@ -154,6 +154,66 @@ services:
     restart: unless-stopped
 
   # -------------------------------------------------------------------------
+  # Prometheus - Metrics collection (scrapes cAdvisor + node-exporter)
+  # -------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: simantha-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    networks:
+      - simantha-net
+    restart: unless-stopped
+
+  # -------------------------------------------------------------------------
+  # cAdvisor - Per-container CPU/memory/network/disk metrics
+  # -------------------------------------------------------------------------
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: simantha-cadvisor
+    privileged: true
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /cgroup:/cgroup:ro
+    networks:
+      - simantha-net
+    restart: unless-stopped
+
+  # -------------------------------------------------------------------------
+  # node-exporter - Host machine CPU/memory/disk/network metrics
+  # -------------------------------------------------------------------------
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: simantha-node-exporter
+    pid: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    networks:
+      - simantha-net
+    restart: unless-stopped
+
+  # -------------------------------------------------------------------------
   # Eclipse Mosquitto 2.0 - MQTT Broker (OPC UA PubSub transport)
   # -------------------------------------------------------------------------
   mosquitto:
@@ -173,6 +233,8 @@ services:
 volumes:
   sim-data:
     name: simantha-sim-data
+  prometheus-data:
+    name: simantha-prometheus-data
   influx-data:
     name: simantha-influx-data
   grafana-data:

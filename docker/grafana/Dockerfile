@@ -1,7 +1,10 @@
 FROM grafana/grafana:latest
 
-# Embed provisioning config (datasource + dashboard provider)
+# Embed provisioning config (datasources + dashboard providers)
 COPY provisioning/ /etc/grafana/provisioning/
 
-# Embed dashboard JSON files alongside the provider config
+# Manufacturing dashboards (InfluxDB / Flux)
 COPY dashboards/ /etc/grafana/provisioning/dashboards/json/
+
+# Infrastructure dashboards (Prometheus / cAdvisor / node-exporter)
+COPY dashboards_infra/ /etc/grafana/provisioning/dashboards/infra/
