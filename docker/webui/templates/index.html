@@ -1225,6 +1225,14 @@
                     if (seedEl.value === '') seedEl.value = data.seed != null ? data.seed : '';
                     const iaEl = document.getElementById('interarrival-input');
                     if (iaEl.value === '') iaEl.value = data.speed_ratio != null ? data.speed_ratio : '';
+                    const mqttToggle = document.getElementById('mqtt-toggle');
+                    const mqttBrokerRow = document.getElementById('mqtt-broker-row');
+                    const mqttBrokerInput = document.getElementById('mqtt-broker-input');
+                    if (data.mqtt != null) {
+                        mqttToggle.checked = data.mqtt;
+                        mqttBrokerRow.style.display = data.mqtt ? 'block' : 'none';
+                    }
+                    if (data.mqtt_broker) mqttBrokerInput.value = data.mqtt_broker;
                 }
 
                 if (data.opcua) {

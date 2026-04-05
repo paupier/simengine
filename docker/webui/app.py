@@ -107,6 +107,8 @@ sim_start_time = None
 sim_run_id = None
 sim_seed = None
 sim_speed_ratio = None
+sim_mqtt = False
+sim_mqtt_broker = ""
 sim_log = deque(maxlen=200)  # Ring buffer for stdout capture
 sim_lock = threading.Lock()
 
@@ -374,6 +376,7 @@ def start_simulation(scenario, seed=None, speed_ratio=None, mqtt=False, mqtt_bro
     """Spawn opcua_server.py as a subprocess."""
     global sim_process, sim_scenario, sim_recipe
     global sim_start_time, sim_run_id, sim_seed, sim_speed_ratio
+    global sim_mqtt, sim_mqtt_broker
 
     with sim_lock:
         stop_simulation()
@@ -414,6 +417,8 @@ def start_simulation(scenario, seed=None, speed_ratio=None, mqtt=False, mqtt_bro
         sim_start_time = time.time()
         sim_seed = seed
         sim_speed_ratio = speed_ratio
+        sim_mqtt = mqtt
+        sim_mqtt_broker = mqtt_broker
 
         # Disconnect OPC UA client (will reconnect lazily)
         _disconnect_opcua()
@@ -427,6 +432,7 @@ def start_simulation_recipe(recipe_name, seed=None, speed_ratio=None, mqtt=False
     """Spawn opcua_server.py in recipe mode as a subprocess."""
     global sim_process, sim_scenario, sim_recipe
     global sim_start_time, sim_run_id, sim_seed, sim_speed_ratio
+    global sim_mqtt, sim_mqtt_broker
 
     with sim_lock:
         stop_simulation()
@@ -471,6 +477,8 @@ def start_simulation_recipe(recipe_name, seed=None, speed_ratio=None, mqtt=False
         sim_start_time = time.time()
         sim_seed = seed
         sim_speed_ratio = speed_ratio
+        sim_mqtt = mqtt
+        sim_mqtt_broker = mqtt_broker
 
         # Disconnect OPC UA client (will reconnect lazily)
         _disconnect_opcua()
@@ -717,6 +725,8 @@ def api_status():
         "pid": sim_process.pid if sim_process else None,
         "seed": sim_seed,
         "speed_ratio": sim_speed_ratio,
+        "mqtt": sim_mqtt,
+        "mqtt_broker": sim_mqtt_broker,
     }
 
     # Include OPC UA values if running
