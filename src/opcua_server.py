@@ -1568,12 +1568,12 @@ def write_system_opcua_vars(opcua_vars, sim_time, total_parts_produced, total_wi
     opcua_vars["maintenance"]["total_repairs"].set_value(total_repairs)
 
 
-def update_shift_opcua_vars(shift_manager, opcua_vars, sim_time, delta_parts):
+def update_shift_opcua_vars(shift_manager, opcua_vars, sim_time, delta_parts, delta_defects=0):
     """Update shift tracking metrics and OPC UA variables."""
     if not (shift_manager and opcua_vars.get("shift")):
         return
 
-    shift_manager.update_production(delta_parts, 0)
+    shift_manager.update_production(delta_parts, delta_defects)
 
     shift_info = shift_manager.get_current_shift_info()
     shift_metrics = shift_manager.get_current_shift_metrics()
@@ -2377,6 +2377,7 @@ def run_segment(
     # Tracks when each machine first entered FAILED state (sim_time), so we
     # can compute actual downtime when the external repair loop completes.
     machine_failure_start = {mname: None for mname in machines}
+    prev_line_defective = 0
     # Running scrap totals — scrap Sink.level resets to 0 each step (same as
     # the main sink), so we accumulate deltas here rather than reading the
     # raw level which would jump up/down each step.
@@ -2614,6 +2615,8 @@ def run_segment(
 
         line_good = sum(m.get("good_parts", 0) for m in machine_metrics.values())
         line_defective = sum(m.get("defective_parts", 0) for m in machine_metrics.values())
+        delta_defects = max(0, line_defective - prev_line_defective)
+        prev_line_defective = line_defective
 
         # Write system KPIs to OPC UA
         if write_opcua:
@@ -2625,7 +2628,7 @@ def run_segment(
 
         # Shift OPC UA updates
         if write_opcua:
-            update_shift_opcua_vars(shift_manager, opcua_vars, sim_time, delta_parts)
+            update_shift_opcua_vars(shift_manager, opcua_vars, sim_time, delta_parts, delta_defects)
 
         # MQTT PubSub — publish full snapshot if enabled
         if mqtt_publisher is not None:
