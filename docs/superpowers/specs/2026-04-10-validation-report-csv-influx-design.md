@@ -27,11 +27,14 @@ The API response shape changes from `{checks: [...]}` to `{run_overview, line_me
 {
   "run_overview": {
     "run_id": str,
-    "sim_start": float,           # sim_time of first event (CSV)
-    "sim_end": float,             # sim_time of last event (CSV)
-    "sim_duration_s": float,
+    "sim_start": float,           # CSV `timestamp` column first value (sim-time, not wall-clock)
+    "sim_end": float,             # CSV `timestamp` column last value
+    "sim_duration_s": float,      # sim_end - sim_start
+    # Note: sim_start/sim_end are sim-time; first/last_simtime_influx are also sim-time values
+    # queried from the SimTime OPC UA field. They are comparable. Wall-clock times (CSV
+    # `wall_clock` column, InfluxDB `_time`) are on a different axis and are not compared here.
     "csv_total_events": int,
-    "influx_total_points": int,
+    "influx_total_points": int,   # count of SimTime field records in InfluxDB for this run/range
     "scrape_interval_s": float,   # derived from Telegraf elapsed intervals
     "expected_points": int,       # floor(sim_duration_s / scrape_interval_s)
     "coverage_pct": float,        # influx_total_points / expected_points * 100
@@ -82,12 +85,16 @@ The API response shape changes from `{checks: [...]}` to `{run_overview, line_me
   ],
 
   "verdict": {
-    "overall": "PASS" | "FAIL",
-    "checks_passed": int,
-    "checks_total": int,
-    "fidelity_score_pct": float,  # pct of non-N/A checks that PASS or WARN
+    "overall": "PASS" | "FAIL",  # PASS requires all non-SKIP checks to be PASS or WARN
+    "checks_passed": int,         # count of PASS checks only
+    "checks_warned": int,         # count of WARN checks
+    "checks_total": int,          # non-SKIP checks
+    "fidelity_score_pct": float,  # (PASS + WARN) / checks_total * 100
     "under_sampling_machines": [str],  # machines flagged for under-sampling
   },
+  # Verdict logic: overall=PASS when no FAIL checks exist (WARN is tolerated).
+  # fidelity_score_pct counts both PASS and WARN as "fidelity confirmed" since WARN
+  # means delta > threshold but within 2x — still informative rather than broken.
 }
 ```
 
@@ -98,7 +105,7 @@ Displayed as a compact stat row. Fields:
 | Stat | Source |
 |------|--------|
 | Run ID | CSV `run_id` column |
-| Sim duration | CSV `sim_time` range |
+| Sim duration | CSV `timestamp` column range (sim-time) |
 | CSV total events | `len(df)` |
 | InfluxDB total points | `query total_points` |
 | Telegraf scrape interval | median of `elapsed` intervals from SimTime query |
@@ -112,14 +119,14 @@ Side-by-side table. CSV source is the historian events DataFrame; InfluxDB sourc
 | Metric | CSV source | InfluxDB field | Pass threshold |
 |--------|-----------|----------------|----------------|
 | Parts produced | last `partcount` from PRODUCTION_SUMMARY | `Throughput` last | ≤ 2 parts |
-| Good parts | PRODUCTION_SUMMARY `extra_json.good_parts` | N/A (historian only) | — |
-| Defective parts | PRODUCTION_SUMMARY `extra_json.defective_parts` | N/A (historian only) | — |
+| Good parts | last `good_parts` top-level column from STATE_CHANGE rows (any machine) | N/A (historian only) | — |
+| Defective parts | last `defective_parts` top-level column from STATE_CHANGE rows (any machine) | N/A (historian only) | — |
 | Quality rate | good / (good + defective) | N/A (historian only) | — |
-| Total scrap events | count of SCRAP event_type rows | `TotalScrap` last | ≤ 1% diff |
+| Total scrap parts | for each machine: last `extra_json.scrap_count` from SCRAP events (the value is cumulative, so the last event per machine holds the total); sum across all machines. Machines with no SCRAP events contribute 0 | `TotalScrap` last | ≤ 1% diff |
 | Total rework events | count of REWORK event_type rows | N/A (historian only) | — |
 | Line OEE mean | PRODUCTION_SUMMARY `extra_json.line_oee` mean | `LineOEE` mean | ≤ 0.05 abs |
 | Total failures | count of STATE_CHANGE where new_state=FAILED | N/A (complex) | — |
-| Total SPC violations | count of SPC_VIOLATION event_type rows | sum of `M{i}_SPC_CumulativeOOC` last values | ≤ 5% diff |
+| Total SPC OOC entries | count of SPC_VIOLATION rows where `extra_json.in_control == false` (OOC-entry events only, not recovery events) | sum of `M{i}_SPC_CumulativeOOC` last values | ≤ 5% diff |
 | Total alarms | count of ALARM event_type rows | N/A (not OPC UA field) | — |
 | Telegraf update gaps > 5s | 0 (historian is gapless) | `gaps_over_5s` count | ≤ 3 |
 
@@ -131,16 +138,16 @@ One collapsible block per machine, each containing a sub-table:
 |--------|-----------|----------------|----------------|
 | Part count | max partcount from STATE_CHANGE or PRODUCTION_SUMMARY extra_json | `M{i}_PartCount` last | ≤ 2% diff |
 | OEE mean | mean of `oee` col from STATE_CHANGE rows for this machine | `M{i}_OEE` mean | ≤ 0.05 abs |
-| Availability mean | derived from `down_time` / elapsed (STATE_CHANGE) | `M{i}_Availability` mean | ≤ 0.05 abs |
-| Total downtime (s) | sum of repair durations from UNDER_REPAIR events | `M{i}_DownTime` last | ≤ 5% diff |
+| Availability mean | mean of `extra_json.availability` from STATE_CHANGE rows for this machine | `M{i}_Availability` mean | ≤ 0.05 abs |
+| Total downtime (s) | total duration of STATE_CHANGE rows where `new_state IN ["FAILED","UNDER_REPAIR"]` for this machine (sum of inter-event time spans in those states) | `M{i}_DownTime` last | ≤ 5% diff |
 | Failure count | count of STATE_CHANGE where new_state=FAILED | N/A | — |
 | MTTR mean (s) | mean repair duration from STATE_CHANGE pairs | N/A (snapshot data unreliable) | — |
-| SPC violations | count of SPC_VIOLATION rows for this machine | `M{i}_SPC_CumulativeOOC` last | ≤ 10% diff |
+| SPC OOC entries | count of SPC_VIOLATION rows for this machine where `extra_json.in_control == false` | `M{i}_SPC_CumulativeOOC` last | ≤ 10% diff |
 | Alarms | count of ALARM rows for this machine | N/A (not OPC UA field) | — |
 | Rework events | count of REWORK rows for this machine | N/A (historian only) | — |
 | Scrap events | count of SCRAP rows for this machine | N/A (historian only) | — |
 
-MTTR derivation from CSV: pair consecutive FAILED → PROCESSING (or IDLE) transitions for the same machine and compute the duration between them.
+MTTR derivation from CSV: for each machine, find consecutive STATE_CHANGE pairs where `new_state == "FAILED"` (repair start) and the subsequent transition where `new_state` is neither `"FAILED"` nor `"UNDER_REPAIR"` (repair end — machine back in service). The state sequence is `FAILED → UNDER_REPAIR → PROCESSING/IDLE/DEGRADED`; the repair duration spans the entire FAILED+UNDER_REPAIR window. Failure count is the number of such pairs found.
 
 For metrics with N/A on the InfluxDB side, the status column shows `SKIP` and a tooltip explains which OPC UA field is absent or why derivation is not reliable.
 
@@ -188,7 +195,7 @@ Added to `query_influxdb_telegraf()`:
 2. **Per-machine Availability mean** — `M{i}_Availability` field, `mean()`
 3. **Per-machine DownTime last** — `M{i}_DownTime` field, `last()`
 4. **Per-machine SPC CumulativeOOC last** — `M{i}_SPC_CumulativeOOC` field, `last()`
-5. **Per-machine point count** — `count()` grouped by field prefix `M{i}_PartCount`, one number per machine
+5. **Per-machine point count** — `count()` on `M{i}_PartCount` field per machine. This counts the number of scrape cycles that recorded a value for that machine and is used as a proxy for total scrapes covering that machine (not 20× the scrape count — each scrape writes all fields at the same timestamp, so PartCount count == scrape count for that machine)
 6. **TotalScrap last** — `TotalScrap` field, `last()`
 7. **LineOEE mean** — `LineOEE` field, `mean()` (replaces existing timeseries query)
 
@@ -208,5 +215,5 @@ Surfacing these N/A entries explicitly is intentional: it shows what the OPC UA 
 
 ## Test Coverage
 
-- Unit tests in `tests/test_report_engine.py`: validate `validate_pipeline()` returns correct section structure for a synthetic DataFrame + influx_data dict; cover N/A handling, delta calculation, status thresholds, and MTTR derivation
+- Unit tests in `tests/test_report_engine.py`: validate `validate_pipeline()` returns correct section structure for a synthetic DataFrame + influx_data dict; cover N/A handling, delta calculation, status thresholds, and MTTR derivation. MTTR test fixture must include the full FAILED → UNDER_REPAIR → PROCESSING state sequence in synthetic STATE_CHANGE rows (not just FAILED → PROCESSING). Test the empty-influx_data fallback (all InfluxDB values → N/A/SKIP, no KeyError)
 - No new InfluxDB integration tests (existing pattern: integration tests excluded from CI)
