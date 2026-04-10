@@ -1180,163 +1180,396 @@ def run_full_analysis(df):
 def validate_pipeline(df, influx_data):
     """Compare CSV historian ground truth against Telegraf/InfluxDB OPC UA data.
 
-    Returns a dict with checks list and overall verdict.
+    Returns a dict with sections:
+      run_overview, line_metrics, machine_metrics, data_coverage, gaps, verdict.
     """
     _require_pandas()
-    checks = []
 
-    # --- Update rate ---
-    avg_rate = influx_data.get("avg_update_rate")
-    if avg_rate is not None and avg_rate > 0:
-        actual_rate = round(1.0 / avg_rate, 2)
-        rate_ok = abs(actual_rate - 1.0) < 0.05
-        checks.append({
-            "name": "Update rate",
-            "csv_value": "1.00/sec",
-            "telegraf_value": f"{actual_rate:.2f}/sec",
-            "status": "PASS" if rate_ok else "FAIL",
-        })
-    else:
-        checks.append({
-            "name": "Update rate",
-            "csv_value": "1.00/sec",
-            "telegraf_value": "N/A",
-            "status": "SKIP",
-        })
+    # ── Format / status helpers ─────────────────────────────────────────────
+    def _fmt(v, decimals=2):
+        if v is None:
+            return "N/A"
+        try:
+            if isinstance(v, float) and (pd.isna(v) or not pd.api.types.is_number(v)):
+                return "N/A"
+        except Exception:
+            pass
+        if isinstance(v, int):
+            return f"{v:,}"
+        if isinstance(v, float):
+            return f"{v:,.{decimals}f}"
+        return str(v)
 
-    # --- Throughput comparison ---
-    prod_summaries = df[df["event_type"] == "PRODUCTION_SUMMARY"]
-    csv_final_partcount = None
-    if len(prod_summaries) > 0:
-        last_pc = prod_summaries.iloc[-1]["partcount"]
-        csv_final_partcount = int(last_pc) if pd.notna(last_pc) else None
+    def _mk_row(name, csv_val, influx_val, threshold,
+                influx_note=None, mode="pct", metric_key=None):
+        """Build a comparison row dict with PASS/WARN/FAIL/SKIP status."""
+        key = metric_key or name
+        csv_str = _fmt(csv_val) if not isinstance(csv_val, str) else (csv_val or "N/A")
+        if influx_val is None or (isinstance(influx_val, float) and pd.isna(influx_val)):
+            return {"name": key, "metric": key, "csv_value": csv_str,
+                    "influx_value": "N/A", "influx_note": influx_note,
+                    "delta_pct": None, "status": "SKIP"}
+        influx_str = _fmt(influx_val) if not isinstance(influx_val, str) else influx_val
+        if threshold is None or csv_val is None:
+            return {"name": key, "metric": key, "csv_value": csv_str,
+                    "influx_value": influx_str, "influx_note": influx_note,
+                    "delta_pct": None, "status": "SKIP"}
+        try:
+            csv_f, inf_f = float(csv_val), float(influx_val)
+        except (TypeError, ValueError):
+            return {"name": key, "metric": key, "csv_value": csv_str,
+                    "influx_value": influx_str, "influx_note": influx_note,
+                    "delta_pct": None, "status": "SKIP"}
+        if mode == "pct":
+            denom = max(abs(csv_f), 1.0)
+            delta = abs(csv_f - inf_f) / denom * 100.0
+        else:  # "abs"
+            delta = abs(csv_f - inf_f)
+        status = ("PASS" if delta <= threshold
+                  else "WARN" if delta <= threshold * 2
+                  else "FAIL")
+        return {"name": key, "metric": key, "csv_value": csv_str,
+                "influx_value": influx_str, "influx_note": influx_note,
+                "delta_pct": round(delta, 4), "status": status}
 
-    telegraf_throughput = influx_data.get("final_throughput")
-    throughput_status = "SKIP"
-    if csv_final_partcount is not None and telegraf_throughput is not None:
-        diff = abs(csv_final_partcount - telegraf_throughput)
-        throughput_status = "PASS" if diff <= 2 else "FAIL"
+    def _skip(name, csv_val, note):
+        return {"name": name, "metric": name,
+                "csv_value": _fmt(csv_val) if not isinstance(csv_val, str) else (csv_val or "N/A"),
+                "influx_value": "N/A", "influx_note": note,
+                "delta_pct": None, "status": "SKIP"}
 
-    checks.append({
-        "name": "Final throughput",
-        "csv_value": f"{csv_final_partcount:,}" if csv_final_partcount is not None else "N/A",
-        "telegraf_value": f"{telegraf_throughput:,}" if telegraf_throughput is not None else "N/A",
-        "status": throughput_status,
-    })
+    # ── Machine mapping ─────────────────────────────────────────────────────
+    mach_sc = df[(df["source_type"] == "machine") & (df["event_type"] == "STATE_CHANGE")]
+    csv_machines = sorted(mach_sc["source"].unique().tolist())
+    # Map sorted CSV machine name -> InfluxDB key "Machine{i+1}"
+    mach_key = {m: f"Machine{i + 1}" for i, m in enumerate(csv_machines)}
 
-    # --- OEE comparison ---
-    oee_ts = influx_data.get("oee_timeseries", [])
-    oee_status = "SKIP"
+    # ── 1. Run Overview ─────────────────────────────────────────────────────
+    sim_start = float(df["timestamp"].min()) if len(df) > 0 else 0.0
+    sim_end   = float(df["timestamp"].max()) if len(df) > 0 else 0.0
+    sim_dur   = sim_end - sim_start
+    run_id    = ""
+    if "run_id" in df.columns and len(df) > 0:
+        rid = df["run_id"].iloc[0]
+        if pd.notna(rid):
+            run_id = str(rid).strip()
+
+    scrape_interval = influx_data.get("avg_update_rate")
+    total_influx_pts = influx_data.get("simtime_count") or influx_data.get("total_points") or 0
+    expected_pts = (int(sim_dur / scrape_interval)
+                    if scrape_interval and scrape_interval > 0 else None)
+    coverage_pct = (round(total_influx_pts / expected_pts * 100, 1)
+                    if expected_pts else None)
+
+    run_overview = {
+        "run_id": run_id,
+        "sim_start": sim_start,
+        "sim_end": sim_end,
+        "sim_duration_s": sim_dur,
+        "csv_total_events": len(df),
+        "influx_total_points": total_influx_pts,
+        "scrape_interval_s": round(scrape_interval, 3) if scrape_interval else None,
+        "expected_points": expected_pts,
+        "coverage_pct": coverage_pct,
+        "first_simtime_influx": influx_data.get("first_simtime"),
+        "last_simtime_influx": influx_data.get("last_simtime"),
+    }
+
+    # ── 2. Line-Level Metrics ───────────────────────────────────────────────
+    prod_summ = df[df["event_type"] == "PRODUCTION_SUMMARY"]
+    all_sc = df[df["event_type"] == "STATE_CHANGE"]
+
+    # Parts produced
+    csv_parts = None
+    if len(prod_summ) > 0:
+        last_pc = prod_summ.iloc[-1]["partcount"]
+        csv_parts = int(last_pc) if pd.notna(last_pc) else None
+
+    # Good / defective from last STATE_CHANGE row (any machine)
+    csv_good = csv_defective = None
+    if len(all_sc) > 0:
+        last_sc = all_sc.iloc[-1]
+        gp = last_sc.get("good_parts")
+        dp = last_sc.get("defective_parts")
+        if pd.notna(gp):
+            csv_good = int(gp)
+        if pd.notna(dp):
+            csv_defective = int(dp)
+
+    # Quality rate
+    csv_quality = None
+    if csv_good is not None and csv_defective is not None:
+        total_q = csv_good + csv_defective
+        csv_quality = round(csv_good / total_q, 4) if total_q > 0 else None
+
+    # Total scrap parts (sum of last cumulative scrap_count per machine)
+    scrap_rows = df[df["event_type"] == "SCRAP"]
+    csv_scrap_total = 0
+    for m in csv_machines:
+        m_scrap = scrap_rows[scrap_rows["source"] == m]
+        if len(m_scrap) > 0:
+            last_ex = parse_extra_json(m_scrap["extra_json"]).iloc[-1]
+            if isinstance(last_ex, dict):
+                csv_scrap_total += int(last_ex.get("scrap_count") or 0)
+    csv_scrap_total = csv_scrap_total if csv_scrap_total > 0 else None
+
+    # Total rework events
+    rework_rows = df[df["event_type"] == "REWORK"]
+    csv_rework = len(rework_rows) if len(rework_rows) > 0 else None
+
+    # Line OEE mean
     csv_oee_mean = None
-    telegraf_oee_mean = None
+    if len(prod_summ) > 0:
+        extras = parse_extra_json(prod_summ["extra_json"])
+        vals = pd.to_numeric(
+            extras.apply(lambda x: x.get("line_oee") if isinstance(x, dict) else None),
+            errors="coerce"
+        ).dropna()
+        if len(vals) > 0:
+            csv_oee_mean = round(float(vals.mean()), 4)
 
-    if len(oee_ts) > 0 and len(prod_summaries) > 0:
-        extras = parse_extra_json(prod_summaries["extra_json"])
-        csv_oee_vals = extras.apply(lambda x: x.get("line_oee", None))
-        csv_oee_vals = pd.to_numeric(csv_oee_vals, errors="coerce").dropna()
-        telegraf_oee_vals = [v["value"] for v in oee_ts if v["value"] is not None]
+    # Total SPC OOC entries (in_control == False only)
+    spc_rows = df[df["event_type"] == "SPC_VIOLATION"]
+    csv_spc_ooc = 0
+    if len(spc_rows) > 0:
+        spc_ex = parse_extra_json(spc_rows["extra_json"])
+        csv_spc_ooc = int(
+            spc_ex.apply(
+                lambda x: x.get("in_control") is False if isinstance(x, dict) else False
+            ).sum()
+        )
 
-        if len(csv_oee_vals) > 0 and len(telegraf_oee_vals) > 0:
-            csv_oee_mean = round(float(csv_oee_vals.mean()), 4)
-            telegraf_oee_mean = round(sum(telegraf_oee_vals) / len(telegraf_oee_vals), 4)
-            mean_diff = abs(csv_oee_mean - telegraf_oee_mean)
-            oee_status = "PASS" if mean_diff < 0.05 else "FAIL"
+    # InfluxDB total SPC (sum of per-machine last CumulativeOOC)
+    spc_per_m = influx_data.get("machine_spc_ooc_last", {})
+    influx_spc_total = (
+        sum(v for v in spc_per_m.values() if v is not None) if spc_per_m else None
+    )
 
-    checks.append({
-        "name": "OEE mean",
-        "csv_value": f"{csv_oee_mean:.4f}" if csv_oee_mean is not None else "N/A",
-        "telegraf_value": f"{telegraf_oee_mean:.4f}" if telegraf_oee_mean is not None else "N/A",
-        "status": oee_status,
-    })
+    # Total alarms
+    alarm_rows = df[df["event_type"] == "ALARM"]
+    csv_alarms = len(alarm_rows) if len(alarm_rows) > 0 else None
 
-    # --- Per-machine PartCount ---
-    machine_pcs = influx_data.get("machine_partcounts", {})
-    machine_events = df[(df["source_type"] == "machine") & (df["event_type"] == "STATE_CHANGE")]
-    csv_machines = sorted(machine_events["source"].unique())
+    gaps_count = influx_data.get("gaps_over_5s", 0) or 0
 
-    # Prefer per-machine partcounts from the last PRODUCTION_SUMMARY extra_json — these
-    # capture the final value even when a machine never changes state near end of run.
-    # Falls back to max(STATE_CHANGE partcount) for older CSVs without this field.
-    csv_machine_partcounts = {}
-    if len(prod_summaries) > 0:
-        last_extra = parse_extra_json(prod_summaries["extra_json"]).iloc[-1]
-        if isinstance(last_extra, dict) and "machine_partcounts" in last_extra:
-            csv_machine_partcounts = last_extra["machine_partcounts"]
+    line_metrics = [
+        _mk_row("Parts produced", csv_parts,
+                influx_data.get("final_throughput"), threshold=2.0, mode="pct"),
+        _skip("Good parts", csv_good, "Not an OPC UA field — historian only"),
+        _skip("Defective parts", csv_defective, "Not an OPC UA field — historian only"),
+        _skip("Quality rate",
+              f"{csv_quality:.4f}" if csv_quality is not None else None,
+              "Not an OPC UA field — historian only"),
+        _mk_row("Total scrap parts", csv_scrap_total,
+                influx_data.get("total_scrap"), threshold=1.0, mode="pct"),
+        _skip("Total rework events", csv_rework,
+              "Historian only — no OPC UA field"),
+        _mk_row("Line OEE mean", csv_oee_mean,
+                influx_data.get("line_oee_mean"), threshold=0.05, mode="abs"),
+        _mk_row("Total SPC OOC entries",
+                csv_spc_ooc if csv_spc_ooc else None,
+                influx_spc_total, threshold=5.0, mode="pct"),
+        _skip("Total alarms", csv_alarms,
+              "Not an OPC UA field — historian only"),
+        {
+            "name": "Telegraf data gaps (>5s)", "metric": "Telegraf data gaps (>5s)",
+            "csv_value": "0", "influx_value": str(gaps_count),
+            "influx_note": None, "delta_pct": None,
+            "status": "PASS" if gaps_count == 0 else ("WARN" if gaps_count <= 3 else "FAIL"),
+        },
+    ]
 
-    for i, csv_m in enumerate(csv_machines):
-        telegraf_key = f"Machine{i + 1}"
+    # ── 3. Per-Machine Metrics ──────────────────────────────────────────────
+    machine_metrics = {}
+
+    for m in csv_machines:
+        ikey = mach_key[m]
+        m_sc_all = df[(df["source"] == m) & (df["source_type"] == "machine") & (df["event_type"] == "STATE_CHANGE")].sort_values("timestamp")
+        m_sc_mach = mach_sc[mach_sc["source"] == m]
+        rows_m = []
+
+        # Part count
         csv_pc = None
-        if csv_m in csv_machine_partcounts:
-            csv_pc = int(csv_machine_partcounts[csv_m])
-        else:
-            m_events = machine_events[machine_events["source"] == csv_m]
-            if len(m_events) > 0:
-                max_pc = m_events["partcount"].max()
+        if len(prod_summ) > 0:
+            last_ex = parse_extra_json(prod_summ["extra_json"]).iloc[-1]
+            if isinstance(last_ex, dict) and "machine_partcounts" in last_ex:
+                csv_pc = last_ex["machine_partcounts"].get(m)
+        if csv_pc is None and len(m_sc_mach) > 0:
+            max_pc = m_sc_mach["partcount"].max()
+            if pd.notna(max_pc):
+                csv_pc = int(max_pc)
+        rows_m.append(_mk_row("Part count", csv_pc,
+                               influx_data.get("machine_partcounts", {}).get(ikey),
+                               threshold=2.0, mode="pct", metric_key="Part count"))
+
+        # OEE mean — exclude FAILED/UNDER_REPAIR rows (OEE is 0 during downtime,
+        # which would distort the operational mean vs InfluxDB sampled mean)
+        csv_oee_m = None
+        if len(m_sc_mach) > 0:
+            operational = m_sc_mach[~m_sc_mach["new_state"].isin({"FAILED", "UNDER_REPAIR"})]
+            oee_vals = pd.to_numeric(operational["oee"], errors="coerce").dropna()
+            if len(oee_vals) > 0:
+                csv_oee_m = round(float(oee_vals.mean()), 4)
+        rows_m.append(_mk_row("OEE mean", csv_oee_m,
+                               influx_data.get("machine_oee_means", {}).get(ikey),
+                               threshold=0.05, mode="abs", metric_key="OEE mean"))
+
+        # Availability mean — from extra_json.availability on STATE_CHANGE rows
+        csv_avail_m = None
+        if len(m_sc_mach) > 0:
+            avail_ex = parse_extra_json(m_sc_mach["extra_json"])
+            avail_vals = pd.to_numeric(
+                avail_ex.apply(lambda x: x.get("availability") if isinstance(x, dict) else None),
+                errors="coerce"
+            ).dropna()
+            if len(avail_vals) > 0:
+                csv_avail_m = round(float(avail_vals.mean()), 4)
+        rows_m.append(_mk_row("Availability mean", csv_avail_m,
+                               influx_data.get("machine_availability_means", {}).get(ikey),
+                               threshold=0.05, mode="abs", metric_key="Availability mean"))
+
+        # Total downtime — duration of rows where new_state in {FAILED, UNDER_REPAIR}
+        csv_downtime_m = 0.0
+        if len(m_sc_all) > 1:
+            ts_list = m_sc_all["timestamp"].tolist()
+            states = m_sc_all["new_state"].tolist()
+            for j in range(len(states) - 1):
+                if states[j] in ("FAILED", "UNDER_REPAIR"):
+                    csv_downtime_m += float(ts_list[j + 1]) - float(ts_list[j])
+        rows_m.append(_mk_row("Total downtime (s)",
+                               round(csv_downtime_m, 1) if csv_downtime_m > 0 else 0.0,
+                               influx_data.get("machine_downtime_last", {}).get(ikey),
+                               threshold=5.0, mode="pct", metric_key="Total downtime (s)"))
+
+        # Failure count (CSV only)
+        m_fail_count = int((m_sc_all["new_state"] == "FAILED").sum())
+        rows_m.append(_skip("Failure count",
+                             m_fail_count if m_fail_count > 0 else None,
+                             "State snapshot data cannot reconstruct failure count reliably"))
+
+        # MTTR mean — FAILED entry to first subsequent non-{FAILED,UNDER_REPAIR} state
+        repair_durations = []
+        in_repair = False
+        repair_start = None
+        for _, r in m_sc_all.iterrows():
+            ns = r["new_state"]
+            t_ev = float(r["timestamp"])
+            if ns == "FAILED" and not in_repair:
+                in_repair = True
+                repair_start = t_ev
+            elif in_repair and ns not in ("FAILED", "UNDER_REPAIR"):
+                repair_durations.append(t_ev - repair_start)
+                in_repair = False
+        csv_mttr_m = round(sum(repair_durations) / len(repair_durations), 1) if repair_durations else None
+        # Pass as string to preserve 1-decimal precision (avoid _fmt rounding to 2 decimals)
+        mttr_str = f"{csv_mttr_m}" if csv_mttr_m is not None else None
+        rows_m.append(_skip("MTTR mean (s)", mttr_str,
+                             "Sub-second precision required; snapshot data unreliable for MTTR"))
+
+        # SPC OOC entries (in_control == False)
+        m_spc = df[(df["source"] == m) & (df["event_type"] == "SPC_VIOLATION")]
+        csv_spc_m = 0
+        if len(m_spc) > 0:
+            spc_ex_m = parse_extra_json(m_spc["extra_json"])
+            csv_spc_m = int(
+                spc_ex_m.apply(
+                    lambda x: x.get("in_control") is False if isinstance(x, dict) else False
+                ).sum()
+            )
+        rows_m.append(_mk_row("SPC OOC entries",
+                               csv_spc_m if csv_spc_m > 0 else None,
+                               influx_data.get("machine_spc_ooc_last", {}).get(ikey),
+                               threshold=10.0, mode="pct", metric_key="SPC OOC entries"))
+
+        # Alarms (CSV only)
+        m_alm = df[(df["source"] == m) & (df["event_type"] == "ALARM")]
+        rows_m.append(_skip("Alarms", len(m_alm) if len(m_alm) > 0 else None,
+                             "Not an OPC UA field — historian only"))
+
+        # Rework (CSV only)
+        m_rew = df[(df["source"] == m) & (df["event_type"] == "REWORK")]
+        rows_m.append(_skip("Rework events", len(m_rew) if len(m_rew) > 0 else None,
+                             "Historian only — no OPC UA field"))
+
+        # Scrap — last cumulative scrap_count from SCRAP events
+        m_scr = scrap_rows[scrap_rows["source"] == m]
+        csv_scrap_m = None
+        if len(m_scr) > 0:
+            last_ex_m = parse_extra_json(m_scr["extra_json"]).iloc[-1]
+            if isinstance(last_ex_m, dict):
+                csv_scrap_m = int(last_ex_m.get("scrap_count") or 0)
+        rows_m.append(_skip("Scrap events", csv_scrap_m,
+                             "Historian only — no OPC UA field"))
+
+        machine_metrics[m] = rows_m
+
+    # ── 4. Data Coverage ────────────────────────────────────────────────────
+    scrape_int = scrape_interval or 1.0
+    coverage_machines = []
+    for m in csv_machines:
+        ikey = mach_key[m]
+        # Re-derive per-machine partcount for coverage
+        csv_pc_m = 0
+        if len(prod_summ) > 0:
+            last_ex = parse_extra_json(prod_summ["extra_json"]).iloc[-1]
+            if isinstance(last_ex, dict) and "machine_partcounts" in last_ex:
+                val = last_ex["machine_partcounts"].get(m)
+                if val is not None:
+                    csv_pc_m = int(val)
+        if csv_pc_m == 0:
+            m_sc_m = mach_sc[mach_sc["source"] == m]
+            if len(m_sc_m) > 0:
+                max_pc = m_sc_m["partcount"].max()
                 if pd.notna(max_pc):
-                    csv_pc = int(max_pc)
-        telegraf_pc = machine_pcs.get(telegraf_key)
-
-        pc_status = "SKIP"
-        if csv_pc is not None and telegraf_pc is not None:
-            pc_status = "PASS" if abs(csv_pc - telegraf_pc) <= 2 else "FAIL"
-
-        checks.append({
-            "name": f"{telegraf_key} PartCount",
-            "csv_value": f"{csv_pc:,}" if csv_pc is not None else "N/A",
-            "telegraf_value": f"{telegraf_pc:,}" if telegraf_pc is not None else "N/A",
-            "status": pc_status,
+                    csv_pc_m = int(max_pc)
+        parts_per_sec = round(csv_pc_m / sim_dur, 4) if sim_dur > 0 else 0.0
+        max_cap = round(1.0 / scrape_int, 4)
+        influx_pts = int(influx_data.get("machine_point_counts", {}).get(ikey) or 0)
+        exp_pts = int(sim_dur / scrape_int) if scrape_int > 0 else 0
+        cov = round(influx_pts / exp_pts * 100, 1) if exp_pts > 0 else None
+        coverage_machines.append({
+            "machine": m,
+            "parts_per_second_csv": parts_per_sec,
+            "max_capturable_rate": max_cap,
+            "under_sampling_risk": parts_per_sec > max_cap,
+            "influx_points": influx_pts,
+            "expected_points": exp_pts,
+            "coverage_pct": cov,
         })
 
-    # --- Buffer levels ---
-    buffer_levels = influx_data.get("buffer_levels", {})
-    buf_events = df[(df["source_type"] == "buffer") & (df["event_type"] == "STATE_CHANGE")]
-    csv_buffers = sorted(buf_events["source"].unique())
+    data_coverage = {
+        "scrape_interval_s": round(scrape_int, 3),
+        "machines": coverage_machines,
+    }
 
-    for i, csv_b in enumerate(csv_buffers):
-        telegraf_key = f"Buffer{i + 1}"
-        b_events = buf_events[buf_events["source"] == csv_b]
-        csv_level = None
-        if len(b_events) > 0 and pd.notna(b_events.iloc[-1]["buffer_level"]):
-            csv_level = int(b_events.iloc[-1]["buffer_level"])
-        telegraf_level = buffer_levels.get(telegraf_key)
+    # ── 5. Verdict ──────────────────────────────────────────────────────────
+    all_rows = line_metrics[:]
+    for m_rows in machine_metrics.values():
+        all_rows.extend(m_rows)
+    non_skip = [r for r in all_rows if r["status"] != "SKIP"]
+    pass_ct = sum(1 for r in non_skip if r["status"] == "PASS")
+    warn_ct = sum(1 for r in non_skip if r["status"] == "WARN")
+    fail_ct = sum(1 for r in non_skip if r["status"] == "FAIL")
+    total_ct = len(non_skip)
+    fidelity = round((pass_ct + warn_ct) / total_ct * 100, 1) if total_ct > 0 else 100.0
+    under_samp = [e["machine"] for e in coverage_machines if e["under_sampling_risk"]]
 
-        buf_status = "SKIP"
-        if csv_level is not None and telegraf_level is not None:
-            buf_status = "PASS" if abs(csv_level - telegraf_level) <= 1 else "FAIL"
-
-        checks.append({
-            "name": f"{telegraf_key} level",
-            "csv_value": str(csv_level) if csv_level is not None else "N/A",
-            "telegraf_value": str(telegraf_level) if telegraf_level is not None else "N/A",
-            "status": buf_status,
-        })
-
-    # --- Data gaps ---
-    gaps = influx_data.get("gaps_over_5s", 0)
-    gap_status = "PASS" if gaps == 0 else ("PASS" if gaps <= 3 else "FAIL")
-    checks.append({
-        "name": "Data gaps (>5s)",
-        "csv_value": "0",
-        "telegraf_value": str(gaps),
-        "status": gap_status,
-    })
-
-    # --- Verdict ---
-    passed = sum(1 for c in checks if c["status"] == "PASS")
-    total = sum(1 for c in checks if c["status"] != "SKIP")
-    all_passed = passed == total
+    verdict = {
+        "overall": "PASS" if fail_ct == 0 else "FAIL",
+        "checks_passed": pass_ct,
+        "checks_warned": warn_ct,
+        "checks_total": total_ct,
+        "fidelity_score_pct": fidelity,
+        "under_sampling_machines": under_samp,
+        "failed_checks": [r["name"] for r in non_skip if r["status"] == "FAIL"],
+    }
 
     return {
-        "checks": checks,
-        "passed": passed,
-        "total": total,
-        "verdict": "PASS" if all_passed else "FAIL",
-        "telegraf_total_points": influx_data.get("total_points", 0),
-        "telegraf_first_simtime": influx_data.get("first_simtime"),
-        "telegraf_last_simtime": influx_data.get("last_simtime"),
-        "telegraf_avg_update_rate": influx_data.get("avg_update_rate"),
-        "telegraf_gaps_over_5s": gaps,
-        "telegraf_gap_details": influx_data.get("gap_details", []),
+        "run_overview": run_overview,
+        "line_metrics": line_metrics,
+        "machine_metrics": machine_metrics,
+        "data_coverage": data_coverage,
+        "gaps": influx_data.get("gap_details", []),
+        "verdict": verdict,
     }
 
 
