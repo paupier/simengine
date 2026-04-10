@@ -205,26 +205,48 @@ def print_validation(validation):
     """Format validation dict as CLI text report."""
     section("11. CSV vs INFLUXDB (Telegraf OPC UA) COMPARISON")
 
-    print("  Telegraf data range:")
-    print(f"    Points received:    {validation['telegraf_total_points']:,}")
+    ov = validation.get("run_overview", {})
+    print(f"  Run ID:           {ov.get('run_id', 'unknown')}")
+    print(f"  Sim duration:     {ov.get('sim_duration_s', 0):.0f}s")
+    print(f"  CSV events:       {ov.get('csv_total_events', 0):,}")
+    print(f"  InfluxDB points:  {ov.get('influx_total_points', 0):,}")
+    if ov.get("scrape_interval_s"):
+        print(f"  Scrape interval:  {ov['scrape_interval_s']:.3f}s")
+    if ov.get("coverage_pct") is not None:
+        print(f"  Coverage:         {ov['coverage_pct']:.1f}%")
 
-    first_st = validation.get("telegraf_first_simtime")
-    last_st = validation.get("telegraf_last_simtime")
-    if first_st is not None and last_st is not None:
-        span_hrs = (last_st - first_st) / 3600
-        print(f"    Time span:          {first_st} - {last_st} ({span_hrs:.1f} hours)")
+    print("\n  Line-level metrics:")
+    for row in validation.get("line_metrics", []):
+        print(f"    {row['name']:35s}  CSV={row['csv_value']:>12s}  "
+              f"Influx={row['influx_value']:>12s}  {row['status']}")
 
-    print("\n  Validation checks:")
-    for check in validation["checks"]:
-        status_str = check["status"]
-        print(f"    {check['name']:25s} CSV={check['csv_value']:>12s}  "
-              f"Telegraf={check['telegraf_value']:>12s}  {status_str}")
+    print("\n  Per-machine metrics:")
+    for mname, rows in validation.get("machine_metrics", {}).items():
+        print(f"  {mname}:")
+        for row in rows:
+            print(f"    {row['metric']:30s}  CSV={row['csv_value']:>12s}  "
+                  f"Influx={row['influx_value']:>12s}  {row['status']}")
 
-    print("\n  Pipeline verdict: ", end="")
-    if validation["verdict"] == "PASS":
-        print(f"ALL CHECKS PASSED ({validation['passed']}/{validation['total']})")
+    print("\n  Data coverage:")
+    for e in validation.get("data_coverage", {}).get("machines", []):
+        risk = "RISK" if e.get("under_sampling_risk", False) else "ok"
+        print(f"    {e['machine']:6s}  {e['parts_per_second_csv']:.3f} parts/s  "
+              f"coverage={e.get('coverage_pct', 'N/A')}%  {risk}")
+
+    verd = validation.get("verdict", {})
+    print(f"\n  Pipeline verdict: ", end="")
+    if verd.get("overall") == "PASS":
+        print(f"PASS  ({verd.get('checks_passed',0)} passed, "
+              f"{verd.get('checks_warned',0)} warned / {verd.get('checks_total',0)} total)")
     else:
-        print(f"SOME CHECKS FAILED ({validation['passed']}/{validation['total']})")
+        print(f"FAIL  ({verd.get('checks_passed',0)} passed, "
+              f"{verd.get('checks_warned',0)} warned, "
+              f"{len(verd.get('failed_checks',[]))} failed / {verd.get('checks_total',0)} total)")
+        for fc in verd.get("failed_checks", []):
+            print(f"    FAIL: {fc}")
+    print(f"  Fidelity score:   {verd.get('fidelity_score_pct', 0):.1f}%")
+    if verd.get("under_sampling_machines"):
+        print(f"  Under-sampling:   {', '.join(verd['under_sampling_machines'])}")
 
 
 def plot_analysis(df, analysis, csv_path):
@@ -503,6 +525,145 @@ def query_influxdb_telegraf(influx_url, influx_token, influx_org, influx_bucket,
     # 8. Data gaps
     result["gaps_over_5s"] = len(gap_details)
     result["gap_details"] = gap_details
+
+    # 9. SimTime record count (scrape cycle count)
+    flux_simtime_count = f'''
+    from(bucket: "{influx_bucket}")
+      |> {range_clause}
+      |> filter(fn: (r) => r._measurement == "opcua"){run_id_filter}
+      |> filter(fn: (r) => r._field == "SimTime")
+      |> count()
+    '''
+    tables = query_api.query(flux_simtime_count, org=influx_org)
+    simtime_count = 0
+    for table in tables:
+        for record in table.records:
+            simtime_count += record.get_value() or 0
+    result["simtime_count"] = simtime_count
+
+    # 10. Line OEE mean
+    flux_line_oee_mean = f'''
+    from(bucket: "{influx_bucket}")
+      |> {range_clause}
+      |> filter(fn: (r) => r._measurement == "opcua"){run_id_filter}
+      |> filter(fn: (r) => r._field == "LineOEE")
+      |> mean()
+    '''
+    tables = query_api.query(flux_line_oee_mean, org=influx_org)
+    line_oee_mean_val = None
+    for table in tables:
+        for record in table.records:
+            line_oee_mean_val = record.get_value()
+    result["line_oee_mean"] = round(line_oee_mean_val, 4) if line_oee_mean_val is not None else None
+
+    # 11. Total scrap last
+    flux_scrap = f'''
+    from(bucket: "{influx_bucket}")
+      |> {range_clause}
+      |> filter(fn: (r) => r._measurement == "opcua"){run_id_filter}
+      |> filter(fn: (r) => r._field == "TotalScrap")
+      |> last()
+    '''
+    tables = query_api.query(flux_scrap, org=influx_org)
+    total_scrap_val = None
+    for table in tables:
+        for record in table.records:
+            total_scrap_val = record.get_value()
+    result["total_scrap"] = total_scrap_val
+
+    # 12. Per-machine OEE mean
+    flux_m_oee = f'''
+    from(bucket: "{influx_bucket}")
+      |> {range_clause}
+      |> filter(fn: (r) => r._measurement == "opcua"){run_id_filter}
+      |> filter(fn: (r) => r._field =~ /^M\\d+_OEE$/)
+      |> mean()
+    '''
+    tables = query_api.query(flux_m_oee, org=influx_org)
+    machine_oee_means = {}
+    for table in tables:
+        for record in table.records:
+            field = record.get_field()
+            _m = _re.match(r"M(\d+)_OEE", field)
+            if _m:
+                val = record.get_value()
+                if val is not None:
+                    machine_oee_means[f"Machine{_m.group(1)}"] = round(val, 4)
+    result["machine_oee_means"] = machine_oee_means
+
+    # 13. Per-machine Availability mean
+    flux_m_avail = f'''
+    from(bucket: "{influx_bucket}")
+      |> {range_clause}
+      |> filter(fn: (r) => r._measurement == "opcua"){run_id_filter}
+      |> filter(fn: (r) => r._field =~ /^M\\d+_Availability$/)
+      |> mean()
+    '''
+    tables = query_api.query(flux_m_avail, org=influx_org)
+    machine_avail_means = {}
+    for table in tables:
+        for record in table.records:
+            field = record.get_field()
+            _m = _re.match(r"M(\d+)_Availability", field)
+            if _m:
+                val = record.get_value()
+                if val is not None:
+                    machine_avail_means[f"Machine{_m.group(1)}"] = round(val, 4)
+    result["machine_availability_means"] = machine_avail_means
+
+    # 14. Per-machine DownTime last
+    flux_m_dt = f'''
+    from(bucket: "{influx_bucket}")
+      |> {range_clause}
+      |> filter(fn: (r) => r._measurement == "opcua"){run_id_filter}
+      |> filter(fn: (r) => r._field =~ /^M\\d+_DownTime$/)
+      |> last()
+    '''
+    tables = query_api.query(flux_m_dt, org=influx_org)
+    machine_downtime_last = {}
+    for table in tables:
+        for record in table.records:
+            field = record.get_field()
+            _m = _re.match(r"M(\d+)_DownTime", field)
+            if _m:
+                machine_downtime_last[f"Machine{_m.group(1)}"] = record.get_value()
+    result["machine_downtime_last"] = machine_downtime_last
+
+    # 15. Per-machine SPC CumulativeOOC last
+    flux_m_spc = f'''
+    from(bucket: "{influx_bucket}")
+      |> {range_clause}
+      |> filter(fn: (r) => r._measurement == "opcua"){run_id_filter}
+      |> filter(fn: (r) => r._field =~ /^M\\d+_SPC_CumulativeOOC$/)
+      |> last()
+    '''
+    tables = query_api.query(flux_m_spc, org=influx_org)
+    machine_spc_ooc_last = {}
+    for table in tables:
+        for record in table.records:
+            field = record.get_field()
+            _m = _re.match(r"M(\d+)_SPC_CumulativeOOC", field)
+            if _m:
+                machine_spc_ooc_last[f"Machine{_m.group(1)}"] = record.get_value()
+    result["machine_spc_ooc_last"] = machine_spc_ooc_last
+
+    # 16. Per-machine point count (M{i}_PartCount count = scrape cycles for that machine)
+    flux_m_pts = f'''
+    from(bucket: "{influx_bucket}")
+      |> {range_clause}
+      |> filter(fn: (r) => r._measurement == "opcua"){run_id_filter}
+      |> filter(fn: (r) => r._field =~ /^M\\d+_PartCount$/)
+      |> count()
+    '''
+    tables = query_api.query(flux_m_pts, org=influx_org)
+    machine_point_counts = {}
+    for table in tables:
+        for record in table.records:
+            field = record.get_field()
+            _m = _re.match(r"M(\d+)_PartCount", field)
+            if _m:
+                machine_point_counts[f"Machine{_m.group(1)}"] = record.get_value() or 0
+    result["machine_point_counts"] = machine_point_counts
 
     client.close()
     return result
