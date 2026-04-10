@@ -1275,3 +1275,59 @@ class TestSPCCumulativeOOC:
             self._call_step(metrics, _make_spc_result(in_control=True))
 
         assert metrics["spc_cumulative_ooc"] == 0
+
+
+class TestSPCNoiseScalePerHealth:
+    """noise_scale_per_health increases SPC measurement noise with health state."""
+
+    def _call_with_health(self, health_state, noise_scale, h_max=4, base_noise=0.02):
+        machine, metrics, config_machines, opcua_vars, sink, total_parts = \
+            _make_process_step_args(cycle_time=1.0, prev_state="PROCESSING",
+                                    parts_made=1, total_parts=6, prev_partcount=5)
+        machine.health = health_state
+        machine.failed_health = h_max
+        metrics["spc_measurement_noise"] = base_noise
+        metrics["spc_noise_scale"] = noise_scale
+        metrics["h_max"] = h_max
+
+        measurements = []
+        spc_monitor = MagicMock()
+        spc_monitor.get_metrics.return_value = _make_spc_result(in_control=True)
+        spc_monitor.add_measurement.side_effect = lambda m: measurements.append(m)
+
+        process_machine_step(
+            "M1", machine, metrics, config_machines,
+            6, 1.0, None, None, {"M1": spc_monitor}, opcua_vars, sink, 10.0,
+            write_opcua=True
+        )
+        return measurements
+
+    def test_no_scale_uses_base_noise(self):
+        """With spc_noise_scale=0, noise_cv is unchanged regardless of health."""
+        import random
+        random.seed(42)
+        measurements = self._call_with_health(health_state=3, noise_scale=0.0)
+        assert len(measurements) == 1
+        assert 0.9 < measurements[0] < 1.1  # within ±10% is fine
+
+    def test_full_health_scale_increases_variance(self):
+        """At health=h_max with scale=2.0, effective CV = base*(1+2.0) = 3x."""
+        import random
+        import statistics
+        random.seed(42)
+        all_m_low = []
+        all_m_high = []
+        for _ in range(100):
+            all_m_low += self._call_with_health(health_state=0, noise_scale=2.0)
+            all_m_high += self._call_with_health(health_state=4, noise_scale=2.0)
+        assert statistics.stdev(all_m_high) > statistics.stdev(all_m_low) * 1.5
+
+    def test_zero_health_no_scaling(self):
+        """At health=0, noise_cv is always unchanged regardless of noise_scale."""
+        import random
+        random.seed(0)
+        m_no_scale = self._call_with_health(health_state=0, noise_scale=0.0)
+        random.seed(0)
+        m_has_scale = self._call_with_health(health_state=0, noise_scale=3.0)
+        # Same seed, same effective noise (health=0 → scale factor = 0) → same measurement
+        assert m_no_scale == m_has_scale

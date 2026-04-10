@@ -1428,7 +1428,16 @@ def write_machine_opcua_vars(machine_vars, machine_obj, current_state, metrics,
             for _ in range(new_parts):
                 # Simulate real measurement with natural process variation
                 noise_cv = metrics.get("spc_measurement_noise", 0.02)
-                measurement = metrics["cycle_time"] * (1.0 + random.gauss(0, noise_cv))
+                _noise_scale = metrics.get("spc_noise_scale", 0.0)
+                if _noise_scale > 0.0:
+                    _current_health = getattr(machine_obj, 'health', 0)
+                    if _current_health > 0:
+                        _h_max = getattr(machine_obj, 'failed_health', metrics.get("h_max", 1))
+                        if _h_max > 0:
+                            noise_cv = noise_cv * (1.0 + _noise_scale * _current_health / _h_max)
+                # spc_target_cycle_time: set by cycle_time_offset injection
+                _spc_cycle = metrics.get("spc_target_cycle_time", metrics["cycle_time"])
+                measurement = _spc_cycle * (1.0 + random.gauss(0, noise_cv))
                 spc_monitor.add_measurement(measurement)
 
         spc_metrics = spc_monitor.get_metrics()
@@ -2336,6 +2345,7 @@ def run_segment(
 
         base_defect_rate = machine_cfg.get("defect_rate", 0.0)
         health_multiplier = machine_cfg.get("health_multiplier", 3.0)
+        fi_cfg = config.get("fault_injection", {})
 
         machine_metrics[machine_name] = {
             "partcount": 0,
@@ -2360,6 +2370,8 @@ def run_segment(
             "oee_cached": None,
             "spc_prev_in_control": True,
             "spc_cumulative_ooc": 0,
+            "spc_noise_scale": fi_cfg.get("spc_noise_scale", 0.0),
+            "h_max": 1,  # overwritten below when enable_degradation=True
         }
 
         if machine_cfg.get("enable_spc", False):
@@ -2376,6 +2388,11 @@ def run_segment(
             )
             spc_monitors[machine_name] = ProcessMonitor(spc_config)
             machine_metrics[machine_name]["spc_measurement_noise"] = spc_config_dict.get("measurement_noise", 0.02)
+
+        # h_max from health_states config (used by FaultInjector and noise scaling)
+        health_cfg = machine_cfg.get("health_states", {})
+        if health_cfg:
+            machine_metrics[machine_name]["h_max"] = health_cfg.get("h_max", 1)
 
     # Per-machine OEE shift snapshots
     shift_oee_snapshots = {}
