@@ -2282,6 +2282,8 @@ def run_segment(
     mqtt_publisher=None,
     fault_injector=None,
     gt_writer=None,
+    exp_writer=None,
+    run_id="",
 ):
     """Run simulation until time limit OR quantity target is reached.
 
@@ -2720,6 +2722,17 @@ def run_segment(
             line_availability=line_avail, line_performance=line_perf,
             line_quality=line_qual, machine_totals=line_state.machines)
 
+        # Experiment thick-CSV writer (no-op when exp_writer is None)
+        if exp_writer is not None:
+            exp_writer.write_step(sim_time, run_id, machine_metrics,
+                                  machine_health, spc_monitors, buffers)
+
+    # Close experiment writers at segment end
+    if exp_writer is not None:
+        exp_writer.close()
+    if gt_writer is not None:
+        gt_writer.close()
+
     return sim_time, total_parts_produced, stop_reason, line_oee
 
 
@@ -2868,6 +2881,11 @@ def main(argv=None):
     parser.add_argument("--mqtt-broker", default="mqtt://mosquitto:1883",
                         dest="mqtt_broker",
                         help="MQTT broker URL (default: mqtt://mosquitto:1883)")
+    parser.add_argument("--experiment-mode", action="store_true", dest="experiment_mode",
+                        help="Enable experiment thick-CSV and ground-truth writers")
+    parser.add_argument("--experiment-output", default="experiment/results",
+                        dest="experiment_output",
+                        help="Directory for raw_data.csv and ground_truth.csv output")
     args = parser.parse_args(argv)
 
     # Default to balanced_line if neither --scenario nor --recipe given
@@ -2972,6 +2990,22 @@ def main(argv=None):
         spc_noise_scale=fi_cfg.get("spc_noise_scale", 0.0),
     ) if fi_cfg.get("injections") else None
 
+    # Create ExperimentWriter and GroundTruthWriter if experiment mode
+    exp_writer = None
+    gt_writer = None
+    if getattr(args, "experiment_mode", False):
+        from experiment_writer import ExperimentWriter
+        from fault_injector import GroundTruthWriter
+        os.makedirs(args.experiment_output, exist_ok=True)
+        raw_path = os.path.join(args.experiment_output, f"{run_id}_raw_data.csv")
+        gt_path  = os.path.join(args.experiment_output, f"{run_id}_ground_truth.csv")
+        machine_names = [m["name"] for m in config["machines"]]
+        buffer_names  = [b["name"] for b in config["buffers"]]
+        exp_writer = ExperimentWriter(raw_path, machine_names, buffer_names)
+        gt_writer  = GroundTruthWriter(gt_path, run_id=run_id)
+        print(f"[experiment] raw_data  → {raw_path}")
+        print(f"[experiment] ground_truth → {gt_path}")
+
     # Create MQTT publisher if --mqtt flag set
     if args.mqtt:
         try:
@@ -3007,6 +3041,9 @@ def main(argv=None):
             neo4j_hist=neo4j_hist,
             mqtt_publisher=mqtt_pub,
             fault_injector=fault_injector,
+            exp_writer=exp_writer,
+            gt_writer=gt_writer,
+            run_id=run_id,
         )
 
     except KeyboardInterrupt:

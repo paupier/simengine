@@ -199,3 +199,61 @@ def test_ground_truth_writer_updates_failure_time():
             rows = list(csv.DictReader(f))
         assert rows[0]["failure_sim_time"] == "650.0"
         assert rows[0]["repair_complete_sim_time"] == "670.0"
+
+
+# ---------------------------------------------------------------------------
+# Task 6: ExperimentWriter tests
+# ---------------------------------------------------------------------------
+
+from unittest.mock import MagicMock  # noqa: E402
+from experiment_writer import ExperimentWriter  # noqa: E402
+
+
+def _make_spc_result_ew(in_control=True):
+    r = MagicMock()
+    r.x_bar = 1.0
+    r.cpk = 1.33
+    r.in_control = in_control
+    return r
+
+
+def _make_mock_buffers(names):
+    return {n: MagicMock(level=5) for n in names}
+
+
+def test_experiment_writer_creates_csv_with_header():
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "raw_data.csv")
+        writer = ExperimentWriter(path, ["M1", "M2"], ["B1"])
+        writer.close()
+        with open(path) as f:
+            header = f.readline().strip().split(",")
+        assert "sim_time" in header
+        assert "M1_State" in header
+        assert "M2_SPC_Cpk" in header
+        assert "B1_Level" in header
+
+
+def test_experiment_writer_writes_one_row_per_step():
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "raw_data.csv")
+        writer = ExperimentWriter(path, ["M1"], ["B1"])
+        machine_metrics = {"M1": {
+            "prev_state": "PROCESSING", "oee_cached": {"oee": 0.85, "availability": 0.9},
+            "processing_time": 10.0, "starved_time": 2.0,
+            "blocked_time": 0.0, "down_time": 0.0,
+            "spc_cumulative_ooc": 0,
+        }}
+        machine_health = {"M1": 1}
+        spc_monitor = MagicMock()
+        spc_monitor.get_metrics.return_value = _make_spc_result_ew(in_control=True)
+        buffers = _make_mock_buffers(["B1"])
+        writer.write_step(100.0, "run_01", machine_metrics, machine_health,
+                          {"M1": spc_monitor}, buffers)
+        writer.close()
+        with open(path) as f:
+            rows = list(csv.DictReader(f))
+        assert len(rows) == 1
+        assert rows[0]["M1_State"] == "PROCESSING"
+        assert rows[0]["M1_HealthState"] == "1"
+        assert float(rows[0]["M1_OEE"]) == pytest.approx(0.85, abs=0.001)
