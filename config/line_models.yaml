@@ -3547,6 +3547,7 @@ anomaly_detection_experiment:
   historian:
     csv:
       enabled: true
+      output_dir: "results/historian"
     influxdb:
       enabled: false
   machines:
