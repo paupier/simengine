@@ -2280,6 +2280,8 @@ def run_segment(
     neo4j_hist=None,
     recipe_vars=None,
     mqtt_publisher=None,
+    fault_injector=None,
+    gt_writer=None,
 ):
     """Run simulation until time limit OR quantity target is reached.
 
@@ -2521,6 +2523,8 @@ def run_segment(
                     repair_time = float(mobj.get_time_to_repair())
                     machine_repair_remaining[mname] = max(sim_step, repair_time)
                     machine_failure_start[mname] = sim_time
+                    if gt_writer is not None:
+                        gt_writer.notify_failure(mname, sim_time)
                 else:
                     # Repair in progress — count down.
                     prev = machine_repair_remaining[mname]
@@ -2536,6 +2540,8 @@ def run_segment(
                             mobj, machine_failure_start[mname], sim_time
                         )
                         machine_failure_start[mname] = None
+                        if gt_writer is not None:
+                            gt_writer.notify_repair_complete(mname, sim_time)
             else:
                 # Machine healthy or degraded — no repair in progress.
                 machine_repair_remaining[mname] = 0.0
@@ -2578,6 +2584,13 @@ def run_segment(
         # Throughput counter — mode-aware via LineState
         delta_parts = line_state.sync_sink(sink.level)
         total_parts_produced = line_state.total_parts_produced
+
+        # Fault injection (experiment mode only — no-op when fault_injector is None)
+        if fault_injector is not None:
+            fired = fault_injector.step(sim_time, machine_health, machine_metrics)
+            if fired and gt_writer is not None:
+                for record in fired:
+                    gt_writer.record_injection(record)
 
         # Warm-up completion: reset time accumulators and OEE shift baseline so
         # PPM and OEE are computed from post-warm-up time only.  Without this,
@@ -2951,6 +2964,14 @@ def main(argv=None):
         neo4j_hist.create_topology(config)
         print(f"  Neo4j historian enabled: {neo4j_hist.describe()}")
 
+    # Build FaultInjector from scenario config (optional — no-op if no fault_injection block)
+    from fault_injector import FaultInjector
+    fi_cfg = config.get("fault_injection", {})
+    fault_injector = FaultInjector(
+        injections_config=fi_cfg.get("injections", []),
+        spc_noise_scale=fi_cfg.get("spc_noise_scale", 0.0),
+    ) if fi_cfg.get("injections") else None
+
     # Create MQTT publisher if --mqtt flag set
     if args.mqtt:
         try:
@@ -2985,6 +3006,7 @@ def main(argv=None):
             historian=historian,
             neo4j_hist=neo4j_hist,
             mqtt_publisher=mqtt_pub,
+            fault_injector=fault_injector,
         )
 
     except KeyboardInterrupt:
