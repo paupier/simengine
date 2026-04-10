@@ -569,6 +569,10 @@ def create_spc_node(parent_node, opcua_idx: int, machine_prefix: str = "",
     vars_dict["violations"] = _add_prefixed_var(status_node, opcua_idx, "Violations", "", p, f"{stat_p}.Violations")
     # ViolationCount is an integer version of the violations count, readable by Telegraf/InfluxDB.
     vars_dict["violation_count"] = _add_prefixed_var(status_node, opcua_idx, "ViolationCount", 0, p, f"{stat_p}.ViolationCount")
+    # CumulativeOOC counts the number of times the process transitioned into an
+    # out-of-control state (in_control True→False edge).  Unlike ViolationCount
+    # (which reflects only current active violations), this counter is monotonic.
+    vars_dict["cumulative_ooc"] = _add_prefixed_var(status_node, opcua_idx, "CumulativeOOC", 0, p, f"{stat_p}.CumulativeOOC")
     vars_dict["total_samples"] = _add_prefixed_var(status_node, opcua_idx, "TotalSamples", 0, p, f"{stat_p}.TotalSamples")
     vars_dict["num_subgroups"] = _add_prefixed_var(status_node, opcua_idx, "NumSubgroups", 0, p, f"{stat_p}.NumSubgroups")
 
@@ -1225,6 +1229,26 @@ def process_machine_step(machine_name, machine_obj, metrics, config_machines,
     # Accumulate time based on previous state
     accumulate_time(metrics, metrics["prev_state"], sim_step)
 
+    # Post-hoc correction for fast machines (cycle_time < sim_step):
+    # When cycle_time < sim_step, the machine completes a part and returns to
+    # STARVED/IDLE within a single step.  The end-of-step snapshot misattributes
+    # the actual processing time to starved_time or idle_time.  Correct by
+    # crediting actual processing time (parts_made * cycle_time) and debiting
+    # from the incorrectly credited bucket.
+    _step_parts = machine_obj.parts_made  # per-step delta reset by initialize()
+    _cycle_time = metrics["cycle_time"]
+    if _step_parts > 0 and _cycle_time < sim_step:
+        _processing_credit = min(float(_step_parts) * _cycle_time, sim_step)
+        _prev_st = metrics["prev_state"]
+        if _prev_st == "STARVED":
+            _transfer = min(_processing_credit, metrics["starved_time"])
+            metrics["starved_time"] -= _transfer
+            metrics["processing_time"] += _transfer
+        elif _prev_st == "IDLE":
+            _transfer = min(_processing_credit, metrics["idle_time"])
+            metrics["idle_time"] -= _transfer
+            metrics["processing_time"] += _transfer
+
     # Detect current state
     machine_cfg = next(m for m in config_machines if m["name"] == machine_name)
     enable_health = (machine_cfg.get("enable_degradation", False)
@@ -1428,6 +1452,13 @@ def write_machine_opcua_vars(machine_vars, machine_obj, current_state, metrics,
         violations_str = ", ".join(spc_metrics.violations) if spc_metrics.violations else ""
         machine_vars["spc_violations"].set_value(violations_str)
         machine_vars["spc_violation_count"].set_value(len(spc_metrics.violations) if spc_metrics.violations else 0)
+
+        # Cumulative OOC: increment on in_control True → False transition.
+        if not spc_metrics.in_control and metrics["spc_prev_in_control"]:
+            metrics["spc_cumulative_ooc"] += 1
+        metrics["spc_prev_in_control"] = spc_metrics.in_control
+        machine_vars["spc_cumulative_ooc"].set_value(metrics["spc_cumulative_ooc"])
+
         machine_vars["spc_total_samples"].set_value(spc_metrics.total_samples)
         machine_vars["spc_num_subgroups"].set_value(spc_metrics.num_subgroups)
 
@@ -2327,6 +2358,8 @@ def run_segment(
             "alarm_maintenance_active": False,
             "alarm_quality_alert_active": False,
             "oee_cached": None,
+            "spc_prev_in_control": True,
+            "spc_cumulative_ooc": 0,
         }
 
         if machine_cfg.get("enable_spc", False):

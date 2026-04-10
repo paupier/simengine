@@ -9,6 +9,7 @@ Tests for new Simantha features:
 """
 import pytest
 import random
+from collections import defaultdict
 from unittest.mock import MagicMock
 from simantha import Source, Machine, Buffer, Sink, System, Maintainer
 from simantha.utils import generate_degradation_matrix
@@ -1026,3 +1027,251 @@ class TestCachedOpcuaNodeDeadBand:
         cached.set_value(0.0)
         cached.set_value(10.0)
         assert node.set_value.call_count == 2
+
+
+# ========== Fast-machine ProcessingTime correction ==========
+
+
+def _make_process_step_args(cycle_time=1.0, prev_state="IDLE", parts_made=0,
+                            total_parts=5, prev_partcount=5):
+    """Return (machine_mock, metrics, config_machines, opcua_vars, sink) for process_machine_step tests."""
+    machine = MagicMock()
+    machine.blocked = False
+    machine.starved = True
+    machine.has_part = False
+    machine.health = 0
+    machine.failed_health = 1
+    machine.under_repair = False
+    machine.parts_made = parts_made
+    machine.downtime = 0.0
+
+    metrics = {
+        "partcount": prev_partcount,
+        "blocked_time": 0.0,
+        "starved_time": 0.0,
+        "down_time": 0.0,
+        "processing_time": 0.0,
+        "idle_time": 0.0,
+        "prev_state": prev_state,
+        "cycle_time": cycle_time,
+        "target_ppm": 60.0 / cycle_time,
+        "good_parts": prev_partcount,
+        "defective_parts": 0,
+        "base_defect_rate": 0.0,
+        "health_multiplier": 3.0,
+        "prev_health_state": 0,
+        "prev_maint_active": False,
+        "prev_defect_rate": 0.0,
+        "alarm_machine_failed_active": False,
+        "alarm_maintenance_active": False,
+        "alarm_quality_alert_active": False,
+        "oee_cached": None,
+        "spc_measurement_noise": 0.02,
+        "spc_prev_in_control": True,
+        "spc_cumulative_ooc": 0,
+    }
+
+    config_machines = [{"name": "M1", "enable_degradation": False,
+                        "enable_advanced_failures": False}]
+    machine_vars = defaultdict(MagicMock)
+    opcua_vars = {"machines": {"M1": machine_vars}}
+    sink = MagicMock()
+    sink.contents = []
+
+    return machine, metrics, config_machines, opcua_vars, sink, total_parts
+
+
+class TestFastMachineProcessingTimeCorrection:
+    """Processing time must be credited to fast machines (cycle_time < sim_step).
+
+    Root cause: end-of-step snapshot always shows STARVED for machines that
+    complete processing within a single 1-second step, so accumulate_time()
+    misattributes all time to starved_time.  The post-hoc correction uses
+    machine_obj.parts_made (the per-step delta) to reallocate time.
+    """
+
+    def test_fast_machine_starved_gets_processing_credit(self):
+        """cycle_time=0.9s < sim_step=1.0s: 0.9s credited to processing_time."""
+        machine, metrics, config_machines, opcua_vars, sink, total_parts = \
+            _make_process_step_args(cycle_time=0.9, prev_state="STARVED", parts_made=1,
+                                    total_parts=6, prev_partcount=5)
+
+        process_machine_step(
+            "M1", machine, metrics, config_machines,
+            total_parts, 1.0, None, None, {}, opcua_vars, sink, 10.0,
+            write_opcua=True
+        )
+
+        assert abs(metrics["processing_time"] - 0.9) < 1e-9
+        assert abs(metrics["starved_time"] - 0.1) < 1e-9
+
+    def test_fast_machine_idle_gets_processing_credit(self):
+        """When prev_state is IDLE, credit is taken from idle_time."""
+        machine, metrics, config_machines, opcua_vars, sink, total_parts = \
+            _make_process_step_args(cycle_time=0.8, prev_state="IDLE", parts_made=1,
+                                    total_parts=6, prev_partcount=5)
+
+        process_machine_step(
+            "M1", machine, metrics, config_machines,
+            total_parts, 1.0, None, None, {}, opcua_vars, sink, 10.0,
+            write_opcua=True
+        )
+
+        assert abs(metrics["processing_time"] - 0.8) < 1e-9
+        assert abs(metrics["idle_time"] - 0.2) < 1e-9
+
+    def test_normal_machine_no_correction(self):
+        """cycle_time=1.0s == sim_step: no correction applied."""
+        machine, metrics, config_machines, opcua_vars, sink, total_parts = \
+            _make_process_step_args(cycle_time=1.0, prev_state="STARVED", parts_made=1,
+                                    total_parts=6, prev_partcount=5)
+
+        process_machine_step(
+            "M1", machine, metrics, config_machines,
+            total_parts, 1.0, None, None, {}, opcua_vars, sink, 10.0,
+            write_opcua=True
+        )
+
+        # No correction for cycle_time == sim_step; all time in starved_time
+        assert metrics["processing_time"] == 0.0
+        assert metrics["starved_time"] == 1.0
+
+    def test_no_parts_made_no_correction(self):
+        """When parts_made=0 the correction does not fire."""
+        machine, metrics, config_machines, opcua_vars, sink, total_parts = \
+            _make_process_step_args(cycle_time=0.9, prev_state="STARVED", parts_made=0,
+                                    total_parts=5, prev_partcount=5)
+
+        process_machine_step(
+            "M1", machine, metrics, config_machines,
+            total_parts, 1.0, None, None, {}, opcua_vars, sink, 10.0,
+            write_opcua=True
+        )
+
+        assert metrics["processing_time"] == 0.0
+        assert metrics["starved_time"] == 1.0
+
+    def test_two_parts_in_one_step_credits_double_cycle_time(self):
+        """Making 2 parts in one step with 0.4s cycle credits 0.8s processing."""
+        machine, metrics, config_machines, opcua_vars, sink, total_parts = \
+            _make_process_step_args(cycle_time=0.4, prev_state="STARVED", parts_made=2,
+                                    total_parts=7, prev_partcount=5)
+
+        process_machine_step(
+            "M1", machine, metrics, config_machines,
+            total_parts, 1.0, None, None, {}, opcua_vars, sink, 10.0,
+            write_opcua=True
+        )
+
+        assert abs(metrics["processing_time"] - 0.8) < 1e-9
+        assert abs(metrics["starved_time"] - 0.2) < 1e-9
+
+
+# ========== SPC Cumulative OOC Counter ==========
+
+
+def _make_spc_result(in_control=True):
+    """Build a minimal SPCResult-like mock for write_machine_opcua_vars."""
+    m = MagicMock()
+    m.in_control = in_control
+    m.violations = [] if in_control else ["Western Electric Rule 1"]
+    m.x_bar = 1.0
+    m.x_bar_ucl = 1.05
+    m.x_bar_cl = 1.0
+    m.x_bar_lcl = 0.95
+    m.range = 0.05
+    m.r_ucl = 0.12
+    m.r_cl = 0.06
+    m.r_lcl = 0.0
+    m.cp = 1.5
+    m.cpk = 1.3
+    m.pp = 1.4
+    m.ppk = 1.2
+    m.sigma_level = 4.0
+    m.total_samples = 25
+    m.num_subgroups = 5
+    return m
+
+
+class TestSPCCumulativeOOC:
+    """spc_cumulative_ooc counts in_control True→False transitions only."""
+
+    def _call_step(self, metrics, spc_result, parts_made=1):
+        machine, _, config_machines, opcua_vars, sink, total_parts = \
+            _make_process_step_args(cycle_time=1.0, prev_state="STARVED",
+                                    parts_made=parts_made,
+                                    total_parts=6, prev_partcount=5)
+        spc_monitor = MagicMock()
+        spc_monitor.get_metrics.return_value = spc_result
+        spc_monitors = {"M1": spc_monitor}
+
+        process_machine_step(
+            "M1", machine, metrics, config_machines,
+            6, 1.0, None, None, spc_monitors, opcua_vars, sink, 10.0,
+            write_opcua=True
+        )
+
+    def _base_metrics(self):
+        _, metrics, _, _, _, _ = _make_process_step_args(cycle_time=1.0)
+        return metrics
+
+    def test_first_ooc_increments_counter(self):
+        """Transition from in_control=True to False increments counter to 1."""
+        metrics = self._base_metrics()
+        metrics["spc_prev_in_control"] = True
+        metrics["spc_cumulative_ooc"] = 0
+
+        self._call_step(metrics, _make_spc_result(in_control=False))
+
+        assert metrics["spc_cumulative_ooc"] == 1
+        assert metrics["spc_prev_in_control"] is False
+
+    def test_staying_ooc_does_not_increment(self):
+        """Remaining OOC (False→False) must not increment the counter again."""
+        metrics = self._base_metrics()
+        metrics["spc_prev_in_control"] = False
+        metrics["spc_cumulative_ooc"] = 1
+
+        self._call_step(metrics, _make_spc_result(in_control=False))
+
+        assert metrics["spc_cumulative_ooc"] == 1
+
+    def test_recovery_to_in_control_does_not_increment(self):
+        """Returning to in_control (False→True) must not increment counter."""
+        metrics = self._base_metrics()
+        metrics["spc_prev_in_control"] = False
+        metrics["spc_cumulative_ooc"] = 1
+
+        self._call_step(metrics, _make_spc_result(in_control=True))
+
+        assert metrics["spc_cumulative_ooc"] == 1
+        assert metrics["spc_prev_in_control"] is True
+
+    def test_two_ooc_events_count_two(self):
+        """Two separate in_control→OOC transitions accumulate to 2."""
+        metrics = self._base_metrics()
+        metrics["spc_prev_in_control"] = True
+        metrics["spc_cumulative_ooc"] = 0
+
+        # First OOC event
+        self._call_step(metrics, _make_spc_result(in_control=False))
+        assert metrics["spc_cumulative_ooc"] == 1
+
+        # Recovery
+        self._call_step(metrics, _make_spc_result(in_control=True))
+        assert metrics["spc_cumulative_ooc"] == 1
+
+        # Second OOC event
+        self._call_step(metrics, _make_spc_result(in_control=False))
+        assert metrics["spc_cumulative_ooc"] == 2
+
+    def test_always_in_control_stays_zero(self):
+        """Process that never goes OOC must have cumulative_ooc=0."""
+        metrics = self._base_metrics()
+        metrics["spc_prev_in_control"] = True
+        metrics["spc_cumulative_ooc"] = 0
+
+        for _ in range(5):
+            self._call_step(metrics, _make_spc_result(in_control=True))
+
+        assert metrics["spc_cumulative_ooc"] == 0

@@ -496,14 +496,14 @@ class TestNodeCounts:
         # System: 30 (1 id + 3 ops_state + 12 recipe + 4 ops_perf + 6 OEE + 1 event + 3 maint)
         # Machine1 (all features, degradation=True):
         #   1+2 ops_state + 9 perf + 7 OEE + 4 alarms
-        #   + 1+8 FM + 4 MS + 5 QR + 17 SPC = 58
+        #   + 1+8 FM + 4 MS + 5 QR + 18 SPC = 59
         # Machine2 (advanced=True → also gets health):
         #   1+2 ops_state + 9 perf + 7 OEE + 4 alarms
-        #   + 1+8 FM + 4 MS + 5 QR + 17 SPC = 58
+        #   + 1+8 FM + 4 MS + 5 QR + 18 SPC = 59
         # 1 buffer: 2
         # 2 scrap sinks: 2
         # Shifts: 27
-        expected = 30 + 58 + 58 + 2 + 2 + 27
+        expected = 30 + 59 + 59 + 2 + 2 + 27
         assert count == expected, f"Expected {expected} nodes, got {count}"
 
     def test_eight_machine_node_count(self, eight_machine_config):
@@ -511,12 +511,12 @@ class TestNodeCounts:
         conf = generate_telegraf_conf(eight_machine_config)
         count = _count_nodes(conf)
         # System: 30 (1 id + 3 ops_state + 12 recipe + 4 ops_perf + 6 OEE + 1 event + 3 maint)
-        # Per machine: 58
-        # 8 machines: 464
+        # Per machine: 59 (SPC grew from 17 to 18 with CumulativeOOC)
+        # 8 machines: 472
         # 7 buffers: 14
         # 8 scrap sinks: 8
         # Shifts: 27
-        expected = 30 + (58 * 8) + (2 * 7) + 8 + 27
+        expected = 30 + (59 * 8) + (2 * 7) + 8 + 27
         assert count == expected, f"Expected {expected} nodes, got {count}"
 
 

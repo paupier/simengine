@@ -282,6 +282,7 @@ def generate_telegraf_conf(config,
             lines.append("    # SPC - Status")
             lines.append(_node(f"{mp}_SPC_InControlStatus", f"{p}.SPC.Status.InControl", tags))
             lines.append(_node(f"{mp}_SPC_Violations", f"{p}.SPC.Status.ViolationCount", tags))
+            lines.append(_node(f"{mp}_SPC_CumulativeOOC", f"{p}.SPC.Status.CumulativeOOC", tags))
             lines.append(_node(f"{mp}_SPC_TotalSamples", f"{p}.SPC.Status.TotalSamples", tags))
             lines.append(_node(f"{mp}_SPC_NumSubgroups", f"{p}.SPC.Status.NumSubgroups", tags))
 
