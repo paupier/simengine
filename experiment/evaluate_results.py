@@ -112,10 +112,19 @@ def evaluate(gt: pd.DataFrame, det: pd.DataFrame) -> pd.DataFrame:
                     "detection_lag_s": None, "warning_lead_time_s": None,
                 })
 
-    return pd.DataFrame(rows + fp_rows)
+    result_cols = [
+        "injection_type", "machine", "injection_sim_time",
+        "anomaly_window_start", "anomaly_window_end", "method", "result",
+        "first_alert_sim_time", "detection_lag_s", "warning_lead_time_s",
+    ]
+    return pd.DataFrame(rows + fp_rows, columns=result_cols if not (rows + fp_rows) else None)
 
 
 def summarise(report: pd.DataFrame) -> pd.DataFrame:
+    if report.empty or "method" not in report.columns:
+        return pd.DataFrame(columns=["method", "TP", "FN", "FP",
+                                     "precision", "recall", "f1",
+                                     "mean_lead_time_s", "min_lead_time_s"])
     summary_rows = []
     for method in report["method"].unique():
         m_df = report[report["method"] == method]
@@ -153,7 +162,10 @@ def main():
     print(f"[eval] detection_results: {det_path}")
 
     gt  = pd.read_csv(gt_path)
-    det = pd.read_csv(det_path)
+    try:
+        det = pd.read_csv(det_path)
+    except Exception:
+        det = pd.DataFrame(columns=["method", "machine", "detected_sim_time", "feature"])
 
     print(f"[eval] {len(gt)} injections, {len(det)} alerts")
 
@@ -164,8 +176,8 @@ def main():
     report.to_csv(f"{base}_evaluation_report.csv",  index=False)
     summary.to_csv(f"{base}_evaluation_summary.csv", index=False)
 
-    print(f"\n[eval] written → {base}_evaluation_report.csv")
-    print(f"[eval] written → {base}_evaluation_summary.csv")
+    print(f"\n[eval] written -> {base}_evaluation_report.csv")
+    print(f"[eval] written -> {base}_evaluation_summary.csv")
     print()
     print(summary.to_string(index=False))
 

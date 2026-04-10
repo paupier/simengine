@@ -209,25 +209,26 @@ def main():
 
     print("[detect] method 1: SPC rules...")
     alerts1 = detect_spc_rules(df, machines, min_spacing)
-    print(f"  → {len(alerts1)} alerts")
+    print(f"  -> {len(alerts1)} alerts")
     all_alerts.extend(alerts1)
 
     print("[detect] method 2: rolling Z-score...")
     alerts2 = detect_rolling_zscore(df, machines, baseline_end, window,
                                     z_thresh, min_spacing)
-    print(f"  → {len(alerts2)} alerts")
+    print(f"  -> {len(alerts2)} alerts")
     all_alerts.extend(alerts2)
 
     print("[detect] method 3: Isolation Forest...")
     alerts3 = detect_isolation_forest(df, machines, baseline_end,
                                       if_contam, min_spacing)
-    print(f"  → {len(alerts3)} alerts")
+    print(f"  -> {len(alerts3)} alerts")
     all_alerts.extend(alerts3)
 
-    # Write results
+    # Write results (always write header even if no alerts)
     out_path = str(raw_path).replace("_raw_data.csv", "_detection_results.csv")
-    pd.DataFrame(all_alerts).to_csv(out_path, index=False)
-    print(f"\n[detect] written → {out_path}")
+    cols = ["method", "machine", "detected_sim_time", "feature"]
+    pd.DataFrame(all_alerts, columns=cols).to_csv(out_path, index=False)
+    print(f"\n[detect] written -> {out_path}")
     print(f"[detect] total alerts: {len(all_alerts)}")
     print(f"\nNext: python experiment/evaluate_results.py --results-dir {args.results_dir}")
 

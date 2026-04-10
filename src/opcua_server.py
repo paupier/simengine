@@ -2881,6 +2881,8 @@ def main(argv=None):
     parser.add_argument("--mqtt-broker", default="mqtt://mosquitto:1883",
                         dest="mqtt_broker",
                         help="MQTT broker URL (default: mqtt://mosquitto:1883)")
+    parser.add_argument("--max-sim-time", type=float, default=None, dest="max_sim_time",
+                        help="Stop simulation after this many sim-seconds")
     parser.add_argument("--experiment-mode", action="store_true", dest="experiment_mode",
                         help="Enable experiment thick-CSV and ground-truth writers")
     parser.add_argument("--experiment-output", default="experiment/results",
@@ -3003,8 +3005,8 @@ def main(argv=None):
         buffer_names  = [b["name"] for b in config["buffers"]]
         exp_writer = ExperimentWriter(raw_path, machine_names, buffer_names)
         gt_writer  = GroundTruthWriter(gt_path, run_id=run_id)
-        print(f"[experiment] raw_data  → {raw_path}")
-        print(f"[experiment] ground_truth → {gt_path}")
+        print(f"[experiment] raw_data  -> {raw_path}")
+        print(f"[experiment] ground_truth -> {gt_path}")
 
     # Create MQTT publisher if --mqtt flag set
     if args.mqtt:
@@ -3035,6 +3037,7 @@ def main(argv=None):
             opcua_vars=opcua_vars,
             config=config,
             sim_seed=sim_seed,
+            max_sim_time=args.max_sim_time if args.max_sim_time else float('inf'),
             trace=args.trace,
             shift_manager=shift_manager,
             historian=historian,
