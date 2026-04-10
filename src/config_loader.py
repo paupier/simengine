@@ -125,6 +125,9 @@ def validate_serial_topology(config: Dict[str, Any]) -> None:
     # Validate historian config
     validate_historian_config(config)
 
+    # Validate optional fault injection block
+    validate_fault_injection(config)
+
     print(f"[OK] Configuration validated: {len(machines)} machines, {len(buffers)} buffers")
 
 
@@ -604,3 +607,36 @@ def validate_interarrival_distribution(config: Dict[str, Any]) -> None:
         raise ValueError(
             f"unknown distribution type '{dist_type}' — must be one of: {sorted(valid_types)}"
         )
+
+
+def validate_fault_injection(config: Dict[str, Any]) -> None:
+    """Validate the optional fault_injection block at scenario level."""
+    fi = config.get("fault_injection")
+    if fi is None:
+        return
+
+    scale = fi.get("spc_noise_scale", 0.0)
+    if not isinstance(scale, (int, float)) or scale < 0:
+        raise ValueError(
+            f"fault_injection.spc_noise_scale must be a non-negative number, got {scale!r}"
+        )
+
+    REQUIRED_FIELDS = {
+        "health_delta":      ["machine", "at_sim_time", "health_delta"],
+        "noise_ramp":        ["machine", "at_sim_time", "duration", "target_multiplier"],
+        "cycle_time_offset": ["machine", "at_sim_time", "offset"],
+    }
+
+    for i, inj in enumerate(fi.get("injections", [])):
+        t = inj.get("type")
+        if t not in REQUIRED_FIELDS:
+            raise ValueError(
+                f"fault_injection.injections[{i}]: Unknown injection type {t!r}. "
+                f"Valid types: {list(REQUIRED_FIELDS)}"
+            )
+        for field in REQUIRED_FIELDS[t]:
+            if field not in inj:
+                raise ValueError(
+                    f"fault_injection.injections[{i}] (type={t!r}): "
+                    f"missing required field '{field}'"
+                )
