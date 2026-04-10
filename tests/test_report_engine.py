@@ -272,6 +272,203 @@ def _make_full_df():
     return pd.DataFrame(rows)
 
 
+def _make_validation_df():
+    """Synthetic historian DataFrame for validate_pipeline tests.
+
+    Two machines: M1, M2.
+    Includes: PRODUCTION_SUMMARY with machine_partcounts, STATE_CHANGE with
+    extra_json.availability, FAILED->UNDER_REPAIR->PROCESSING sequence for M1,
+    SPC_VIOLATION with in_control flag, SCRAP with scrap_count, REWORK, ALARM.
+    """
+    rows = []
+    t = 0.0
+
+    # Production summary
+    t = 3600.0
+    rows.append({
+        "run_id": "test_run_20260101_120000",
+        "timestamp": t, "event_type": "PRODUCTION_SUMMARY",
+        "source": "System", "source_type": "system",
+        "severity": "INFO", "message": "summary",
+        "old_state": "", "new_state": "",
+        "partcount": 200, "good_parts": 180, "defective_parts": 20,
+        "buffer_level": pd.NA, "oee": 0.80, "utilisation": 0.90,
+        "shift_number": 1, "shift_name": "Day",
+        "extra_json": json.dumps({
+            "line_oee": 0.80,
+            "machine_partcounts": {"M1": 110, "M2": 90},
+        }),
+    })
+
+    # STATE_CHANGE rows with availability in extra_json
+    for m_name in ["M1", "M2"]:
+        for i in range(5):
+            t += 60.0
+            rows.append({
+                "run_id": "test_run_20260101_120000",
+                "timestamp": t, "event_type": "STATE_CHANGE",
+                "source": m_name, "source_type": "machine",
+                "severity": "INFO", "message": "state change",
+                "old_state": "PROCESSING", "new_state": "IDLE",
+                "partcount": 50 + i * 5, "good_parts": 45 + i * 5, "defective_parts": 5,
+                "buffer_level": pd.NA, "oee": 0.82, "utilisation": 0.88,
+                "shift_number": 1, "shift_name": "Day",
+                "extra_json": json.dumps({"availability": 0.90, "performance": 0.91, "quality": 0.98}),
+            })
+
+    # Failure sequence for M1: FAILED -> UNDER_REPAIR -> PROCESSING
+    t += 10.0
+    rows.append({
+        "run_id": "test_run_20260101_120000",
+        "timestamp": t, "event_type": "STATE_CHANGE",
+        "source": "M1", "source_type": "machine",
+        "severity": "WARNING", "message": "failed",
+        "old_state": "PROCESSING", "new_state": "FAILED",
+        "partcount": 110, "good_parts": 100, "defective_parts": 10,
+        "buffer_level": pd.NA, "oee": 0.5, "utilisation": 0.5,
+        "shift_number": 1, "shift_name": "Day", "extra_json": "",
+    })
+    t += 5.0
+    rows.append({
+        "run_id": "test_run_20260101_120000",
+        "timestamp": t, "event_type": "STATE_CHANGE",
+        "source": "M1", "source_type": "machine",
+        "severity": "INFO", "message": "under repair",
+        "old_state": "FAILED", "new_state": "UNDER_REPAIR",
+        "partcount": 110, "good_parts": 100, "defective_parts": 10,
+        "buffer_level": pd.NA, "oee": 0.0, "utilisation": 0.0,
+        "shift_number": 1, "shift_name": "Day", "extra_json": "",
+    })
+    t += 15.0
+    rows.append({
+        "run_id": "test_run_20260101_120000",
+        "timestamp": t, "event_type": "STATE_CHANGE",
+        "source": "M1", "source_type": "machine",
+        "severity": "INFO", "message": "repaired",
+        "old_state": "UNDER_REPAIR", "new_state": "PROCESSING",
+        "partcount": 110, "good_parts": 100, "defective_parts": 10,
+        "buffer_level": pd.NA, "oee": 0.8, "utilisation": 0.85,
+        "shift_number": 1, "shift_name": "Day", "extra_json": "",
+    })
+
+    # SPC_VIOLATION: OOC entry (in_control=False) + recovery (in_control=True) for M1
+    t += 30.0
+    rows.append({
+        "run_id": "test_run_20260101_120000",
+        "timestamp": t, "event_type": "SPC_VIOLATION",
+        "source": "M1", "source_type": "machine",
+        "severity": "WARNING", "message": "OOC",
+        "old_state": "", "new_state": "",
+        "partcount": 110, "good_parts": 100, "defective_parts": 10,
+        "buffer_level": pd.NA, "oee": 0.8, "utilisation": 0.85,
+        "shift_number": 1, "shift_name": "Day",
+        "extra_json": json.dumps({"in_control": False}),
+    })
+    t += 10.0
+    rows.append({
+        "run_id": "test_run_20260101_120000",
+        "timestamp": t, "event_type": "SPC_VIOLATION",
+        "source": "M1", "source_type": "machine",
+        "severity": "INFO", "message": "recovered",
+        "old_state": "", "new_state": "",
+        "partcount": 110, "good_parts": 100, "defective_parts": 10,
+        "buffer_level": pd.NA, "oee": 0.8, "utilisation": 0.85,
+        "shift_number": 1, "shift_name": "Day",
+        "extra_json": json.dumps({"in_control": True}),
+    })
+
+    # SCRAP events for M1 (cumulative scrap_count)
+    for i in range(3):
+        t += 20.0
+        rows.append({
+            "run_id": "test_run_20260101_120000",
+            "timestamp": t, "event_type": "SCRAP",
+            "source": "M1", "source_type": "machine",
+            "severity": "WARNING", "message": "scrap",
+            "old_state": "", "new_state": "",
+            "partcount": 110, "good_parts": 100, "defective_parts": 10,
+            "buffer_level": pd.NA, "oee": 0.8, "utilisation": 0.85,
+            "shift_number": 1, "shift_name": "Day",
+            "extra_json": json.dumps({"scrap_count": i + 1}),
+        })
+
+    # REWORK event for M2
+    t += 15.0
+    rows.append({
+        "run_id": "test_run_20260101_120000",
+        "timestamp": t, "event_type": "REWORK",
+        "source": "M2", "source_type": "machine",
+        "severity": "WARNING", "message": "rework",
+        "old_state": "", "new_state": "",
+        "partcount": 90, "good_parts": 80, "defective_parts": 10,
+        "buffer_level": pd.NA, "oee": 0.8, "utilisation": 0.85,
+        "shift_number": 1, "shift_name": "Day",
+        "extra_json": json.dumps({"rework_count": 1}),
+    })
+
+    # ALARM event for M1 and M2
+    for m_name in ["M1", "M2"]:
+        t += 10.0
+        rows.append({
+            "run_id": "test_run_20260101_120000",
+            "timestamp": t, "event_type": "ALARM",
+            "source": m_name, "source_type": "machine",
+            "severity": "HIGH", "message": "alarm",
+            "old_state": "", "new_state": "",
+            "partcount": pd.NA, "good_parts": pd.NA, "defective_parts": pd.NA,
+            "buffer_level": pd.NA, "oee": pd.NA, "utilisation": pd.NA,
+            "shift_number": 1, "shift_name": "Day", "extra_json": "",
+        })
+
+    return pd.DataFrame(rows)
+
+
+def _make_influx_data(matching=True):
+    """Synthetic influx_data for validate_pipeline tests.
+    matching=True: values close to CSV (PASS).
+    matching=False: values differ by ~50% (FAIL).
+    """
+    f = 1.0 if matching else 0.5
+    return {
+        "simtime_count": 3600,
+        "first_simtime": 1.0,
+        "last_simtime": 3600.0,
+        "avg_update_rate": 1.0,
+        "update_intervals": [1.0] * 100,
+        "gaps_over_5s": 0,
+        "gap_details": [],
+        "final_throughput": int(200 * f),
+        "total_scrap": int(3 * f),
+        "line_oee_mean": round(0.80 * f, 4),
+        "oee_timeseries": [],  # kept for backward compat
+        "machine_partcounts": {
+            "Machine1": int(110 * f),
+            "Machine2": int(90 * f),
+        },
+        "machine_oee_means": {
+            "Machine1": round(0.82 * f, 4),
+            "Machine2": round(0.82 * f, 4),
+        },
+        "machine_availability_means": {
+            "Machine1": round(0.90 * f, 4),
+            "Machine2": round(0.90 * f, 4),
+        },
+        "machine_downtime_last": {
+            "Machine1": 20.0,
+            "Machine2": 0.0,
+        },
+        "machine_spc_ooc_last": {
+            "Machine1": int(1 * f),
+            "Machine2": 0,
+        },
+        "machine_point_counts": {
+            "Machine1": 3600,
+            "Machine2": 3600,
+        },
+        "buffer_levels": {"Buffer1": 3},
+    }
+
+
 # ---------------------------------------------------------------------------
 # Helper tests
 # ---------------------------------------------------------------------------
@@ -609,41 +806,156 @@ class TestAnalyzeTimeInState:
 # ---------------------------------------------------------------------------
 
 class TestValidatePipeline:
-    def test_all_pass(self):
-        df = _make_full_df()
-        influx_data = {
-            "total_points": 1000,
-            "first_simtime": 60.0,
-            "last_simtime": 3600.0,
-            "avg_update_rate": 1.0,  # Exactly 1s per update
-            "final_throughput": 105,  # Close to CSV last partcount
-            "oee_timeseries": [{"value": 0.78}, {"value": 0.80}],
-            "machine_partcounts": {"Machine1": 80, "Machine2": 80},
-            "buffer_levels": {"Buffer1": 2},
-            "gaps_over_5s": 0,
-        }
-        result = validate_pipeline(df, influx_data)
-        assert result["verdict"] in ("PASS", "FAIL")  # Depends on exact data match
-        assert result["total"] > 0
-        assert len(result["checks"]) > 0
+    """Tests for the new 5-section validate_pipeline() output."""
 
-    def test_missing_influx_data(self):
-        df = _make_full_df()
-        influx_data = {
-            "total_points": 0,
-            "first_simtime": None,
-            "last_simtime": None,
-            "avg_update_rate": None,
-            "final_throughput": None,
-            "oee_timeseries": [],
-            "machine_partcounts": {},
-            "buffer_levels": {},
-            "gaps_over_5s": 0,
-        }
-        result = validate_pipeline(df, influx_data)
-        # Should still return a valid structure even with all SKIPs
-        assert "checks" in result
+    def test_response_has_all_sections(self):
+        df = _make_validation_df()
+        result = validate_pipeline(df, _make_influx_data())
+        assert "run_overview" in result
+        assert "line_metrics" in result
+        assert "machine_metrics" in result
+        assert "data_coverage" in result
+        assert "gaps" in result
         assert "verdict" in result
+
+    def test_run_overview_fields(self):
+        df = _make_validation_df()
+        result = validate_pipeline(df, _make_influx_data())
+        ov = result["run_overview"]
+        assert ov["run_id"] == "test_run_20260101_120000"
+        assert ov["sim_duration_s"] > 0
+        assert ov["csv_total_events"] == len(df)
+        assert ov["influx_total_points"] == 3600  # simtime_count is preferred
+        assert ov["scrape_interval_s"] == 1.0
+        assert ov["coverage_pct"] is not None
+
+    def test_line_metrics_parts_produced_pass(self):
+        df = _make_validation_df()
+        result = validate_pipeline(df, _make_influx_data(matching=True))
+        row = next(r for r in result["line_metrics"] if r["name"] == "Parts produced")
+        assert row["status"] == "PASS"
+
+    def test_line_metrics_parts_produced_fail(self):
+        df = _make_validation_df()
+        result = validate_pipeline(df, _make_influx_data(matching=False))
+        row = next(r for r in result["line_metrics"] if r["name"] == "Parts produced")
+        assert row["status"] == "FAIL"
+
+    def test_line_metrics_good_parts_skipped(self):
+        """Good parts has no InfluxDB field — must be SKIP."""
+        df = _make_validation_df()
+        result = validate_pipeline(df, _make_influx_data())
+        row = next(r for r in result["line_metrics"] if r["name"] == "Good parts")
+        assert row["status"] == "SKIP"
+        assert row["influx_note"] is not None
+
+    def test_line_metrics_spc_counts_only_ooc_entries(self):
+        """SPC total must count only in_control=False events, not recovery events."""
+        df = _make_validation_df()
+        result = validate_pipeline(df, _make_influx_data())
+        row = next(r for r in result["line_metrics"] if "SPC" in r["name"])
+        # CSV has 1 OOC entry event and 1 recovery event; only entry counts
+        assert row["csv_value"] == "1"
+
+    def test_machine_metrics_present_for_each_machine(self):
+        df = _make_validation_df()
+        result = validate_pipeline(df, _make_influx_data())
+        assert "M1" in result["machine_metrics"]
+        assert "M2" in result["machine_metrics"]
+
+    def test_machine_metrics_row_keys(self):
+        df = _make_validation_df()
+        result = validate_pipeline(df, _make_influx_data())
+        for row in result["machine_metrics"]["M1"]:
+            assert "metric" in row
+            assert "csv_value" in row
+            assert "influx_value" in row
+            assert "status" in row
+
+    def test_machine_metrics_availability_from_extra_json(self):
+        """Availability must come from extra_json.availability, not be None."""
+        df = _make_validation_df()
+        result = validate_pipeline(df, _make_influx_data())
+        row = next(r for r in result["machine_metrics"]["M1"] if r["metric"] == "Availability mean")
+        assert row["csv_value"] != "N/A"
+
+    def test_machine_metrics_mttr_uses_under_repair_state(self):
+        """MTTR must span FAILED through UNDER_REPAIR to recovery (total = 20s)."""
+        df = _make_validation_df()
+        result = validate_pipeline(df, _make_influx_data())
+        row = next(r for r in result["machine_metrics"]["M1"] if r["metric"] == "MTTR mean (s)")
+        # FAILED at t+10, UNDER_REPAIR at t+15, PROCESSING at t+30 -> repair = 20s
+        assert row["csv_value"] == "20.0"
+        assert row["status"] == "SKIP"  # InfluxDB side is N/A
+
+    def test_machine_metrics_scrap_from_cumulative_count(self):
+        """Scrap count must use last extra_json.scrap_count (=3), not event row count."""
+        df = _make_validation_df()
+        result = validate_pipeline(df, _make_influx_data())
+        row = next(r for r in result["machine_metrics"]["M1"] if r["metric"] == "Scrap events")
+        assert row["csv_value"] == "3"
+
+    def test_data_coverage_section_structure(self):
+        df = _make_validation_df()
+        result = validate_pipeline(df, _make_influx_data())
+        dc = result["data_coverage"]
+        assert "scrape_interval_s" in dc
+        assert len(dc["machines"]) == 2
+        for m in dc["machines"]:
+            assert "machine" in m
+            assert "parts_per_second_csv" in m
+            assert "under_sampling_risk" in m
+            assert "coverage_pct" in m
+
+    def test_data_coverage_flags_fast_machine(self):
+        """A machine producing > 1 part/s should be flagged as under-sampling risk."""
+        df = _make_validation_df()
+        influx = _make_influx_data()
+        influx["avg_update_rate"] = 1.0  # 1s scrape
+        # Adjust partcount so M1 produces > 1 part/s over a 100s run
+        result = validate_pipeline(df, influx)
+        # M1 has 110 parts over ~3750s -> 0.029 parts/s < 1/s, no flag expected
+        m1 = next(e for e in result["data_coverage"]["machines"] if e["machine"] == "M1")
+        assert m1["under_sampling_risk"] is False
+
+    def test_verdict_pass_when_no_fails(self):
+        df = _make_validation_df()
+        result = validate_pipeline(df, _make_influx_data(matching=True))
+        verd = result["verdict"]
+        assert "overall" in verd
+        assert "checks_passed" in verd
+        assert "checks_warned" in verd
+        assert "checks_total" in verd
+        assert "fidelity_score_pct" in verd
+        assert "failed_checks" in verd
+        assert verd["overall"] == "PASS"
+        assert verd["failed_checks"] == []
+
+    def test_verdict_fail_when_mismatch(self):
+        df = _make_validation_df()
+        result = validate_pipeline(df, _make_influx_data(matching=False))
+        assert result["verdict"]["overall"] == "FAIL"
+        assert len(result["verdict"]["failed_checks"]) > 0
+
+    def test_empty_influx_data_no_crash(self):
+        """Empty influx_data dict must return valid structure with all SKIP statuses."""
+        df = _make_validation_df()
+        result = validate_pipeline(df, {})
+        assert "run_overview" in result
+        assert "verdict" in result
+        # All line metrics except the gaps row should be SKIP when influx_data is empty
+        for row in result["line_metrics"]:
+            if row["name"] != "Telegraf data gaps (>5s)":
+                assert row["status"] == "SKIP", f"{row['name']} should be SKIP with empty influx_data"
+
+    def test_machine_with_no_scrap_contributes_zero(self):
+        """A machine with no SCRAP events must contribute 0 to total scrap sum."""
+        df = _make_validation_df()
+        # M2 has no scrap events in fixture
+        result = validate_pipeline(df, _make_influx_data())
+        # total scrap row should use M1's count only (3), not crash on missing M2 scrap
+        row = next(r for r in result["line_metrics"] if "scrap" in r["name"].lower())
+        assert row["csv_value"] != "N/A"
 
 
 # ---------------------------------------------------------------------------
