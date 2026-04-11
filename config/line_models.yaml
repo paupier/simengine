@@ -3543,6 +3543,16 @@ anomaly_detection_experiment:
   #                                   side effect: B1 starvation on M2
   #   M3 noise_ramp at t=2500      → gradual CPK degradation (tool wear)
   #   M4 cycle_time_offset at t=3500 → sudden SPC mean shift (setpoint change)
+  #
+  # LOCAL ONLY — run via the experiment pipeline, not from the Docker web UI:
+  #   python experiment/generate_experiment_data.py   # runs OPC UA server with --experiment-mode
+  #   python experiment/detect_anomalies.py
+  #   python experiment/evaluate_results.py
+  # Output lands in experiment/results/. See experiment/README.md for details.
+  #
+  # Note: --experiment-mode can be appended to any local scenario run to capture
+  # per-step raw_data.csv and ground_truth.csv (ground truth is only meaningful
+  # when fault_injection is configured).
   warm_up_time: 1000
   historian:
     csv:
