@@ -51,7 +51,6 @@ class LineState:
     """
     total_parts_produced: int = 0
     step_count: int = 0
-    _prev_sink_level: int = field(default=0, repr=False)
     machines: dict = field(default_factory=dict)   # str -> MachineTotals
 
     def init_machine(self, name: str) -> None:
@@ -62,16 +61,17 @@ class LineState:
     def sync_sink(self, sink_level: int) -> int:
         """Update throughput counter from current sink.level.
 
-        Each simulate(sim_step) runs a fresh environment so sink.level is the
-        per-step count (0 or a small integer).  Accumulate deltas to build the
-        running total.  max(0, ...) handles the reset from the previous step's
-        non-zero value.
+        Each simulate(sim_step) runs a fresh environment, which calls
+        Sink.initialize() and resets sink.level to 0.  Parts that arrive
+        during the step increment sink.level from 0.  So sink.level IS
+        the per-step count — accumulate it directly rather than computing
+        a delta from a previous value (which would miss parts on consecutive
+        same-level steps).
 
         Returns:
-            delta_parts: parts produced this step (0 when no change).
+            delta_parts: parts produced this step (0 when none arrived).
         """
-        delta = max(0, sink_level - self._prev_sink_level)
-        self._prev_sink_level = sink_level
+        delta = max(0, sink_level)
         self.total_parts_produced += delta
         return delta
 
