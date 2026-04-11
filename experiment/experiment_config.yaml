@@ -12,5 +12,5 @@ detection:
   baseline_end_sim_time: 1000    # use first 1000 steps to establish baseline stats
   rolling_window: 50             # steps for rolling Z-score window
   zscore_threshold: 3.0          # standard deviations for alert
-  isolation_forest_contamination: 0.05
+  isolation_forest_contamination: 0.01
   min_alert_spacing: 20          # minimum steps between consecutive alerts (same machine)

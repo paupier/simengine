@@ -46,8 +46,11 @@ def evaluate(gt: pd.DataFrame, det: pd.DataFrame) -> pd.DataFrame:
 
     for _, inj in gt.iterrows():
         machine   = inj["machine"]
-        win_start = float(inj["anomaly_window_start"]) if inj["anomaly_window_start"] else None
-        win_end   = float(inj["anomaly_window_end"])   if inj["anomaly_window_end"]   else None
+        # pd.read_csv converts empty CSV cells to NaN (float), which is truthy
+        # in Python.  Explicitly check with pd.notna() to avoid treating NaN
+        # as a valid window bound.
+        win_start = float(inj["anomaly_window_start"]) if pd.notna(inj["anomaly_window_start"]) and inj["anomaly_window_start"] != "" else None
+        win_end   = float(inj["anomaly_window_end"])   if pd.notna(inj["anomaly_window_end"])   and inj["anomaly_window_end"]   != "" else None
 
         for method in methods:
             method_det = det[
@@ -68,22 +71,27 @@ def evaluate(gt: pd.DataFrame, det: pd.DataFrame) -> pd.DataFrame:
                 "warning_lead_time_s": None,
             }
 
-            if win_start is None or win_end is None:
+            if win_start is None:
                 row["result"] = "no_window"
                 rows.append(row)
                 continue
 
-            # Find first alert within the window for this machine
-            in_window = method_det[
-                (method_det["detected_sim_time"] >= win_start) &
-                (method_det["detected_sim_time"] <= win_end)
-            ]
+            # Find first alert within the window for this machine.
+            # win_end=None means the window is open-ended (extends to end of run).
+            if win_end is not None:
+                in_window = method_det[
+                    (method_det["detected_sim_time"] >= win_start) &
+                    (method_det["detected_sim_time"] <= win_end)
+                ]
+            else:
+                in_window = method_det[method_det["detected_sim_time"] >= win_start]
+
             if not in_window.empty:
                 first_t = in_window.iloc[0]["detected_sim_time"]
                 row["result"]               = "TP"
                 row["first_alert_sim_time"] = first_t
                 row["detection_lag_s"]      = first_t - float(inj["injection_sim_time"])
-                row["warning_lead_time_s"]  = win_end - first_t
+                row["warning_lead_time_s"]  = (win_end - first_t) if win_end is not None else None
             rows.append(row)
 
     # Count FPs: alerts outside all windows for this machine
@@ -97,9 +105,10 @@ def evaluate(gt: pd.DataFrame, det: pd.DataFrame) -> pd.DataFrame:
             machine_gt = gt[gt["machine"] == m]
             in_any = False
             for _, inj in machine_gt.iterrows():
-                ws = float(inj["anomaly_window_start"]) if inj["anomaly_window_start"] else None
-                we = float(inj["anomaly_window_end"])   if inj["anomaly_window_end"]   else None
-                if ws is not None and we is not None and ws <= t <= we:
+                ws = float(inj["anomaly_window_start"]) if pd.notna(inj["anomaly_window_start"]) and inj["anomaly_window_start"] != "" else None
+                we = float(inj["anomaly_window_end"])   if pd.notna(inj["anomaly_window_end"])   and inj["anomaly_window_end"]   != "" else None
+                # Open-ended window (we=None): any alert after ws counts as inside window
+                if ws is not None and (we is None and t >= ws or we is not None and ws <= t <= we):
                     in_any = True
                     break
             if not in_any:
