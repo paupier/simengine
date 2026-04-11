@@ -2203,8 +2203,13 @@ def _install_health_restorer(machine_obj, health: int, carryover=None,
         if saved_health >= failed_health:
             if saved_repair_remaining > 0:
                 # Repair still in progress — keep machine FAILED/UNDER_REPAIR.
+                # base_init() just scheduled a degrade event based on health=0.
+                # Cancel it: the machine cannot degrade further while under repair,
+                # and letting it fire would increment health past failed_health
+                # (failed_health+1 >= len(degradation_matrix) → IndexError).
                 machine_obj.health = failed_health
                 machine_obj.under_repair = True
+                machine_obj.cancel_all_events()
             else:
                 # Repair complete (or first step, repair will be sampled).
                 machine_obj.health = 0
