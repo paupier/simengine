@@ -1,6 +1,7 @@
 # Clone Reuse Evaluation — Real-Time Station Simulation Engine
 
 **Status:** Evaluation
+**Refined by:** `clone_target_architecture.md`, which narrows the clone's core to engine + OPC UA / OPC UA-over-MQTT / SparkplugB / REST and moves historians, Telegraf/Grafana, Neo4j, and analysis tooling to optional plugins. Where the two documents differ on what is "core", the architecture doc governs (see its §7 tier-change table).
 **Purpose:** Assess what can be preserved or inherited when cloning this project into a new system: a real-time simulation engine for production equipment that is less strictly DES-based, with detailed per-station machine makeup — continuous float outputs (temperatures, forces, distance measurements) configured per station, and actual alarm reasons for health degradation and cycle stops. The clone is purely a simulation engine consumed by external applications (e.g. FactoryTalk Optix) as a data source in place of PLC logic. Simantha becomes optional or removed.
 
 ---
