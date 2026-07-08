@@ -115,6 +115,34 @@ comms:
 
 All three publishers consume the same per-step `snapshot` (built once from `LineState` + station states + process values + alarm registry). Adding a fourth protocol later = one class.
 
+### 3.1 Broker: Mosquitto serves both MQTT protocols — no second broker needed
+
+SparkplugB is not a broker feature. It is a payload-and-topic convention layered on standard MQTT 3.1.1: Protobuf payloads on `spBv1.0/...` topics, QoS 0/1, an MQTT Will for NDEATH, non-retained messages. Every compliant broker carries it, and **Eclipse Mosquitto 2.x satisfies all of it**. The single Mosquitto instance in the core compose therefore serves plain MQTT, OPC UA PubSub JSON, and SparkplugB simultaneously.
+
+One nuance, documented so it never surprises anyone: Sparkplug 3.0 defines an optional **"Sparkplug Aware" broker profile** — the broker itself retains birth certificates under `$sparkplug/certificates/#` so late-joining consumers can recover metric definitions without waiting for a rebirth. Mosquitto does not implement this profile (HiveMQ does, via extension). It is not needed here:
+
+- Sparkplug consumers (Ignition, HiveMQ clients, Optix via broker) handle non-aware brokers by issuing a **Node Control/Rebirth** command, which our `SparkplugBPublisher` must implement (subscribe to `spBv1.0/{group}/NCMD/{edge_node}`, re-emit NBIRTH/DBIRTH on request). This is a mandatory part of the Sparkplug spec for edge nodes anyway, not extra work.
+- In a simulation context, runs are short-lived and every run start emits fresh births.
+
+Decision: **keep Mosquitto as the only broker.** Revisit only if a Sparkplug-Aware requirement materializes from a specific consumer — and even then, the swap is a compose image change, not a code change.
+
+### 3.2 Differentiating OPC UA-over-MQTT and SparkplugB output
+
+Both publishers carry the same underlying metrics (same snapshot), so the streams must be unmistakably distinguishable on the wire. They are — on four independent axes, and the spec makes each explicit so the two can coexist on one broker without any consumer ambiguity:
+
+| Axis | OPC UA PubSub over MQTT | SparkplugB |
+|---|---|---|
+| **Topic root** (primary differentiator) | `opcua/{publisher_id}/json` (+ optional flat `simengine/{line}/...`) | `spBv1.0/{group_id}/{msg_type}/{edge_node_id}[/{device_id}]` |
+| **Encoding** | UTF-8 JSON (Part 14 NetworkMessage envelope: `MessageType: "ua-data"`) | Protobuf (Sparkplug B payload schema) |
+| **MQTT 5 `Content-Type` property** | `application/json+opcua` | not set (Sparkplug mandates MQTT 3.1.1 semantics; the `spBv1.0/` prefix is its own discriminator) |
+| **Session identity** | client id `simengine-uapubsub-{publisher_id}`; `PublisherId` field inside every message | client id `simengine-spb-{edge_node_id}`; bdSeq/seq numbers + NBIRTH lifecycle |
+
+Rules that follow:
+- The topic namespaces are disjoint by construction — a subscriber to `spBv1.0/#` can never receive a Part 14 JSON message and vice versa. No shared topic is ever used by both publishers.
+- Each publisher maintains its **own MQTT client connection** (distinct client ids, distinct Will messages: Part 14 status topic `opcua/{publisher_id}/status` → `"OFFLINE"` vs Sparkplug NDEATH). One protocol disconnecting must not tear down the other.
+- Metric **names** are kept identical across both encodings (`{Station}.{Metric}`, e.g. `Press01.OilTemp`) so a consumer switching protocols maps data 1:1 — the differentiation is transport/encoding, deliberately *not* the data model.
+- The Comms UI page shows the live topic root next to each enabled checkbox, so what-goes-where is visible at a glance.
+
 ---
 
 ## 4. REST Interface
