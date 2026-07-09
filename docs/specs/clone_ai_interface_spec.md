@@ -182,7 +182,61 @@ Reasoning:
 
 ---
 
-## 6. Build Plan Integration (Phase 7)
+## 6. Documentation Layer — CAG-First with GraphRAG Structure (Future, decided now)
+
+Decision record for adding line SOPs / technical documentation later. Nothing in this section is built in Phase 7; it is specified now so the KG design keeps the door open and the implementation pass doesn't re-litigate the approach.
+
+### 6.1 Three knowledge planes, one entity spine
+
+| Plane | Nature | Lives in | Requires historian? |
+|---|---|---|---|
+| Live state | what is happening now | Snapshot → MCP tools | No |
+| SOPs / tech docs | static reference — how the line is meant to run | KG + cached chat prefix | **No** |
+| Historical record | what happened in run X | CSV/InfluxDB historian plugins | Yes |
+
+The planes are independently addable. Documentation does **not** re-open historian integration: docs attach to the KG and the chat prefix with zero historian involvement. The historical plane arrives separately, as one additive MCP tool (`query_run_history(run_id, ...)`) backed by the existing historian plugins and scoped by `run_id`. **The KG is the join point** — `Press01` is the same node whether the model reads its live temperature, its maintenance SOP, or last week's failure count. That shared entity spine is what makes an eventual three-plane assistant coherent.
+
+### 6.2 Document nodes in the KG
+
+- New node types: `Document`, `DocSection`; new edges: `DOCUMENTS` (Document → Line/Station), `APPLIES_TO` (DocSection → Station | AlarmCode | FailureMode | ProcessValue | Recipe).
+- Corpus: `docs/sops/*.md` per scenario, chunked by heading at ingestion (run start, same determinism rule as the rest of the KG).
+- **Entity linking is lexical, not embedding-based.** The KG already holds a controlled vocabulary with stable IDs (`Press01`, `PV_OILTEMP_HIGH`, `FM_BEARING_WEAR`) — matching those strings in doc text is deterministic, stdlib-only, and high-precision precisely because the names are controlled. Optional YAML front matter (`applies_to: [Press01, PV_OILTEMP_HIGH]`) for explicit links. This removes the hardest problem in typical GraphRAG (entity extraction/canonicalization) because the entities pre-exist the documents.
+- MCP tool additions when built: `get_documentation(entity)` (KG traversal → linked sections), `search_docs(query)` (lexical).
+- Scenario bundles (perf spec R1) include the scenario's doc corpus.
+
+### 6.3 CAG specification (the chosen first mechanism)
+
+**Decision: CAG-first.** For a line-scoped SOP corpus (bounded, small — typically 20–80k tokens), the full corpus is placed in the chat's cached system prefix rather than retrieved per query.
+
+Prompt structure (extends §3's existing design):
+
+```
+[system prefix — byte-identical across requests]        ← cache_control breakpoint here
+  KG topology summary (already specced)
+  Full SOP corpus, section-tagged: <sop id="SOP-12" section="4.2" applies_to="Press01">…</sop>
+[volatile — after the breakpoint]
+  conversation history, tool_use/tool_result blocks, user turn
+```
+
+Mechanics and economics (recorded so expectations are calibrated):
+
+- The corpus is **in context on every request** — the model sees all of it, every time; there is no retrieval step and therefore no retrieval-miss failure mode. This is the defining CAG property.
+- It is **processed only once per cache lifetime**: the first request pays a cache-write premium (1.25× for 5-min TTL, 2× for 1-h TTL); subsequent requests bill the prefix at ~0.1× input price. Order-of-magnitude at Opus-tier pricing: a 50k-token corpus ≈ $0.25 cold, ≈ $0.03/query warm. An active multi-turn chat keeps the cache warm by construction (the conversation re-sends the prefix every turn anyway).
+- **Worst case** (queries always farther apart than the TTL): every query is a cache write ≈ 1.25× plain input cost — no savings, not catastrophic.
+- **Cache invalidation rules** (must be respected by the implementation): the prefix must stay byte-identical — editing any SOP invalidates it (one cold re-read, then warm); each scenario with a distinct doc set is its own cache entry; the SOP block sits *before* anything volatile. Use 1-h TTL for the doc-bearing prefix.
+- Why CAG beats retrieval at this scale: retrieval is the only RAG component that can silently fail, and "why did the process do this?" answers routinely need **cross-document synthesis** (live alarm from a tool call + limits table in one SOP + maintenance note in another) — exactly where top-k retrieval is weakest. Adding a vector pipeline here would add a failure mode to save context space that isn't scarce.
+- Document nodes are kept even under CAG — not for retrieval but for **citation and traceability**: the model cites `SOP-12 §4.2` (the section tags make this reliable), and the UI links the citation to the source file.
+
+### 6.4 Graduation path (when CAG stops fitting)
+
+Trigger conditions: corpus grows past ~100–200k tokens; or many scenarios with distinct large corpora share one instance; or queries are too infrequent to keep any cache warm.
+
+1. **Stage 2 — GraphRAG proper:** flip from "all sections in prefix" to per-query `get_documentation(entity)` **graph-traversal retrieval** — only sections linked to the entities in play enter context. Same `Document`/`DocSection` nodes and `APPLIES_TO` edges; the retrieval mechanism changes from *nothing* to *KG traversal*. No re-ingestion, no new dependencies.
+2. **Stage 3 — vector search, plugin only:** if free-text semantic search over a large corpus is ever genuinely needed, add embeddings as an optional `[rag]` plugin (consistent with §4's GraphQL verdict: heavy retrieval infra never enters the lean core).
+
+---
+
+## 7. Build Plan Integration (Phase 7)
 
 Appended to `clone_build_plan.md` as Phase 7 — same execution-grade format (numbered tasks, exact files, Gate). Summary:
 
