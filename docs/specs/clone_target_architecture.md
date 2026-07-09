@@ -1,7 +1,8 @@
 # Clone Target Architecture — Lean Core + Optional Plugins
 
 **Status:** Proposed
-**Refines:** `clone_reuse_evaluation.md` (the per-module reuse audit). That document established *what can be reused*; this one defines *what the clone actually is*: a lean real-time station simulation engine whose only mandatory outputs are **OPC UA (TCP)**, **OPC UA PubSub over MQTT**, and **SparkplugB**, controlled through a **REST interface**, with all historian/analytics/observability machinery moved to separate optional packages.
+**Refines:** `clone_reuse_evaluation.md` (the per-module reuse audit).
+**Extended by:** `clone_ai_interface_spec.md` — knowledge graph of the data model, MCP server (:8765), and BYO-key Anthropic chat in the UI; adds Phase 7 to the build plan. That document established *what can be reused*; this one defines *what the clone actually is*: a lean real-time station simulation engine whose only mandatory outputs are **OPC UA (TCP)**, **OPC UA PubSub over MQTT**, and **SparkplugB**, controlled through a **REST interface**, with all historian/analytics/observability machinery moved to separate optional packages.
 
 ---
 

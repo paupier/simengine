@@ -480,6 +480,53 @@ Core install without extras: engine runs, `historians: ["csv"]` fails with the c
 
 ---
 
+## 8b. Phase 7 — Knowledge Graph, MCP Server, BYO-Key Chat
+
+Full rationale and design in `docs/specs/clone_ai_interface_spec.md` — that document governs this phase's semantics; this section is the task breakdown. Decisions already made: MCP tools have full control (no gating flag), chat is Anthropic-only, MCP serves both external hosts and the UI chat.
+
+### P7.1 Knowledge graph (`engine/knowledge_graph.py`, stdlib-only)
+
+- Node types: `Enterprise, Site, Area, Line, Station, Buffer, ProcessValue, FailureMode, AlarmCode, CycleStopReason, Scenario, Recipe, Metric`; edges: `CONTAINS, FEEDS, HAS_PV, HAS_FAILURE_MODE, CAN_RAISE, MEASURED_BY, RUNS`.
+- Every ProcessValue/Metric node carries all wire addresses: OPC UA NodeId, SparkplugB `{group, edge_node, device, metric}`, flat MQTT topic, REST JSON path (exact shape in the AI interface spec §1).
+- Built once at run start from config; deterministic. `LineEngine` (or run_manager) owns the instance.
+- `GET /api/v1/kg` with `?type=`, `?station=`, `?edge=` filters, JSON node-link output.
+- `tests/test_knowledge_graph.py`: node/edge counts for `demo_line`; every configured PV present with all four addresses; two builds from the same config → byte-identical JSON.
+
+### P7.2 MCP server (`api/mcp_server.py` + tool registry)
+
+- Dep: `mcp>=1.0` (core). FastMCP, Streamable HTTP transport, port **8765**, path `/mcp`, started in `simengine.__main__` alongside REST.
+- Tool registry module shared by MCP and chat; every tool wraps the same function REST uses.
+- Read tools: `get_line_state, get_station, get_run_status, query_knowledge_graph, resolve_metric, list_scenarios, get_scenario, list_recipes, get_recipe, explain_alarm`.
+- Control tools (always on): `start_run, start_recipe, stop_run, update_scenario, update_recipe, set_comms` — config writes go through the existing validators; invalid input → tool error, file untouched.
+- `tests/test_mcp_tools.py`: each tool against a mocked run_manager; `update_scenario` with invalid YAML leaves file unchanged; `start_run` during an active run returns a tool error.
+
+### P7.3 BYO-key chat (`api/chat.py` + `ui/chat.html`)
+
+- Optional extra: `chat = ["anthropic[mcp]>=0.50"]`; lazy import, page degrades with install hint.
+- Agent loop: `client.beta.messages.tool_runner(...)`, model default `claude-opus-4-8`, `thinking={"type": "adaptive"}`, tools = the P7.2 registry as direct function references.
+- System prompt assembled from the KG (topology summary, stations, PVs/units, alarm catalog) as the stable cached prefix.
+- `POST /api/v1/chat` → SSE stream of `{type: text|tool_use|tool_result|done}` events; `DELETE /api/v1/chat` clears history; key held in process memory per session only — never disk/config/logs; status endpoint reports only `chat_key_set: bool`.
+- UI: 4th page "Assistant" — key field, model picker, chat pane, rendered tool-call traces.
+- `tests/test_chat.py`: mocked Anthropic client; SSE event shape; key-never-persisted check (run a turn, grep `config/`, `results/`, captured logs for the key string).
+
+### P7.4 Docs
+
+- External MCP host connection guide (Claude Desktop/Code config snippet with `"url": "http://<host>:8765/mcp"`).
+- Security note: control tools always on → treat :8765 like :8080 (trusted network only; reverse proxy for anything else). Chat key requires TLS beyond localhost.
+
+### Gate P7
+
+```bash
+python -m simengine --scenario demo_line --seed 42 &
+# External MCP host (Claude Code / mcp CLI) connects to http://localhost:8765/mcp,
+# lists 16 tools, get_line_state returns the live snapshot, start_run/stop_run round-trips.
+pytest tests/test_knowledge_graph.py tests/test_mcp_tools.py tests/test_chat.py -v
+# Manual: UI chat with a real key answers "what's the oil temperature on Press01?"
+# via resolve_metric, with the tool trace visible.
+```
+
+---
+
 ## 9. Acceptance (whole project)
 
 1. `pip install -e ".[dev]" && pytest tests/ -v` — all green.
