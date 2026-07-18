@@ -88,6 +88,11 @@ class StationModel:
         self.sim_step = sim_step
         self.health_model = HealthModel(cfg.get("health"), cfg.get("failure_modes"))
         self.cycle_stops = [CycleStopModel(cs) for cs in cfg.get("cycle_stops", [])]
+        from simengine.engine.process_values import ProcessValueModel
+        self.process_values = [
+            ProcessValueModel(pv) for pv in cfg.get("process_values", [])
+        ]
+        self.spc_enabled = bool(cfg.get("spc", {}).get("enabled", False))
 
         # Engine-level quality options; not exposed in the v1 YAML schema.
         self.rework_enabled = rework_enabled
@@ -99,6 +104,8 @@ class StationModel:
         self.part_ready = False       # completed part waiting for downstream space
         self.cycle_elapsed = 0.0
         self.is_working = False       # advanced its cycle this step
+        self.cycle_serial = 0         # increments on each new part (PV peak sampling)
+        self.completed_this_step = False
 
         # Counters (post-warm-up only)
         self.parts_made = 0
@@ -146,6 +153,7 @@ class StationModel:
     def step(self, rng, np_rng, sim_step: float,
              upstream: Optional[Buffer], downstream: Optional[Buffer],
              alarms: AlarmRegistry, sim_time: float, counting: bool) -> None:
+        self.completed_this_step = False
         hm = self.health_model
         hm.update(rng, np_rng, sim_step)
         self._update_failure_alarms(alarms, sim_time)
@@ -195,15 +203,20 @@ class StationModel:
                     upstream.take()
                 self.has_part = True
                 self.cycle_elapsed = 0.0
+                self.cycle_serial += 1
 
         self._detect_state(upstream, downstream)
         if counting:
             bucket = MINOR_STOP if self.cycle_stopped else self.state
             self.time_in_state[bucket] = self.time_in_state.get(bucket, 0.0) + sim_step
 
+        for pv in self.process_values:
+            pv.update(self, np_rng, sim_step, alarms, sim_time)
+
     def _complete_cycle(self, rng, counting: bool) -> None:
         """Quality roll on cycle completion (P4.7)."""
         self.cycle_elapsed = 0.0
+        self.completed_this_step = True
         p_defect = min(1.0, self.defect_rate * (self.health_multiplier ** self.health))
         is_defective = rng.random() < p_defect
 

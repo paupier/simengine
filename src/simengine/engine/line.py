@@ -65,6 +65,16 @@ class LineEngine:
         ]
         self.alarms = AlarmRegistry()
 
+        # Optional SPC: one monitor per (station, pv) when spc.enabled (§5)
+        self.spc_monitors = {}
+        for st in self.stations:
+            if st.spc_enabled:
+                from simengine.runtime.spc import ProcessMonitor, SPCConfiguration
+                for pv in st.process_values:
+                    self.spc_monitors[(st.name, pv.name)] = ProcessMonitor(
+                        SPCConfiguration(characteristic=pv.name)
+                    )
+
         self.sim_time = 0.0
         self.step_count = 0
         self.line_state = RUNNING
@@ -90,6 +100,12 @@ class LineEngine:
                 rng, np_rng, self.sim_step, upstream, downstream,
                 self.alarms, self.sim_time, counting,
             )
+
+        # Feed cycle-end PV readings into SPC monitors
+        for st in self.stations:
+            if st.spc_enabled and st.completed_this_step:
+                for pv in st.process_values:
+                    self.spc_monitors[(st.name, pv.name)].add_measurement(pv.value)
 
         self.step_count += 1
         self.sim_time += self.sim_step
