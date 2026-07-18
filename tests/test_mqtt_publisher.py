@@ -9,20 +9,20 @@ from unittest.mock import MagicMock, patch, call
 # ---------------------------------------------------------------------------
 
 def test_parse_mqtt_url_valid():
-    from mqtt_publisher import _parse_mqtt_url
+    from simengine.publishers.opcua_mqtt import _parse_mqtt_url
     host, port = _parse_mqtt_url("mqtt://mosquitto:1883")
     assert host == "mosquitto"
     assert port == 1883
 
 
 def test_parse_mqtt_url_invalid_no_port():
-    from mqtt_publisher import _parse_mqtt_url
+    from simengine.publishers.opcua_mqtt import _parse_mqtt_url
     with pytest.raises(ValueError, match="port"):
         _parse_mqtt_url("mqtt://mosquitto")
 
 
 def test_parse_mqtt_url_invalid_scheme():
-    from mqtt_publisher import _parse_mqtt_url
+    from simengine.publishers.opcua_mqtt import _parse_mqtt_url
     with pytest.raises(ValueError, match="mqtt://"):
         _parse_mqtt_url("tcp://mosquitto:1883")
 
@@ -76,8 +76,8 @@ def _make_system_kpis():
 
 def _make_publisher(run_id=RUN_ID):
     """Create MQTTPublisher with mocked paho Client."""
-    from mqtt_publisher import MQTTPublisher
-    with patch("mqtt_publisher.mqtt.Client") as MockClient:
+    from simengine.publishers.opcua_mqtt import MQTTPublisher
+    with patch("simengine.publishers.opcua_mqtt.mqtt.Client") as MockClient:
         mock_client = MagicMock()
         MockClient.return_value = mock_client
         pub = MQTTPublisher("localhost", 1883, run_id)
@@ -142,9 +142,9 @@ def test_topic_format_system():
 
 def test_publish_step_topic_count():
     """publish() must be called 2 × (N_machines + 1) times per step."""
-    from mqtt_publisher import MQTTPublisher
-    with patch("mqtt_publisher.mqtt") as mock_mqtt_module, \
-         patch("mqtt_publisher._PAHO_AVAILABLE", True):
+    from simengine.publishers.opcua_mqtt import MQTTPublisher
+    with patch("simengine.publishers.opcua_mqtt.mqtt") as mock_mqtt_module, \
+         patch("simengine.publishers.opcua_mqtt._PAHO_AVAILABLE", True):
         mock_client = MagicMock()
         mock_mqtt_module.Client.return_value = mock_client
         mock_mqtt_module.CallbackAPIVersion.VERSION2 = "v2"
@@ -155,7 +155,7 @@ def test_publish_step_topic_count():
         pub._connected = True
 
         # Also mock Properties/PacketTypes so _publish doesn't blow up
-        with patch("mqtt_publisher.Properties"), patch("mqtt_publisher.PacketTypes"):
+        with patch("simengine.publishers.opcua_mqtt.Properties"), patch("simengine.publishers.opcua_mqtt.PacketTypes"):
             n = 3
             pub.publish_step(_make_machine_snapshot(n), _make_system_kpis(),
                              sim_time=120.0, step=5)
@@ -166,7 +166,7 @@ def test_publish_step_topic_count():
 
 def test_disconnected_no_raise():
     """publish_step() when _connected=False must not raise."""
-    from mqtt_publisher import MQTTPublisher
+    from simengine.publishers.opcua_mqtt import MQTTPublisher
     pub = MQTTPublisher("localhost", 1883, RUN_ID)
     pub._connected = False
     # Should return silently
@@ -176,7 +176,7 @@ def test_disconnected_no_raise():
 
 def test_dropped_steps_incremented():
     """dropped_steps increments on each publish_step call when disconnected."""
-    from mqtt_publisher import MQTTPublisher
+    from simengine.publishers.opcua_mqtt import MQTTPublisher
     pub = MQTTPublisher("localhost", 1883, RUN_ID)
     pub._connected = False
     pub.publish_step(_make_machine_snapshot(2), _make_system_kpis(), 1.0, 1)
@@ -186,7 +186,7 @@ def test_dropped_steps_incremented():
 
 def test_reconnect_resets_counter():
     """After _connected becomes True, publish_step does NOT increment dropped_steps."""
-    from mqtt_publisher import MQTTPublisher
+    from simengine.publishers.opcua_mqtt import MQTTPublisher
     pub = MQTTPublisher("localhost", 1883, RUN_ID)
     pub._connected = False
     pub._client = MagicMock()
@@ -196,8 +196,8 @@ def test_reconnect_resets_counter():
 
     # Simulate reconnect
     pub._connected = True
-    with patch("mqtt_publisher.Properties"), patch("mqtt_publisher.PacketTypes"), \
-         patch("mqtt_publisher._PAHO_AVAILABLE", True):
+    with patch("simengine.publishers.opcua_mqtt.Properties"), patch("simengine.publishers.opcua_mqtt.PacketTypes"), \
+         patch("simengine.publishers.opcua_mqtt._PAHO_AVAILABLE", True):
         pub.publish_step(_make_machine_snapshot(1), _make_system_kpis(), 2.0, 2)
 
     # Counter must NOT have changed

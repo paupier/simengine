@@ -1,46 +1,20 @@
 """
-Pytest fixtures for OPC UA testing.
+Pytest fixtures for the simengine test suite.
 
-This module provides fixtures to start/stop the OPC UA server for integration tests.
+Points the config loader at the test fixture scenario file so tests are
+independent of the shipped config/scenarios.yaml.
 Shared factory functions are in tests/factories.py.
 """
+from pathlib import Path
+
 import pytest
-import threading
-import time
-from opcua import Client
+
+FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 
-@pytest.fixture(scope="module")
-def opcua_server():
-    """
-    Start OPC UA server in background thread for testing.
-
-    The server runs in a daemon thread and stops when tests complete.
-    """
-    from src.opcua_server import main
-
-    # Start server in background thread (pass empty args to avoid parsing pytest args)
-    server_thread = threading.Thread(target=lambda: main([]), daemon=True)
-    server_thread.start()
-
-    # Wait for server to initialize
-    time.sleep(3)
-
-    yield
-
-    # Server stops automatically when test process ends (daemon thread)
-
-
-@pytest.fixture
-def opcua_client(opcua_server):
-    """
-    Create and connect an OPC UA client for testing.
-
-    Automatically disconnects after test completes.
-    """
-    client = Client("opc.tcp://localhost:4840/simantha/")
-    client.connect()
-
-    yield client
-
-    client.disconnect()
+@pytest.fixture(autouse=True)
+def _fixture_config_path(monkeypatch):
+    """Route load_line_config() at tests/fixtures/line_models_test.yaml."""
+    monkeypatch.setenv(
+        "SIMENGINE_CONFIG_PATH", str(FIXTURES_DIR / "line_models_test.yaml")
+    )

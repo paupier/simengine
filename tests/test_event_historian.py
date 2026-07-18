@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from event_historian import (
+from simengine.events import (
     SimEvent,
     EventHistorian,
     CSVHistorian,
@@ -233,7 +233,7 @@ class TestInfluxDBHistorian:
                     scenario_name="test",
                 )
 
-    @patch("event_historian.InfluxDBHistorian.__init__", return_value=None)
+    @patch("simengine.events.InfluxDBHistorian.__init__", return_value=None)
     def test_describe(self, mock_init):
         hist = InfluxDBHistorian.__new__(InfluxDBHistorian)
         hist._bucket = "manufacturing"

@@ -5,7 +5,7 @@ Tests control charts, capability indices, and Western Electric rules.
 """
 import pytest
 import numpy as np
-from spc_analytics import (
+from simengine.runtime.spc import (
     SPCConfiguration,
     ControlLimits,
     SPCMetrics,

@@ -16,7 +16,7 @@ import os
 import pytest
 import yaml
 
-from recipe_runner import (
+from simengine.runtime.recipe_runner import (
     ChangeoverConfig,
     RecipeConfig,
     SegmentConfig,
@@ -127,7 +127,7 @@ class TestLoadRecipeConfig:
             load_recipe_config("nonexistent_recipe_xyz")
 
     def test_load_from_env_var(self, tmp_path):
-        """Load recipe from SIMANTHA_RECIPE_PATH env var."""
+        """Load recipe from SIMENGINE_RECIPE_PATH env var."""
         recipe_data = {
             "name": "Env Recipe",
             "base_scenario": "balanced_line",
@@ -136,16 +136,16 @@ class TestLoadRecipeConfig:
         recipe_file = tmp_path / "env_recipe.yaml"
         recipe_file.write_text(yaml.dump(recipe_data))
 
-        old = os.environ.get("SIMANTHA_RECIPE_PATH")
+        old = os.environ.get("SIMENGINE_RECIPE_PATH")
         try:
-            os.environ["SIMANTHA_RECIPE_PATH"] = str(tmp_path)
+            os.environ["SIMENGINE_RECIPE_PATH"] = str(tmp_path)
             raw = load_recipe_config("env_recipe")
             assert raw["name"] == "Env Recipe"
         finally:
             if old is None:
-                os.environ.pop("SIMANTHA_RECIPE_PATH", None)
+                os.environ.pop("SIMENGINE_RECIPE_PATH", None)
             else:
-                os.environ["SIMANTHA_RECIPE_PATH"] = old
+                os.environ["SIMENGINE_RECIPE_PATH"] = old
 
 
 # ========== Recipe Parsing ==========

@@ -4,7 +4,7 @@ Configuration Validation Tests
 Tests YAML configuration validation for advanced failure modes.
 """
 import pytest
-from src.config_loader import (
+from simengine.config.loader import (
     load_line_config,
     validate_failure_modes,
     validate_distribution_config,

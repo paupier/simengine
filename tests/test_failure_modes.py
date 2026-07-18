@@ -5,7 +5,7 @@ Tests the core failure mode logic in isolation before OPC UA integration.
 """
 import pytest
 import numpy as np
-from src.failure_modes import FailureMode, FailureModeManager, DistributionFactory, ConstantDistribution
+from simengine.config.distributions import FailureMode, FailureModeManager, DistributionFactory, ConstantDistribution
 
 
 class TestDistributionFactory:

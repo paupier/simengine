@@ -8,7 +8,7 @@ This module provides reusable helpers for creating test objects:
   - make_quality_machine() — QualityAwareMachine with mocked internals
 """
 from unittest.mock import MagicMock
-from event_historian import SimEvent
+from simengine.events import SimEvent
 
 
 def make_event(timestamp=1.0, event_type="STATE_CHANGE", source="M1",
@@ -63,26 +63,3 @@ def make_machine_metrics(state="IDLE", partcount=0, **kwargs):
         "oee": kwargs.get("oee", 0.0),
         "oee_cached": kwargs.get("oee_cached", None),
     }
-
-
-def make_quality_machine(defect_rate=0.05, scrap_sink=None, rework_enabled=False,
-                         rework_success_rate=0.8, max_rework=3,
-                         enable_health_correlation=False, health_multiplier=3.0):
-    """Create a QualityAwareMachine with mocked internals (bypasses __init__)."""
-    from quality_machine import QualityAwareMachine, _init_quality_attrs
-
-    m = object.__new__(QualityAwareMachine)
-    _init_quality_attrs(
-        m, defect_rate, health_multiplier, enable_health_correlation,
-        rework_enabled, rework_success_rate, max_rework
-    )
-    m._scrap_sink = scrap_sink
-    m.name = "M1"
-    m.target_receiver = MagicMock()  # Original target (a buffer)
-    m.target_receiver.reserved_vacancy = 1
-    # Default env: post-warm-up so counters increment (matches pre-warm-up behavior)
-    env = MagicMock()
-    env.now = 1000
-    env.warm_up_time = 0
-    m.env = env
-    return m

@@ -1,0 +1,289 @@
+# simengine scenario definitions (§3 schema, clone_build_plan.md)
+#
+# Three starter scenarios:
+#   demo_line           — 3-station demo, health + cycle stops + process values
+#   two_station_minimal — smallest valid line
+#   press_line_8        — 8 stations, all features enabled
+
+demo_line:
+  description: "3-station demo"
+  enterprise: "Acme"
+  site: "Plant1"
+  area: "Area01"
+  line_name: "Line1"
+  warm_up_time: 0
+  sim_step: 1.0
+  stations:
+    - name: Press01
+      cycle_time: 12.0
+      defect_rate: 0.02
+      health:
+        h_max: 5
+        p_degrade: 0.001
+        cbm_threshold: 5
+        mttr: {distribution: lognormal, mean: 120, std: 30}
+      failure_modes:
+        - name: bearing_wear
+          type: wearout
+          mttf: {distribution: weibull, shape: 2.0, scale: 20000}
+          mttr: {distribution: lognormal, mean: 300, std: 60}
+      cycle_stops:
+        - reason: CS_JAM
+          mtbe: {distribution: exponential, mean: 900}
+          duration: {distribution: lognormal, mean: 25, std: 10}
+      process_values:
+        - name: RamForce
+          unit: kN
+          profile: cycle_peak
+          baseline: 0.0
+          peak: {distribution: normal, mean: 850, std: 15}
+          health_drift: 0.02
+          alarm_high: 920
+        - name: OilTemp
+          unit: degC
+          profile: first_order_lag
+          setpoint: 55.0
+          tau: 300
+          initial: 20.0
+          noise: {distribution: normal, mean: 0, std: 0.4}
+          health_drift: 0.05
+          alarm_high: 68
+        - name: StrokePos
+          unit: mm
+          profile: cycle_ramp
+          range: [0.0, 320.0]
+          noise: {distribution: normal, mean: 0, std: 0.05}
+      spc:
+        enabled: false
+    - name: Weld02
+      cycle_time: 10.0
+      defect_rate: 0.01
+      health:
+        h_max: 4
+        p_degrade: 0.0008
+        cbm_threshold: 3
+        mttr: {distribution: lognormal, mean: 90, std: 20}
+      process_values:
+        - name: TipTemp
+          unit: degC
+          profile: first_order_lag
+          setpoint: 320.0
+          tau: 120
+          initial: 25.0
+          noise: {distribution: normal, mean: 0, std: 1.5}
+          health_drift: 0.03
+          alarm_high: 360
+    - name: Pack03
+      cycle_time: 8.0
+      defect_rate: 0.005
+      cycle_stops:
+        - reason: CS_NO_PICK
+          mtbe: {distribution: exponential, mean: 600}
+          duration: {distribution: lognormal, mean: 12, std: 5}
+  buffers:
+    - {name: B1, capacity: 10}
+    - {name: B2, capacity: 10}
+  shifts: {}
+  comms:
+    opcua: {enabled: true, port: 4840}
+    opcua_mqtt: {enabled: false, broker: "mqtt://localhost:1883",
+                 publisher_id: "simengine-line1", flat_topics: true, publish_interval: 1}
+    sparkplugb: {enabled: false, broker: "mqtt://localhost:1883",
+                 group_id: "Area01", edge_node_id: "Line1"}
+  historians: []
+
+two_station_minimal:
+  description: "Smallest valid line — two stations, one buffer"
+  line_name: "MiniLine"
+  stations:
+    - name: S1
+      cycle_time: 5.0
+    - name: S2
+      cycle_time: 5.0
+  buffers:
+    - {name: B1, capacity: 5}
+  comms:
+    opcua: {enabled: true, port: 4840}
+
+press_line_8:
+  description: "8-station press line, all features enabled"
+  enterprise: "Acme"
+  site: "Plant1"
+  area: "Area01"
+  line_name: "PressLine8"
+  warm_up_time: 60
+  stations:
+    - name: Blank01
+      target_ppm: 6.0
+      defect_rate: 0.01
+      health:
+        h_max: 5
+        p_degrade: 0.0012
+        cbm_threshold: 5
+        mttr: {distribution: lognormal, mean: 120, std: 30}
+      failure_modes:
+        - name: feed_fault
+          type: random
+          mttf: {distribution: exponential, mean: 18000}
+          mttr: {distribution: lognormal, mean: 240, std: 60}
+      cycle_stops:
+        - reason: CS_MISFEED
+          mtbe: {distribution: exponential, mean: 700}
+          duration: {distribution: lognormal, mean: 20, std: 8}
+      process_values:
+        - name: FeedSpeed
+          unit: mm_s
+          profile: constant_noise
+          mean: 450.0
+          noise: {distribution: normal, mean: 0, std: 4.0}
+          health_drift: 0.01
+          alarm_low: 400
+      spc:
+        enabled: true
+    - name: Press02
+      cycle_time: 12.0
+      defect_rate: 0.02
+      health:
+        h_max: 5
+        p_degrade: 0.001
+        cbm_threshold: 4
+        mttr: {distribution: lognormal, mean: 150, std: 40}
+      failure_modes:
+        - name: bearing_wear
+          type: wearout
+          mttf: {distribution: weibull, shape: 2.0, scale: 20000}
+          mttr: {distribution: lognormal, mean: 300, std: 60}
+      cycle_stops:
+        - reason: CS_JAM
+          mtbe: {distribution: exponential, mean: 900}
+          duration: {distribution: lognormal, mean: 25, std: 10}
+      process_values:
+        - name: RamForce
+          unit: kN
+          profile: cycle_peak
+          baseline: 0.0
+          peak: {distribution: normal, mean: 850, std: 15}
+          health_drift: 0.02
+          alarm_high: 920
+        - name: OilTemp
+          unit: degC
+          profile: first_order_lag
+          setpoint: 55.0
+          tau: 300
+          initial: 20.0
+          noise: {distribution: normal, mean: 0, std: 0.4}
+          health_drift: 0.05
+          alarm_high: 68
+      spc:
+        enabled: true
+    - name: Trim03
+      cycle_time: 9.0
+      defect_rate: 0.015
+      health:
+        h_max: 4
+        p_degrade: 0.0009
+        cbm_threshold: 4
+        mttr: {distribution: lognormal, mean: 100, std: 25}
+      process_values:
+        - name: BladeTemp
+          unit: degC
+          profile: first_order_lag
+          setpoint: 80.0
+          tau: 200
+          initial: 22.0
+          noise: {distribution: normal, mean: 0, std: 0.6}
+          health_drift: 0.04
+          alarm_high: 95
+    - name: Pierce04
+      cycle_time: 10.0
+      defect_rate: 0.012
+      cycle_stops:
+        - reason: CS_SLUG_STUCK
+          mtbe: {distribution: exponential, mean: 1100}
+          duration: {distribution: lognormal, mean: 30, std: 12}
+      process_values:
+        - name: PunchDepth
+          unit: mm
+          profile: cycle_ramp
+          range: [0.0, 45.0]
+          noise: {distribution: normal, mean: 0, std: 0.03}
+    - name: Form05
+      cycle_time: 11.0
+      defect_rate: 0.018
+      health:
+        h_max: 5
+        p_degrade: 0.0011
+        cbm_threshold: 5
+        mttr: {distribution: lognormal, mean: 130, std: 35}
+      failure_modes:
+        - name: hydraulic_leak
+          type: wearout
+          mttf: {distribution: weibull, shape: 1.8, scale: 25000}
+          mttr: {distribution: lognormal, mean: 420, std: 90}
+      process_values:
+        - name: HydPressure
+          unit: bar
+          profile: cycle_peak
+          baseline: 40.0
+          peak: {distribution: normal, mean: 180, std: 5}
+          health_drift: 0.03
+          alarm_high: 210
+    - name: Weld06
+      cycle_time: 10.5
+      defect_rate: 0.02
+      health:
+        h_max: 4
+        p_degrade: 0.001
+        cbm_threshold: 3
+        mttr: {distribution: lognormal, mean: 90, std: 20}
+      process_values:
+        - name: TipTemp
+          unit: degC
+          profile: first_order_lag
+          setpoint: 320.0
+          tau: 120
+          initial: 25.0
+          noise: {distribution: normal, mean: 0, std: 1.5}
+          health_drift: 0.03
+          alarm_high: 360
+      spc:
+        enabled: true
+    - name: Inspect07
+      cycle_time: 7.0
+      defect_rate: 0.002
+      process_values:
+        - name: CameraExposure
+          unit: ms
+          profile: constant_noise
+          mean: 8.0
+          noise: {distribution: normal, mean: 0, std: 0.1}
+    - name: Pack08
+      cycle_time: 8.0
+      defect_rate: 0.005
+      cycle_stops:
+        - reason: CS_NO_PICK
+          mtbe: {distribution: exponential, mean: 600}
+          duration: {distribution: lognormal, mean: 12, std: 5}
+        - reason: CS_GUARD_OPEN
+          mtbe: {distribution: exponential, mean: 3600}
+          duration: {distribution: lognormal, mean: 60, std: 20}
+  buffers:
+    - {name: B1, capacity: 8}
+    - {name: B2, capacity: 8}
+    - {name: B3, capacity: 8}
+    - {name: B4, capacity: 8}
+    - {name: B5, capacity: 8}
+    - {name: B6, capacity: 8}
+    - {name: B7, capacity: 8}
+  shifts:
+    schedule:
+      - {name: "Day Shift", duration: 28800, start_offset: 0}
+      - {name: "Evening Shift", duration: 28800, start_offset: 28800}
+      - {name: "Night Shift", duration: 28800, start_offset: 57600}
+  comms:
+    opcua: {enabled: true, port: 4840}
+    opcua_mqtt: {enabled: false, broker: "mqtt://localhost:1883",
+                 publisher_id: "simengine-pressline8", flat_topics: true, publish_interval: 1}
+    sparkplugb: {enabled: false, broker: "mqtt://localhost:1883",
+                 group_id: "Area01", edge_node_id: "PressLine8"}
+  historians: []

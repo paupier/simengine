@@ -9,7 +9,7 @@ Run with: pytest tests/test_distribution_validation.py -v -m slow
 import pytest
 import numpy as np
 import scipy.stats
-from src.failure_modes import FailureMode, DistributionFactory
+from simengine.config.distributions import FailureMode, DistributionFactory
 
 
 @pytest.mark.slow
@@ -338,7 +338,7 @@ class TestCompetingRisksStatistics:
 
     def test_competing_risks_proportions(self):
         """Competing risks produces expected failure mode proportions."""
-        from src.failure_modes import FailureModeManager
+        from simengine.config.distributions import FailureModeManager
 
         # Create two failure modes with 2:1 MTTF ratio
         fm1 = FailureMode(
