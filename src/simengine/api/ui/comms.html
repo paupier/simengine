@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}simengine — comms{% endblock %}
+{% block styles %}
+<style>
+  .proto-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 16px; }
+  .proto { padding: 14px 16px; }
+  .proto h3 { font-size: 13px; display: flex; align-items: center; gap: 8px; }
+  .proto h3 input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--ink); }
+  .proto .fields { margin-top: 10px; display: grid; gap: 8px; }
+  .proto .fields label { font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--ink-2); display: block; }
+  .proto .fields input[type=text], .proto .fields input[type=number] {
+    width: 100%; font-family: var(--mono); font-size: 13px; padding: 5px 8px;
+    border: 1px solid var(--hairline); background: #fff; }
+  .topic-root { font-family: var(--mono); font-size: 11.5px; color: var(--ink-2);
+    margin-top: 10px; border-top: 1px dashed var(--hairline); padding-top: 8px;
+    word-break: break-all; }
+  .plugin-list { list-style: none; padding: 0; }
+  .plugin-list li { font-family: var(--mono); font-size: 13px; padding: 7px 12px;
+    border-bottom: 1px solid var(--hairline); display: flex; justify-content: space-between; }
+  .pill { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em;
+    padding: 1px 8px; border: 1px solid var(--hairline); color: var(--ink-2); }
+  .pill.ok { border-color: var(--st-processing); color: var(--st-processing); }
+</style>
+{% endblock %}
+{% block content %}
+  <h2 class="eyebrow">Protocol outputs — scenario <span class="mono" id="comms-scenario-label">—</span></h2>
+  <p class="muted">Changes apply at the next run start. All three outputs carry the
+    same snapshot; they differ only in transport and encoding.</p>
+  <div class="proto-grid" style="margin-top:12px">
+    <div class="card proto">
+      <h3><input type="checkbox" id="p-opcua"> OPC UA (TCP)</h3>
+      <div class="fields">
+        <div><label for="opcua-port">Port</label>
+          <input type="number" id="opcua-port" value="4840"></div>
+      </div>
+      <div class="topic-root" id="opcua-root">opc.tcp://&lt;host&gt;:4840/simengine/</div>
+    </div>
+    <div class="card proto">
+      <h3><input type="checkbox" id="p-mqtt"> OPC UA PubSub over MQTT</h3>
+      <div class="fields">
+        <div><label for="mqtt-broker">Broker</label>
+          <input type="text" id="mqtt-broker" value="mqtt://localhost:1883"></div>
+        <div><label for="mqtt-pubid">Publisher ID</label>
+          <input type="text" id="mqtt-pubid" value="simengine-line1"></div>
+        <div><label><input type="checkbox" id="mqtt-flat" checked> Flat topics</label></div>
+      </div>
+      <div class="topic-root" id="mqtt-root">opcua/simengine-line1/json</div>
+    </div>
+    <div class="card proto">
+      <h3><input type="checkbox" id="p-spb"> SparkplugB</h3>
+      <div class="fields">
+        <div><label for="spb-broker">Broker</label>
+          <input type="text" id="spb-broker" value="mqtt://localhost:1883"></div>
+        <div><label for="spb-group">Group ID</label>
+          <input type="text" id="spb-group" value="Area01"></div>
+        <div><label for="spb-edge">Edge node ID</label>
+          <input type="text" id="spb-edge" value="Line1"></div>
+      </div>
+      <div class="topic-root" id="spb-root">spBv1.0/Area01/±DATA/Line1/&lt;station&gt;</div>
+    </div>
+  </div>
+  <div style="margin-top:14px; display:flex; gap:10px; align-items:center;">
+    <button id="comms-save">Save comms</button>
+    <div class="msg" id="comms-msg" hidden style="margin-top:0"></div>
+  </div>
+
+  <h2 class="eyebrow">Optional packages</h2>
+  <ul class="plugin-list card" id="plugin-list"></ul>
+{% endblock %}
+{% block scripts %}
+<script>
+  function currentCommsScenario() { return $("hdr-scenario").value; }
+
+  function updateRoots() {
+    $("opcua-root").textContent =
+      `opc.tcp://<host>:${$("opcua-port").value}/simengine/`;
+    $("mqtt-root").textContent = `opcua/${$("mqtt-pubid").value}/json` +
+      ($("mqtt-flat").checked ? "  +  simengine/<line>/<station>/<metric>" : "");
+    $("spb-root").textContent =
+      `spBv1.0/${$("spb-group").value}/±DATA/${$("spb-edge").value}/<station>`;
+  }
+  ["opcua-port","mqtt-pubid","mqtt-flat","spb-group","spb-edge"].forEach(id =>
+    $(id).addEventListener("input", updateRoots));
+
+  async function loadComms() {
+    const scenario = currentCommsScenario();
+    if (!scenario) return;
+    $("comms-scenario-label").textContent = scenario;
+    try {
+      const c = await jget("/api/v1/comms?scenario=" + scenario);
+      const o = c.opcua || {}, m = c.opcua_mqtt || {}, s = c.sparkplugb || {};
+      $("p-opcua").checked = o.enabled !== false;
+      $("opcua-port").value = o.port || 4840;
+      $("p-mqtt").checked = !!m.enabled;
+      $("mqtt-broker").value = m.broker || "mqtt://localhost:1883";
+      $("mqtt-pubid").value = m.publisher_id || "simengine-line1";
+      $("mqtt-flat").checked = m.flat_topics !== false;
+      $("p-spb").checked = !!s.enabled;
+      $("spb-broker").value = s.broker || "mqtt://localhost:1883";
+      $("spb-group").value = s.group_id || "Area01";
+      $("spb-edge").value = s.edge_node_id || "Line1";
+      updateRoots();
+    } catch (e) { /* scenario without comms block */ }
+  }
+
+  $("comms-save").onclick = async () => {
+    const comms = {
+      opcua: {enabled: $("p-opcua").checked,
+        port: parseInt($("opcua-port").value, 10) || 4840},
+      opcua_mqtt: {enabled: $("p-mqtt").checked,
+        broker: $("mqtt-broker").value,
+        publisher_id: $("mqtt-pubid").value,
+        flat_topics: $("mqtt-flat").checked, publish_interval: 1},
+      sparkplugb: {enabled: $("p-spb").checked,
+        broker: $("spb-broker").value,
+        group_id: $("spb-group").value, edge_node_id: $("spb-edge").value},
+    };
+    const el = $("comms-msg");
+    try {
+      const r = await jsend("/api/v1/comms", "PUT",
+        {scenario: currentCommsScenario(), comms});
+      el.hidden = false; el.className = "msg";
+      el.textContent = `Saved. Applies: ${r.applies}.`;
+    } catch (e) {
+      el.hidden = false; el.className = "msg err"; el.textContent = e.message;
+    }
+  };
+
+  async function loadPlugins() {
+    const plugins = await jget("/api/v1/plugins");
+    $("plugin-list").innerHTML = Object.entries(plugins).map(([name, ok]) =>
+      `<li>${name}<span class="pill ${ok ? "ok" : ""}">${ok ? "installed" : "not installed"}</span></li>`
+    ).join("");
+  }
+
+  $("hdr-scenario").addEventListener("change", loadComms);
+  setTimeout(loadComms, 300);  // after the header picker populates
+  loadPlugins();
+</script>
+{% endblock %}

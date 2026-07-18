@@ -9,6 +9,22 @@ from pathlib import Path
 from typing import Dict, List, Any
 
 
+def get_config_path() -> Path:
+    """Path of the scenario YAML file (SIMENGINE_CONFIG_PATH overrides)."""
+    return Path(os.environ.get(
+        "SIMENGINE_CONFIG_PATH",
+        str(Path(__file__).parents[3] / "config" / "scenarios.yaml")
+    ))
+
+
+def get_recipes_dir() -> Path:
+    """Directory of recipe YAML files (SIMENGINE_RECIPE_PATH overrides)."""
+    return Path(os.environ.get(
+        "SIMENGINE_RECIPE_PATH",
+        str(Path(__file__).parents[3] / "config" / "recipes")
+    ))
+
+
 def load_line_config(scenario_name: str = "balanced_line") -> Dict[str, Any]:
     """
     Load line configuration from YAML file.
@@ -22,10 +38,7 @@ def load_line_config(scenario_name: str = "balanced_line") -> Dict[str, Any]:
     Raises:
         ValueError: If scenario not found or config is invalid
     """
-    config_path = Path(os.environ.get(
-        "SIMENGINE_CONFIG_PATH",
-        str(Path(__file__).parents[3] / "config" / "scenarios.yaml")
-    ))
+    config_path = get_config_path()
 
     if not config_path.exists():
         raise FileNotFoundError(f"Configuration file not found: {config_path}")

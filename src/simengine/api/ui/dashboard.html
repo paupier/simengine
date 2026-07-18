@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block title %}simengine — dashboard{% endblock %}
+{% block styles %}
+<style>
+  .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 1px; background: var(--hairline); border: 1px solid var(--hairline); }
+  .kpi { background: var(--panel); padding: 12px 14px; }
+  .kpi .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.09em;
+    color: var(--ink-2); }
+  .kpi .value { font-family: var(--mono); font-size: 26px; font-weight: 600;
+    font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .kpi .value small { font-size: 13px; color: var(--ink-2); font-weight: 400; }
+
+  /* ---- the flow strip: the line topology itself is the hero ---- */
+  .flow-wrap { overflow-x: auto; border: 1px solid var(--hairline);
+    background: var(--panel); padding: 20px 16px; }
+  .flow { display: flex; align-items: center; gap: 0; min-width: max-content; }
+  .endpoint { font-family: var(--mono); font-size: 11px; color: var(--ink-2);
+    text-transform: uppercase; letter-spacing: 0.1em; padding: 6px 10px;
+    border: 1px dashed var(--hairline); white-space: nowrap; }
+  .station-card { border: 1px solid var(--ink); background: #fff;
+    min-width: 148px; position: relative; }
+  .station-card .edge { height: 5px; background: var(--lamp-off); }
+  .station-card[data-state="PROCESSING"] .edge { background: var(--st-processing); }
+  .station-card[data-state="DEGRADED"] .edge { background: var(--st-degraded); }
+  .station-card[data-state="FAILED"] .edge { background: var(--st-failed); }
+  .station-card[data-state="UNDER_REPAIR"] .edge { background: var(--st-repair); }
+  .station-card .body { padding: 8px 10px 10px; }
+  .station-card .name { font-family: var(--mono); font-weight: 700; font-size: 13px; }
+  .station-card .cyc { height: 4px; background: var(--paper); margin-top: 8px;
+    outline: 1px solid var(--hairline); }
+  .station-card .cyc i { display: block; height: 100%; background: var(--ink);
+    width: 0%; }
+  .station-card .health { margin-top: 6px; font-size: 10.5px; color: var(--ink-2);
+    display: flex; align-items: center; gap: 5px; }
+  .station-card .health .hbar { flex: 1; height: 4px; background: var(--paper);
+    outline: 1px solid var(--hairline); }
+  .station-card .health .hbar i { display: block; height: 100%;
+    background: var(--st-degraded); width: 0%; }
+  .buffer-link { display: flex; flex-direction: column; align-items: center;
+    padding: 0 6px; min-width: 62px; }
+  .buffer-link .lvl { font-family: var(--mono); font-size: 11px; color: var(--ink-2); }
+  .buffer-link .gauge { width: 100%; height: 8px; background: var(--paper);
+    outline: 1px solid var(--hairline); margin: 3px 0; }
+  .buffer-link .gauge i { display: block; height: 100%; background: var(--ink-2); }
+  .buffer-link .bname { font-family: var(--mono); font-size: 10px; color: var(--ink-2); }
+  .pv-cell { font-family: var(--mono); font-size: 12px; white-space: nowrap; }
+  .pv-cell .pv-alarm { color: var(--st-failed); font-weight: 700; }
+  td.reason { font-family: var(--mono); font-size: 12px; max-width: 340px; }
+  td.reason .code { font-weight: 700; }
+</style>
+{% endblock %}
+{% block content %}
+  <h2 class="eyebrow">Line performance</h2>
+  <div class="kpi-row" id="kpis">
+    <div class="kpi"><div class="label">Line OEE</div><div class="value" id="k-oee">—</div></div>
+    <div class="kpi"><div class="label">Throughput</div><div class="value" id="k-tp">—<small> p/min</small></div></div>
+    <div class="kpi"><div class="label">WIP</div><div class="value" id="k-wip">—</div></div>
+    <div class="kpi"><div class="label">Good parts</div><div class="value" id="k-good">—</div></div>
+    <div class="kpi"><div class="label">Scrap</div><div class="value" id="k-scrap">—</div></div>
+    <div class="kpi"><div class="label">Sim time</div><div class="value" id="k-time">—<small> s</small></div></div>
+  </div>
+
+  <h2 class="eyebrow">Material flow</h2>
+  <div class="flow-wrap"><div class="flow" id="flow">
+    <span class="muted mono">No run active — start one from the header.</span>
+  </div></div>
+
+  <h2 class="eyebrow">Stations</h2>
+  <table class="data" id="station-table">
+    <thead><tr>
+      <th>Station</th><th>State</th><th>Health</th><th>OEE (A·P·Q)</th>
+      <th>Parts</th><th>Scrap</th><th>Active reason</th><th>Process values</th>
+    </tr></thead>
+    <tbody id="station-rows"><tr><td colspan="8" class="muted">No data.</td></tr></tbody>
+  </table>
+{% endblock %}
+{% block scripts %}
+<script>
+  const fmt = (x, d=2) => (x === null || x === undefined) ? "—" : Number(x).toFixed(d);
+  const pct = (x) => (100 * x).toFixed(1) + "%";
+
+  function renderFlow(snap) {
+    const stations = Object.values(snap.stations);
+    const buffers = snap.buffers;
+    const bufNames = Object.keys(buffers);
+    let html = `<span class="endpoint">Source ∞</span>`;
+    stations.forEach((st, i) => {
+      const healthPct = st.h_max > 1 ? (100 * st.health / st.h_max) : (st.health * 100);
+      html += `
+        <div class="station-card" data-state="${st.state}">
+          <div class="edge"></div>
+          <div class="body">
+            <div class="name">${st.name}</div>
+            <div class="state-tag" data-state="${st.state}">${st.state}</div>
+            <div class="cyc" title="cycle phase"><i style="width:${(st.cycle_phase*100).toFixed(0)}%"></i></div>
+            <div class="health">H ${st.health}/${st.h_max}
+              <span class="hbar"><i style="width:${healthPct.toFixed(0)}%"></i></span></div>
+          </div>
+        </div>`;
+      if (i < stations.length - 1) {
+        const b = buffers[bufNames[i]];
+        html += `
+          <div class="buffer-link">
+            <span class="lvl">${b.level}/${b.capacity}</span>
+            <span class="gauge"><i style="width:${(100*b.level/b.capacity).toFixed(0)}%"></i></span>
+            <span class="bname">${b.name}</span>
+          </div>`;
+      }
+    });
+    html += `<span class="endpoint">Sink ∞</span>`;
+    $("flow").innerHTML = html;
+  }
+
+  function renderTable(snap) {
+    const rows = Object.values(snap.stations).map(st => {
+      const top = st.alarms.length
+        ? st.alarms.reduce((a, b) => a.activated_at > b.activated_at ? a : b) : null;
+      const pvs = st.process_values.map(pv =>
+        `<span class="${pv.alarm_state !== "OK" ? "pv-alarm" : ""}">` +
+        `${pv.name} ${fmt(pv.value, 1)} ${pv.unit}</span>`).join(" · ");
+      return `<tr>
+        <td class="mono">${st.name}</td>
+        <td><span class="state-tag" data-state="${st.state}">${st.state}</span></td>
+        <td class="mono">${st.health}/${st.h_max}</td>
+        <td class="mono">${pct(st.oee)} <span class="muted">(${pct(st.availability)}·${pct(st.performance)}·${pct(st.quality)})</span></td>
+        <td class="mono">${st.parts_made}</td>
+        <td class="mono">${st.scrap}</td>
+        <td class="reason">${top ? `<span class="code">${top.code}</span> ${top.text}` : `<span class="muted">—</span>`}</td>
+        <td class="pv-cell">${pvs || `<span class="muted">—</span>`}</td>
+      </tr>`;
+    });
+    $("station-rows").innerHTML = rows.join("") ||
+      `<tr><td colspan="8" class="muted">No data.</td></tr>`;
+  }
+
+  async function refreshDashboard() {
+    try {
+      const snap = await jget("/api/v1/state");
+      $("k-oee").textContent = pct(snap.oee);
+      $("k-tp").innerHTML = `${fmt(snap.throughput * 60, 1)}<small> p/min</small>`;
+      $("k-wip").textContent = snap.total_wip;
+      $("k-good").textContent = snap.total_good;
+      $("k-scrap").textContent = snap.total_scrap;
+      $("k-time").innerHTML = `${fmt(snap.sim_time, 0)}<small> s</small>`;
+      renderFlow(snap);
+      renderTable(snap);
+    } catch (e) { /* 404 = no run yet; keep last render */ }
+  }
+  refreshDashboard();
+  setInterval(refreshDashboard, 2000);
+</script>
+{% endblock %}

@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% block title %}simengine — configure{% endblock %}
+{% block styles %}
+<style>
+  .cols { display: grid; grid-template-columns: 220px 1fr; gap: 16px; }
+  @media (max-width: 800px) { .cols { grid-template-columns: 1fr; } }
+  ul.picklist { list-style: none; padding: 0; border: 1px solid var(--hairline);
+    background: var(--panel); max-height: 420px; overflow-y: auto; }
+  ul.picklist li { padding: 8px 12px; font-family: var(--mono); font-size: 13px;
+    cursor: pointer; border-bottom: 1px solid var(--hairline); }
+  ul.picklist li.active { background: #fff; border-left: 3px solid var(--ink); }
+  textarea.editor { width: 100%; min-height: 420px; font-family: var(--mono);
+    font-size: 12.5px; border: 1px solid var(--hairline); background: #fff;
+    color: var(--ink); padding: 10px; resize: vertical; }
+  .editor-actions { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
+  .editor-actions input { font-family: var(--mono); font-size: 13px; padding: 5px 8px;
+    border: 1px solid var(--hairline); }
+</style>
+{% endblock %}
+{% block content %}
+  <h2 class="eyebrow">Scenarios</h2>
+  <div class="cols">
+    <ul class="picklist" id="scenario-list"></ul>
+    <div>
+      <textarea class="editor" id="scenario-editor"
+        placeholder="Select a scenario to edit its configuration (JSON)."></textarea>
+      <div class="editor-actions">
+        <button id="scenario-save" disabled>Save scenario</button>
+        <input id="scenario-new-name" placeholder="new_scenario_name">
+        <button id="scenario-create" class="quiet">Create from editor</button>
+      </div>
+      <div class="msg" id="scenario-msg" hidden></div>
+    </div>
+  </div>
+
+  <h2 class="eyebrow">Recipes</h2>
+  <div class="cols">
+    <ul class="picklist" id="recipe-list"></ul>
+    <div>
+      <textarea class="editor" id="recipe-editor" style="min-height:280px"
+        placeholder="Select a recipe to edit (JSON)."></textarea>
+      <div class="editor-actions">
+        <button id="recipe-save" disabled>Save recipe</button>
+        <input id="recipe-new-name" placeholder="new_recipe_name">
+        <button id="recipe-create" class="quiet">Create from editor</button>
+        <button id="recipe-start" class="quiet">Start recipe run</button>
+      </div>
+      <div class="msg" id="recipe-msg" hidden></div>
+    </div>
+  </div>
+{% endblock %}
+{% block scripts %}
+<script>
+  let currentScenario = null, currentRecipe = null;
+
+  function note(id, text, isErr) {
+    const el = $(id);
+    el.hidden = false;
+    el.textContent = text;
+    el.className = "msg" + (isErr ? " err" : "");
+  }
+
+  function bindList(listId, names, onPick) {
+    const ul = $(listId);
+    ul.innerHTML = names.map(n => `<li data-name="${n}">${n}</li>`).join("");
+    ul.querySelectorAll("li").forEach(li => li.onclick = () => {
+      ul.querySelectorAll("li").forEach(x => x.classList.remove("active"));
+      li.classList.add("active");
+      onPick(li.dataset.name);
+    });
+  }
+
+  async function loadScenarioList() {
+    bindList("scenario-list", await jget("/api/v1/scenarios"), async (name) => {
+      currentScenario = name;
+      const cfg = await jget("/api/v1/scenarios/" + name);
+      $("scenario-editor").value = JSON.stringify(cfg, null, 2);
+      $("scenario-save").disabled = false;
+      $("scenario-msg").hidden = true;
+    });
+  }
+  async function loadRecipeList() {
+    bindList("recipe-list", await jget("/api/v1/recipes"), async (name) => {
+      currentRecipe = name;
+      const cfg = await jget("/api/v1/recipes/" + name);
+      $("recipe-editor").value = JSON.stringify(cfg, null, 2);
+      $("recipe-save").disabled = false;
+      $("recipe-msg").hidden = true;
+    });
+  }
+
+  function parsed(editorId, msgId) {
+    try { return JSON.parse($(editorId).value); }
+    catch (e) { note(msgId, "Not valid JSON: " + e.message, true); return null; }
+  }
+
+  $("scenario-save").onclick = async () => {
+    const body = parsed("scenario-editor", "scenario-msg");
+    if (!body || !currentScenario) return;
+    try {
+      await jsend("/api/v1/scenarios/" + currentScenario, "PUT", body);
+      note("scenario-msg", `Saved '${currentScenario}'. Applies on next run.`);
+    } catch (e) { note("scenario-msg", e.message, true); }
+  };
+  $("scenario-create").onclick = async () => {
+    const body = parsed("scenario-editor", "scenario-msg");
+    const name = $("scenario-new-name").value.trim();
+    if (!body) return;
+    if (!name) return note("scenario-msg", "Enter a name for the new scenario.", true);
+    try {
+      await jsend("/api/v1/scenarios", "POST", {name, config: body});
+      note("scenario-msg", `Created '${name}'.`);
+      loadScenarioList(); loadScenarioPicker();
+    } catch (e) { note("scenario-msg", e.message, true); }
+  };
+
+  $("recipe-save").onclick = async () => {
+    const body = parsed("recipe-editor", "recipe-msg");
+    if (!body || !currentRecipe) return;
+    try {
+      await jsend("/api/v1/recipes/" + currentRecipe, "PUT", body);
+      note("recipe-msg", `Saved '${currentRecipe}'.`);
+    } catch (e) { note("recipe-msg", e.message, true); }
+  };
+  $("recipe-create").onclick = async () => {
+    const body = parsed("recipe-editor", "recipe-msg");
+    const name = $("recipe-new-name").value.trim();
+    if (!body) return;
+    if (!name) return note("recipe-msg", "Enter a name for the new recipe.", true);
+    try {
+      await jsend("/api/v1/recipes", "POST", {name, config: body});
+      note("recipe-msg", `Created '${name}'.`);
+      loadRecipeList();
+    } catch (e) { note("recipe-msg", e.message, true); }
+  };
+  $("recipe-start").onclick = async () => {
+    if (!currentRecipe) return note("recipe-msg", "Select a recipe first.", true);
+    try {
+      const r = await jsend("/api/v1/runs/recipe", "POST", {recipe: currentRecipe});
+      note("recipe-msg", `Recipe run started: ${r.run_id}`);
+      refreshHeader();
+    } catch (e) { note("recipe-msg", e.message, true); }
+  };
+
+  loadScenarioList();
+  loadRecipeList();
+</script>
+{% endblock %}

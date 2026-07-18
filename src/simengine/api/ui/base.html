@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}simengine{% endblock %}</title>
+<style>
+  :root {
+    /* ISA-101 high-performance HMI: achromatic surface, color = state only */
+    --paper: #ECEEEC;
+    --panel: #F7F8F7;
+    --ink: #1A1D1B;
+    --ink-2: #5B615E;
+    --hairline: #C9CDC9;
+    --lamp-off: #B6BBB8;
+    /* state colors — the only chroma on the page, never without a label */
+    --st-processing: #1E7A34;
+    --st-degraded: #9A6B00;
+    --st-failed: #B3261E;
+    --st-repair: #2B5CAD;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, Menlo, monospace;
+    --sans: system-ui, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--paper); color: var(--ink);
+    font-family: var(--sans); font-size: 14px; line-height: 1.45;
+  }
+  a { color: inherit; }
+
+  /* ---- header bar: fixed instrument-panel chrome on every page ---- */
+  header.panel-bar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+    padding: 10px 16px; background: var(--panel);
+    border-bottom: 2px solid var(--ink);
+  }
+  .wordmark { font-family: var(--mono); font-weight: 700; font-size: 15px;
+    letter-spacing: 0.04em; margin-right: 6px; }
+  .wordmark small { color: var(--ink-2); font-weight: 400; }
+  nav.pages { display: flex; gap: 2px; margin-right: auto; }
+  nav.pages a {
+    text-decoration: none; padding: 5px 12px; font-size: 12px;
+    text-transform: uppercase; letter-spacing: 0.09em;
+    border: 1px solid transparent; color: var(--ink-2);
+  }
+  nav.pages a.active { border-color: var(--ink); color: var(--ink); background: #fff; }
+  .ctl { display: flex; align-items: center; gap: 6px; }
+  .ctl label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--ink-2); }
+  .ctl select, .ctl input {
+    font-family: var(--mono); font-size: 13px; padding: 4px 6px;
+    border: 1px solid var(--hairline); background: #fff; color: var(--ink);
+    max-width: 150px;
+  }
+  .ctl input.short { width: 72px; }
+  button {
+    font-family: var(--sans); font-size: 12px; text-transform: uppercase;
+    letter-spacing: 0.08em; padding: 6px 14px; cursor: pointer;
+    border: 1px solid var(--ink); background: var(--ink); color: var(--panel);
+  }
+  button.quiet { background: transparent; color: var(--ink); }
+  button:disabled { opacity: 0.4; cursor: default; }
+  .run-chip { display: flex; align-items: center; gap: 8px;
+    font-family: var(--mono); font-size: 12px; color: var(--ink-2);
+    border: 1px solid var(--hairline); background: #fff; padding: 5px 10px; }
+  .lamp { width: 10px; height: 10px; border-radius: 50%;
+    background: var(--lamp-off); border: 1px solid rgba(0,0,0,0.25); }
+  .lamp.on { background: var(--st-processing); }
+  .lamp.on.pulse { animation: lamp 2s ease-in-out infinite; }
+  @keyframes lamp { 50% { opacity: 0.55; } }
+  @media (prefers-reduced-motion: reduce) { .lamp.on.pulse { animation: none; } }
+
+  main { padding: 18px 16px 40px; max-width: 1280px; margin: 0 auto; }
+  h2.eyebrow { font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em;
+    color: var(--ink-2); font-weight: 600; margin: 22px 0 8px; }
+  .card { background: var(--panel); border: 1px solid var(--hairline); }
+
+  /* state tokens: colored square + label, never color alone */
+  .state-tag { display: inline-flex; align-items: center; gap: 6px;
+    font-family: var(--mono); font-size: 12px; }
+  .state-tag::before { content: ""; width: 9px; height: 9px; flex: none;
+    background: var(--lamp-off); outline: 1px solid rgba(0,0,0,0.2); }
+  .state-tag[data-state="PROCESSING"]::before { background: var(--st-processing); }
+  .state-tag[data-state="DEGRADED"]::before { background: var(--st-degraded); }
+  .state-tag[data-state="FAILED"]::before { background: var(--st-failed); }
+  .state-tag[data-state="UNDER_REPAIR"]::before { background: var(--st-repair); }
+
+  table.data { border-collapse: collapse; width: 100%; background: var(--panel); }
+  table.data th {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--ink-2); font-weight: 600; text-align: left;
+    padding: 8px 10px; border-bottom: 2px solid var(--ink);
+  }
+  table.data td { padding: 8px 10px; border-bottom: 1px solid var(--hairline);
+    font-variant-numeric: tabular-nums; }
+  .mono { font-family: var(--mono); font-size: 12.5px; }
+  .muted { color: var(--ink-2); }
+  .msg { font-family: var(--mono); font-size: 12px; padding: 8px 10px;
+    border: 1px solid var(--hairline); background: #fff; margin-top: 10px;
+    white-space: pre-wrap; }
+  .msg.err { border-color: var(--st-failed); color: var(--st-failed); }
+  :focus-visible { outline: 2px solid var(--st-repair); outline-offset: 1px; }
+</style>
+{% block styles %}{% endblock %}
+</head>
+<body>
+<header class="panel-bar">
+  <span class="wordmark">simengine<small> / station simulation</small></span>
+  <nav class="pages">
+    <a href="/" id="nav-dashboard">Dashboard</a>
+    <a href="/configure" id="nav-configure">Configure</a>
+    <a href="/comms" id="nav-comms">Comms</a>
+  </nav>
+  <div class="ctl"><label for="hdr-scenario">Scenario</label>
+    <select id="hdr-scenario"></select></div>
+  <div class="ctl"><label for="hdr-seed">Seed</label>
+    <input id="hdr-seed" class="short" type="number" placeholder="auto"></div>
+  <div class="ctl"><label for="hdr-speed">Speed×</label>
+    <input id="hdr-speed" class="short" type="number" value="1" min="0.1" step="0.5"></div>
+  <button id="hdr-start">Start run</button>
+  <button id="hdr-stop" class="quiet">Stop</button>
+  <span class="run-chip"><span class="lamp" id="hdr-lamp"></span>
+    <span id="hdr-runstate">IDLE</span>
+    <span id="hdr-runid" class="muted">—</span></span>
+</header>
+<main>{% block content %}{% endblock %}</main>
+<script>
+  const $ = (id) => document.getElementById(id);
+  async function jget(url) {
+    const r = await fetch(url);
+    if (!r.ok) throw Object.assign(new Error(), {status: r.status,
+      body: await r.json().catch(() => ({}))});
+    return r.json();
+  }
+  async function jsend(url, method, body) {
+    const r = await fetch(url, {method, headers: {"Content-Type": "application/json"},
+      body: body === undefined ? undefined : JSON.stringify(body)});
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw Object.assign(new Error(data.error || r.status), {status: r.status});
+    return data;
+  }
+  async function refreshHeader() {
+    try {
+      const s = await jget("/api/v1/runs/current");
+      $("hdr-runstate").textContent = s.state;
+      $("hdr-runid").textContent = s.run_id || "—";
+      const lamp = $("hdr-lamp");
+      lamp.className = "lamp" + (s.state === "RUNNING" ? " on pulse" : "");
+      $("hdr-start").disabled = s.state !== "IDLE";
+      $("hdr-stop").disabled = s.state === "IDLE";
+    } catch (e) { /* server booting */ }
+  }
+  async function loadScenarioPicker() {
+    const names = await jget("/api/v1/scenarios");
+    const sel = $("hdr-scenario");
+    const prev = localStorage.getItem("simengine.scenario");
+    sel.innerHTML = names.map(n => `<option>${n}</option>`).join("");
+    if (prev && names.includes(prev)) sel.value = prev;
+    sel.onchange = () => localStorage.setItem("simengine.scenario", sel.value);
+  }
+  $("hdr-start").onclick = async () => {
+    const body = {scenario: $("hdr-scenario").value,
+      speed_ratio: parseFloat($("hdr-speed").value) || 1.0};
+    const seed = $("hdr-seed").value;
+    if (seed !== "") body.seed = parseInt(seed, 10);
+    try { await jsend("/api/v1/runs", "POST", body); }
+    catch (e) { alert("Start failed: " + e.message); }
+    refreshHeader();
+  };
+  $("hdr-stop").onclick = async () => {
+    try { await jsend("/api/v1/runs/current", "DELETE"); } catch (e) {}
+    refreshHeader();
+  };
+  const page = location.pathname === "/" ? "dashboard"
+    : location.pathname.replace("/", "");
+  const navEl = $("nav-" + page);
+  if (navEl) navEl.classList.add("active");
+  loadScenarioPicker();
+  refreshHeader();
+  setInterval(refreshHeader, 2000);
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>
