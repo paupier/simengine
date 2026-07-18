@@ -16,6 +16,17 @@ from dataclasses import dataclass, field
 import scipy.stats
 
 
+def _rvs(dist, random_state=None):
+    """Sample a distribution, passing random_state through when supported.
+
+    ConstantDistribution ignores random_state; scipy frozen distributions use
+    it for deterministic per-step sampling (engine guardrail: no global RNG).
+    """
+    if random_state is None:
+        return dist.rvs()
+    return dist.rvs(random_state=random_state)
+
+
 @dataclass
 class FailureMode:
     """
@@ -45,14 +56,17 @@ class FailureMode:
         self.mttf_dist = DistributionFactory.create(self.mttf_config)
         self.mttr_dist = DistributionFactory.create(self.mttr_config)
 
-    def sample_time_to_failure(self) -> float:
+    def sample_time_to_failure(self, random_state=None) -> float:
         """
         Sample next time-to-failure from MTTF distribution.
+
+        Args:
+            random_state: Optional numpy Generator/seed for deterministic sampling.
 
         Returns:
             Time until next failure (positive float)
         """
-        sample = self.mttf_dist.rvs()
+        sample = _rvs(self.mttf_dist, random_state)
 
         # Ensure positive value (critical for Simantha event scheduling)
         if sample <= 0:
@@ -61,14 +75,17 @@ class FailureMode:
 
         return float(sample)
 
-    def sample_repair_time(self) -> float:
+    def sample_repair_time(self, random_state=None) -> float:
         """
         Sample repair time from MTTR distribution.
+
+        Args:
+            random_state: Optional numpy Generator/seed for deterministic sampling.
 
         Returns:
             Repair duration (positive float)
         """
-        sample = self.mttr_dist.rvs()
+        sample = _rvs(self.mttr_dist, random_state)
 
         # Ensure positive value
         if sample <= 0:
@@ -160,7 +177,7 @@ class FailureModeManager:
             fm.total_uptime = 0.0
             fm.last_failure_time = 0.0
 
-    def sample_next_failure(self) -> Tuple[float, str]:
+    def sample_next_failure(self, random_state=None) -> Tuple[float, str]:
         """
         Sample next failure using competing risks model.
 
@@ -179,14 +196,14 @@ class FailureModeManager:
         # Sample from all failure modes
         samples = []
         for fm in self.failure_modes:
-            ttf = fm.sample_time_to_failure()
+            ttf = fm.sample_time_to_failure(random_state)
             samples.append((ttf, fm.name))
 
         # Return minimum (competing risks)
         min_sample = min(samples, key=lambda x: x[0])
         return min_sample
 
-    def sample_repair_time(self, mode_name: str) -> float:
+    def sample_repair_time(self, mode_name: str, random_state=None) -> float:
         """
         Sample repair time for a specific failure mode.
 
@@ -202,7 +219,7 @@ class FailureModeManager:
         if mode_name not in self.failure_modes_dict:
             raise ValueError(f"Failure mode '{mode_name}' not found")
 
-        return self.failure_modes_dict[mode_name].sample_repair_time()
+        return self.failure_modes_dict[mode_name].sample_repair_time(random_state)
 
     def record_failure(self, mode_name: str, failure_time: float, downtime: float) -> None:
         """
@@ -363,7 +380,7 @@ class ConstantDistribution:
         """
         self.value = value
 
-    def rvs(self, size=None):
+    def rvs(self, size=None, random_state=None):
         """
         Sample from distribution (always returns constant value).
 

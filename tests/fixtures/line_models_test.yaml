@@ -1,230 +1,82 @@
-advanced_failure_line:
-  description: 2-machine line with realistic MTTF/MTTR distributions and multiple
-    failure types
-  machines:
-  - name: M1
-    cycle_time: 1
-    enable_advanced_failures: true
-    failure_modes:
-    - name: mechanical
-      type: wearout
-      mttf:
-        distribution: weibull
-        shape: 2.5
-        scale: 500
-      mttr:
-        distribution: lognormal
-        mean: 15
-        std: 5
-    - name: electrical
-      type: random
-      mttf:
-        distribution: exponential
-        mean: 1000
-      mttr:
-        distribution: lognormal
-        mean: 10
-        std: 3
-    maintenance_strategy:
-      type: predictive
-      cbm_threshold: 1
-  - name: M2
-    cycle_time: 1
-    enable_degradation: false
-  buffers:
-  - name: B1
-    capacity: 10
-    upstream: M1
-    downstream: M2
-  maintainer:
-    enabled: true
-    capacity: 1
-historian_line:
-  description: 2-machine line with event historian logging to CSV
-  machines:
-  - name: M1
-    cycle_time: 1
-    enable_degradation: true
-    defect_rate: 0.02
-    health_multiplier: 5.0
-  - name: M2
-    cycle_time: 1
-    defect_rate: 0.005
-  buffers:
-  - name: B1
-    capacity: 10
-    upstream: M1
-    downstream: M2
-  maintainer:
-    enabled: true
-    capacity: 1
-  shifts:
-    schedule:
-    - name: Day Shift
-      duration: 28800
-      start_offset: 0
-    - name: Night Shift
-      duration: 28800
-      start_offset: 28800
-  historian:
-    enabled: true
-    csv:
-      enabled: true
-      output_dir: results/historian
-      max_file_size_mb: 50
-      rotate_on_shift: true
-    influxdb:
-      enabled: false
-      url: http://localhost:8086
-      token: ${INFLUXDB_TOKEN}
-      org: simantha
-      bucket: manufacturing
-      batch_size: 100
-    neo4j:
-      enabled: false
-      uri: bolt://localhost:7687
-      user: neo4j
-      password: ${NEO4J_PASSWORD}
-      track_parts: true
-      max_parts: 10000
-    events:
-      state_changes: true
-      alarms: true
-      shift_changes: true
-      maintenance: true
-      spc_violations: true
-      buffer_level_changes: true
-      production_summary: true
-      production_summary_interval: 60
+# Test fixture scenarios (§3 schema). Loaded via SIMENGINE_CONFIG_PATH by
+# tests/conftest.py so tests are independent of config/scenarios.yaml.
+
 balanced_line:
-  machines:
-  - name: M1
-    cycle_time: 1.0
-    failure_rate: 0.0
-    repair_time: 10.0
-  - name: M2
-    cycle_time: 1.0
-    failure_rate: 0.0
-    repair_time: 10.0
+  description: "Two identical stations for recipe/validation tests"
+  stations:
+    - name: M1
+      cycle_time: 1.0
+    - name: M2
+      cycle_time: 1.0
   buffers:
-  - name: B1
-    capacity: 10
-    upstream: M1
-    downstream: M2
+    - {name: B1, capacity: 10}
+
 full_feature_line:
-  machines:
-  - name: M1
-    cycle_time: 1
-    enable_spc: true
-    spc:
-      characteristic: cycle_time
-      subgroup_size: 5
-      num_subgroups: 25
-      usl: 1.2
-      lsl: 0.8
-      target: 1
-      enable_western_electric: true
-    enable_advanced_failures: true
-    failure_modes:
-    - name: mechanical
-      type: wearout
-      mttf:
-        distribution: weibull
-        shape: 2.5
-        scale: 800
-      mttr:
-        distribution: lognormal
-        mean: 15
-        std: 5
-    - name: electrical
-      type: random
-      mttf:
-        distribution: exponential
-        mean: 1200
-      mttr:
-        distribution: lognormal
-        mean: 10
-        std: 3
-    maintenance_strategy:
-      type: predictive
-      cbm_threshold: 1
-    quality_routing:
-      enabled: true
-      mode: scrap_and_rework
+  description: "Feature-rich fixture: health, failure modes, stops, PVs"
+  enterprise: "TestCorp"
+  site: "TestSite"
+  area: "TestArea"
+  line_name: "TestLine"
+  warm_up_time: 0
+  stations:
+    - name: M1
+      cycle_time: 2.0
       defect_rate: 0.05
-      health_multiplier: 5
-      enable_health_correlation: true
-      rework_success_rate: 0.7
-      max_rework: 3
-      scrap_sink: ScrapBin1
-  - name: M2
-    cycle_time: 1
-    enable_spc: true
-    spc:
-      characteristic: cycle_time
-      subgroup_size: 5
-      num_subgroups: 25
-      usl: 1.15
-      lsl: 0.85
-      target: 1
-      enable_western_electric: true
-    enable_advanced_failures: true
-    quality_routing:
-      enabled: true
-      mode: scrap
+      health:
+        h_max: 3
+        p_degrade: 0.01
+        cbm_threshold: 3
+        mttr: {distribution: lognormal, mean: 20, std: 5}
+      failure_modes:
+        - name: mechanical
+          type: wearout
+          mttf: {distribution: weibull, shape: 2.0, scale: 2000}
+          mttr: {distribution: lognormal, mean: 30, std: 10}
+      cycle_stops:
+        - reason: CS_JAM
+          mtbe: {distribution: exponential, mean: 200}
+          duration: {distribution: lognormal, mean: 10, std: 3}
+      process_values:
+        - name: OilTemp
+          unit: degC
+          profile: first_order_lag
+          setpoint: 55.0
+          tau: 60
+          initial: 20.0
+          noise: {distribution: normal, mean: 0, std: 0.2}
+          health_drift: 0.05
+          alarm_high: 68
+      spc:
+        enabled: true
+    - name: M2
+      cycle_time: 2.0
       defect_rate: 0.02
-      scrap_sink: ScrapBin2
   buffers:
-  - name: B1
-    capacity: 10
-    upstream: M1
-    downstream: M2
-  maintainer:
-    enabled: true
-    capacity: 1
-  shifts:
-    schedule:
-    - name: Day Shift
-      duration: 28800
-      start_offset: 0
-    - name: Evening Shift
-      duration: 28800
-      start_offset: 28800
-    - name: Night Shift
-      duration: 28800
-      start_offset: 57600
-  historian:
-    enabled: true
-    csv:
-      enabled: true
-      output_dir: results/historian
-      max_file_size_mb: 50
-      rotate_on_shift: true
-    influxdb:
-      enabled: false
-      url: http://localhost:8086
-      token: ${INFLUXDB_TOKEN}
-      org: simantha
-      bucket: manufacturing
-      batch_size: 100
-    neo4j:
-      enabled: false
-      uri: bolt://localhost:7687
-      user: neo4j
-      password: ${NEO4J_PASSWORD}
-      track_parts: true
-      max_parts: 10000
-    events:
-      state_changes: true
-      alarms: true
-      shift_changes: true
-      maintenance: true
-      spc_violations: true
-      buffer_level_changes: true
-      production_summary: true
-      production_summary_interval: 60
-  scrap_sinks:
-  - name: ScrapBin1
-  - name: ScrapBin2
-  description: '2-machine line with ALL features: advanced failures, SPC, shifts,
-    historian, scrap & rework routing'
+    - {name: B1, capacity: 5}
+  comms:
+    opcua: {enabled: true, port: 4840}
+  historians: []
+
+advanced_failure_line:
+  description: "Two stations with competing-risk failure modes"
+  stations:
+    - name: M1
+      cycle_time: 3.0
+      health:
+        h_max: 2
+        p_degrade: 0.02
+        cbm_threshold: 2
+        mttr: {distribution: lognormal, mean: 15, std: 4}
+      failure_modes:
+        - name: mechanical
+          type: wearout
+          mttf: {distribution: weibull, shape: 2.0, scale: 1000}
+          mttr: {distribution: lognormal, mean: 30, std: 10}
+        - name: electrical
+          type: random
+          mttf: {distribution: exponential, mean: 3000}
+          mttr: {distribution: lognormal, mean: 15, std: 5}
+    - name: M2
+      cycle_time: 3.0
+  buffers:
+    - {name: B1, capacity: 5}

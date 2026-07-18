@@ -1,14 +1,14 @@
 name: "Monday Production Schedule"
 description: "Product A morning run, changeover to Product B, then back to A"
-base_scenario: full_feature_line
+base_scenario: press_line_8
 
 segments:
   - name: "Product A Morning"
     quantity: 500
     max_duration: 18000
     overrides:
-      machines:
-        - name: M1
+      stations:
+        - name: Press02
           cycle_time: 10
           defect_rate: 0.02
     changeover:
@@ -20,8 +20,8 @@ segments:
   - name: "Product B Afternoon"
     duration: 7200
     overrides:
-      machines:
-        - name: M1
+      stations:
+        - name: Press02
           cycle_time: 15
           defect_rate: 0.05
     changeover:

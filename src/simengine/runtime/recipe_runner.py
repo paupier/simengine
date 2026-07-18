@@ -241,7 +241,7 @@ def validate_recipe(recipe: RecipeConfig, all_scenarios: dict = None) -> None:
             f"not available: {exc}"
         )
 
-    machine_names = {m["name"] for m in base_config["machines"]}
+    machine_names = {m["name"] for m in base_config["stations"]}
 
     for i, seg in enumerate(recipe.segments):
         _validate_segment_overrides(seg, machine_names, i)
@@ -273,10 +273,10 @@ def _validate_segment_overrides(
     if not overrides:
         return
 
-    machine_overrides = overrides.get("machines", [])
+    machine_overrides = overrides.get("stations", [])
     if not isinstance(machine_overrides, list):
         raise ValueError(
-            f"Segment '{seg.name}': overrides.machines must be a list"
+            f"Segment '{seg.name}': overrides.stations must be a list"
         )
 
     allowed_params = {
@@ -331,10 +331,10 @@ def apply_segment_overrides(
     """
     config = copy.deepcopy(base_config)
 
-    machine_overrides = overrides.get("machines", [])
+    machine_overrides = overrides.get("stations", [])
     for mo in machine_overrides:
         name = mo["name"]
-        for mc in config["machines"]:
+        for mc in config["stations"]:
             if mc["name"] == name:
                 for key in ("cycle_time", "defect_rate", "target_ppm",
                             "health_multiplier"):
@@ -435,7 +435,7 @@ def run_recipe(
         recipe_vars["changeover_state"].set_value(False)
 
     # Create shift manager and historian from base config
-    machine_names = [m["name"] for m in base_config["machines"]]
+    machine_names = [m["name"] for m in base_config["stations"]]
     shift_manager = create_shift_manager_from_config(base_config, machine_names)
     historian = create_historian_from_config(
         base_config, recipe.base_scenario, run_id=run_id

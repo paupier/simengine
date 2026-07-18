@@ -1,486 +1,363 @@
 """
-Configuration Validation Tests
+Configuration Validation Tests — §3 schema (clone_build_plan.md).
 
-Tests YAML configuration validation for advanced failure modes.
+Covers the stations/buffers topology, health, process_values, cycle_stops,
+comms, and historians validators, plus the carried failure-mode and
+distribution validation.
 """
 import pytest
+
 from simengine.config.loader import (
     load_line_config,
+    validate_serial_topology,
+    validate_health,
+    validate_process_values,
+    validate_cycle_stops,
+    validate_comms,
+    validate_historians,
     validate_failure_modes,
     validate_distribution_config,
-    validate_maintenance_strategy,
-    validate_historian_config,
+    resolve_cycle_time,
 )
 
 
-class TestLoadAdvancedFailureConfig:
-    """Test loading advanced_failure_line scenario."""
+def minimal_config(**overrides):
+    cfg = {
+        "stations": [
+            {"name": "S1", "cycle_time": 2.0},
+            {"name": "S2", "cycle_time": 2.0},
+        ],
+        "buffers": [{"name": "B1", "capacity": 10}],
+    }
+    cfg.update(overrides)
+    return cfg
+
+
+class TestLoadFixtureScenarios:
+    def test_load_balanced_line(self):
+        config = load_line_config("balanced_line")
+        assert len(config["stations"]) == 2
+        assert config["stations"][0]["name"] == "M1"
+
+    def test_load_full_feature_line(self):
+        config = load_line_config("full_feature_line")
+        st = config["stations"][0]
+        assert st["health"]["h_max"] == 3
+        assert st["process_values"][0]["profile"] == "first_order_lag"
+        assert st["cycle_stops"][0]["reason"] == "CS_JAM"
 
     def test_load_advanced_failure_line(self):
-        """advanced_failure_line scenario loads and validates successfully."""
         config = load_line_config("advanced_failure_line")
+        assert len(config["stations"][0]["failure_modes"]) == 2
 
-        assert "machines" in config
-        assert "buffers" in config
-        assert len(config["machines"]) == 2
-        assert config["machines"][0]["name"] == "M1"
-        assert config["machines"][0]["enable_advanced_failures"] is True
-        assert "failure_modes" in config["machines"][0]
-        assert len(config["machines"][0]["failure_modes"]) == 2
+    def test_unknown_scenario(self):
+        with pytest.raises(ValueError, match="not found"):
+            load_line_config("nonexistent_scenario_xyz")
 
 
-class TestDistributionValidation:
-    """Test distribution configuration validation."""
+class TestShippedScenarios:
+    """The shipped config/scenarios.yaml must validate."""
 
-    def test_constant_valid(self):
-        """Valid constant distribution passes validation."""
-        dist_cfg = {"distribution": "constant", "value": 10}
-        validate_distribution_config(dist_cfg, "test")  # Should not raise
-
-    def test_constant_missing_value(self):
-        """Constant distribution without value raises error."""
-        dist_cfg = {"distribution": "constant"}
-        with pytest.raises(ValueError, match="requires 'value' parameter"):
-            validate_distribution_config(dist_cfg, "test")
-
-    def test_constant_negative_value(self):
-        """Constant distribution with negative value raises error."""
-        dist_cfg = {"distribution": "constant", "value": -5}
-        with pytest.raises(ValueError, match="must be positive"):
-            validate_distribution_config(dist_cfg, "test")
-
-    def test_exponential_valid(self):
-        """Valid exponential distribution passes validation."""
-        dist_cfg = {"distribution": "exponential", "mean": 100}
-        validate_distribution_config(dist_cfg, "test")
-
-    def test_exponential_missing_mean(self):
-        """Exponential distribution without mean raises error."""
-        dist_cfg = {"distribution": "exponential"}
-        with pytest.raises(ValueError, match="requires 'mean' parameter"):
-            validate_distribution_config(dist_cfg, "test")
-
-    def test_exponential_negative_mean(self):
-        """Exponential distribution with negative mean raises error."""
-        dist_cfg = {"distribution": "exponential", "mean": -10}
-        with pytest.raises(ValueError, match="must be positive"):
-            validate_distribution_config(dist_cfg, "test")
-
-    def test_weibull_valid(self):
-        """Valid Weibull distribution passes validation."""
-        dist_cfg = {"distribution": "weibull", "shape": 2.5, "scale": 500}
-        validate_distribution_config(dist_cfg, "test")
-
-    def test_weibull_missing_parameters(self):
-        """Weibull distribution without shape/scale raises error."""
-        dist_cfg = {"distribution": "weibull", "shape": 2.5}
-        with pytest.raises(ValueError, match="requires 'shape' and 'scale' parameters"):
-            validate_distribution_config(dist_cfg, "test")
-
-    def test_weibull_negative_parameters(self):
-        """Weibull distribution with negative parameters raises error."""
-        dist_cfg = {"distribution": "weibull", "shape": -1, "scale": 500}
-        with pytest.raises(ValueError, match="must be positive"):
-            validate_distribution_config(dist_cfg, "test")
-
-    def test_lognormal_valid(self):
-        """Valid lognormal distribution passes validation."""
-        dist_cfg = {"distribution": "lognormal", "mean": 15, "std": 5}
-        validate_distribution_config(dist_cfg, "test")
-
-    def test_lognormal_missing_parameters(self):
-        """Lognormal distribution without mean/std raises error."""
-        dist_cfg = {"distribution": "lognormal", "mean": 15}
-        with pytest.raises(ValueError, match="requires 'mean' and 'std' parameters"):
-            validate_distribution_config(dist_cfg, "test")
-
-    def test_normal_valid(self):
-        """Valid normal distribution passes validation."""
-        dist_cfg = {"distribution": "normal", "mean": 50, "std": 10}
-        validate_distribution_config(dist_cfg, "test")
-
-    def test_uniform_valid(self):
-        """Valid uniform distribution passes validation."""
-        dist_cfg = {"distribution": "uniform", "min": 10, "max": 20}
-        validate_distribution_config(dist_cfg, "test")
-
-    def test_uniform_invalid_range(self):
-        """Uniform distribution with min >= max raises error."""
-        dist_cfg = {"distribution": "uniform", "min": 20, "max": 10}
-        with pytest.raises(ValueError, match="min must be less than max"):
-            validate_distribution_config(dist_cfg, "test")
-
-    def test_unknown_distribution(self):
-        """Unknown distribution type raises error."""
-        dist_cfg = {"distribution": "gamma"}  # Not supported
-        with pytest.raises(ValueError, match="unknown distribution type"):
-            validate_distribution_config(dist_cfg, "test")
-
-    def test_missing_distribution_key(self):
-        """Missing 'distribution' key raises error."""
-        dist_cfg = {"mean": 100}
-        with pytest.raises(ValueError, match="missing 'distribution' field"):
-            validate_distribution_config(dist_cfg, "test")
+    @pytest.mark.parametrize("name", ["demo_line", "two_station_minimal", "press_line_8"])
+    def test_shipped_scenario_validates(self, name, monkeypatch):
+        monkeypatch.delenv("SIMENGINE_CONFIG_PATH", raising=False)
+        config = load_line_config(name)
+        assert len(config["stations"]) >= 2
 
 
-class TestFailureModeValidation:
-    """Test failure mode configuration validation."""
+class TestTopology:
+    def test_missing_stations(self):
+        with pytest.raises(ValueError, match="stations"):
+            validate_serial_topology({"buffers": []})
 
+    def test_min_two_stations(self):
+        cfg = minimal_config()
+        cfg["stations"] = cfg["stations"][:1]
+        cfg["buffers"] = []
+        with pytest.raises(ValueError, match="at least 2 stations"):
+            validate_serial_topology(cfg)
+
+    def test_buffer_count_rule(self):
+        cfg = minimal_config()
+        cfg["buffers"] = []
+        with pytest.raises(ValueError, match="requires 1 buffers"):
+            validate_serial_topology(cfg)
+
+    def test_duplicate_station_names(self):
+        cfg = minimal_config()
+        cfg["stations"][1]["name"] = "S1"
+        with pytest.raises(ValueError, match="unique"):
+            validate_serial_topology(cfg)
+
+    def test_bad_buffer_capacity(self):
+        cfg = minimal_config()
+        cfg["buffers"][0]["capacity"] = 0
+        with pytest.raises(ValueError, match="capacity"):
+            validate_serial_topology(cfg)
+
+    def test_missing_cycle_time_and_ppm(self):
+        cfg = minimal_config()
+        del cfg["stations"][0]["cycle_time"]
+        with pytest.raises(ValueError, match="cycle_time.*target_ppm"):
+            validate_serial_topology(cfg)
+
+    def test_negative_cycle_time(self):
+        cfg = minimal_config()
+        cfg["stations"][0]["cycle_time"] = -1
+        with pytest.raises(ValueError, match="positive"):
+            validate_serial_topology(cfg)
+
+    def test_valid_config_passes(self):
+        validate_serial_topology(minimal_config())
+
+
+class TestResolveCycleTime:
+    def test_cycle_time_direct(self):
+        assert resolve_cycle_time({"cycle_time": 12.0}) == 12.0
+
+    def test_target_ppm_derivation(self):
+        assert resolve_cycle_time({"target_ppm": 6.0}) == 10.0
+
+    def test_target_ppm_precedence(self):
+        assert resolve_cycle_time({"cycle_time": 99.0, "target_ppm": 30.0}) == 2.0
+
+
+class TestValidateHealth:
+    def base(self, **health):
+        cfg = {"name": "S1", "cycle_time": 1.0, "health": {
+            "h_max": 5, "p_degrade": 0.01, "cbm_threshold": 5,
+            "mttr": {"distribution": "constant", "value": 60},
+        }}
+        cfg["health"].update(health)
+        return cfg
+
+    def test_valid(self):
+        validate_health(self.base())
+
+    def test_absent_ok(self):
+        validate_health({"name": "S1", "cycle_time": 1.0})
+
+    def test_bad_h_max(self):
+        with pytest.raises(ValueError, match="h_max"):
+            validate_health(self.base(h_max=0))
+
+    def test_p_degrade_range(self):
+        with pytest.raises(ValueError, match="p_degrade"):
+            validate_health(self.base(p_degrade=1.5))
+
+    def test_cbm_above_h_max(self):
+        with pytest.raises(ValueError, match="cbm_threshold"):
+            validate_health(self.base(cbm_threshold=6))
+
+    def test_cbm_zero(self):
+        with pytest.raises(ValueError, match="cbm_threshold"):
+            validate_health(self.base(cbm_threshold=0))
+
+    def test_missing_mttr(self):
+        cfg = self.base()
+        del cfg["health"]["mttr"]
+        with pytest.raises(ValueError, match="mttr"):
+            validate_health(cfg)
+
+
+class TestValidateProcessValues:
+    def station(self, pv):
+        return {"name": "S1", "cycle_time": 1.0, "process_values": [pv]}
+
+    def test_valid_profiles(self):
+        validate_process_values(self.station({
+            "name": "RamForce", "unit": "kN", "profile": "cycle_peak",
+            "baseline": 0.0, "peak": {"distribution": "normal", "mean": 850, "std": 15},
+        }))
+        validate_process_values(self.station({
+            "name": "OilTemp", "unit": "degC", "profile": "first_order_lag",
+            "setpoint": 55.0, "tau": 300, "initial": 20.0,
+        }))
+        validate_process_values(self.station({
+            "name": "StrokePos", "unit": "mm", "profile": "cycle_ramp",
+            "range": [0.0, 320.0],
+        }))
+        validate_process_values(self.station({
+            "name": "FeedSpeed", "unit": "mm_s", "profile": "constant_noise",
+            "mean": 450.0,
+        }))
+
+    def test_invalid_profile(self):
+        with pytest.raises(ValueError, match="invalid profile"):
+            validate_process_values(self.station({
+                "name": "X", "unit": "u", "profile": "sawtooth", "mean": 1,
+            }))
+
+    def test_missing_required_key(self):
+        with pytest.raises(ValueError, match="missing required key 'tau'"):
+            validate_process_values(self.station({
+                "name": "T", "unit": "degC", "profile": "first_order_lag",
+                "setpoint": 55.0, "initial": 20.0,
+            }))
+
+    def test_missing_unit(self):
+        with pytest.raises(ValueError, match="unit"):
+            validate_process_values(self.station({
+                "name": "X", "profile": "constant_noise", "mean": 1,
+            }))
+
+    def test_bad_range(self):
+        with pytest.raises(ValueError, match="range"):
+            validate_process_values(self.station({
+                "name": "X", "unit": "mm", "profile": "cycle_ramp",
+                "range": [10.0, 5.0],
+            }))
+
+    def test_alarm_high_le_low(self):
+        with pytest.raises(ValueError, match="alarm_high"):
+            validate_process_values(self.station({
+                "name": "X", "unit": "u", "profile": "constant_noise",
+                "mean": 1, "alarm_high": 5, "alarm_low": 10,
+            }))
+
+    def test_invalid_noise_distribution(self):
+        with pytest.raises(ValueError):
+            validate_process_values(self.station({
+                "name": "X", "unit": "u", "profile": "constant_noise",
+                "mean": 1, "noise": {"distribution": "bogus"},
+            }))
+
+    def test_duplicate_pv_names(self):
+        cfg = {"name": "S1", "cycle_time": 1.0, "process_values": [
+            {"name": "X", "unit": "u", "profile": "constant_noise", "mean": 1},
+            {"name": "X", "unit": "u", "profile": "constant_noise", "mean": 2},
+        ]}
+        with pytest.raises(ValueError, match="unique"):
+            validate_process_values(cfg)
+
+
+class TestValidateCycleStops:
+    def station(self, stop):
+        return {"name": "S1", "cycle_time": 1.0, "cycle_stops": [stop]}
+
+    def test_valid(self):
+        validate_cycle_stops(self.station({
+            "reason": "CS_JAM",
+            "mtbe": {"distribution": "exponential", "mean": 900},
+            "duration": {"distribution": "lognormal", "mean": 25, "std": 10},
+        }))
+
+    def test_missing_reason(self):
+        with pytest.raises(ValueError, match="reason"):
+            validate_cycle_stops(self.station({
+                "mtbe": {"distribution": "exponential", "mean": 900},
+                "duration": {"distribution": "constant", "value": 5},
+            }))
+
+    def test_missing_duration(self):
+        with pytest.raises(ValueError, match="duration"):
+            validate_cycle_stops(self.station({
+                "reason": "CS_JAM",
+                "mtbe": {"distribution": "exponential", "mean": 900},
+            }))
+
+    def test_invalid_distribution(self):
+        with pytest.raises(ValueError):
+            validate_cycle_stops(self.station({
+                "reason": "CS_JAM",
+                "mtbe": {"distribution": "nope"},
+                "duration": {"distribution": "constant", "value": 5},
+            }))
+
+
+class TestValidateComms:
+    def test_absent_ok(self):
+        validate_comms({})
+
+    def test_valid_full_block(self):
+        validate_comms({"comms": {
+            "opcua": {"enabled": True, "port": 4840},
+            "opcua_mqtt": {"enabled": True, "broker": "mqtt://localhost:1883",
+                           "publisher_id": "x", "publish_interval": 1},
+            "sparkplugb": {"enabled": True, "broker": "mqtt://localhost:1883",
+                           "group_id": "G", "edge_node_id": "E"},
+        }})
+
+    def test_bad_port(self):
+        with pytest.raises(ValueError, match="port"):
+            validate_comms({"comms": {"opcua": {"enabled": True, "port": 99999}}})
+
+    def test_bad_broker_scheme(self):
+        with pytest.raises(ValueError, match="broker"):
+            validate_comms({"comms": {"opcua_mqtt": {
+                "enabled": True, "broker": "tcp://localhost:1883"}}})
+
+    def test_broker_missing_port(self):
+        with pytest.raises(ValueError, match="port"):
+            validate_comms({"comms": {"opcua_mqtt": {
+                "enabled": True, "broker": "mqtt://localhost"}}})
+
+    def test_broker_required_when_enabled(self):
+        with pytest.raises(ValueError, match="broker required"):
+            validate_comms({"comms": {"sparkplugb": {
+                "enabled": True, "group_id": "G", "edge_node_id": "E"}}})
+
+    def test_sparkplug_ids_required(self):
+        with pytest.raises(ValueError, match="group_id"):
+            validate_comms({"comms": {"sparkplugb": {
+                "enabled": True, "broker": "mqtt://localhost:1883"}}})
+
+    def test_disabled_needs_no_broker(self):
+        validate_comms({"comms": {"opcua_mqtt": {"enabled": False}}})
+
+
+class TestValidateHistorians:
+    def test_absent_ok(self):
+        validate_historians({})
+
+    def test_valid_list(self):
+        validate_historians({"historians": ["csv", "influx"]})
+
+    def test_not_a_list(self):
+        with pytest.raises(ValueError, match="list"):
+            validate_historians({"historians": "csv"})
+
+    def test_non_string_entry(self):
+        with pytest.raises(ValueError, match="list"):
+            validate_historians({"historians": [1]})
+
+
+class TestCarriedFailureModeValidation:
     def test_valid_failure_modes(self):
-        """Valid failure modes configuration passes validation."""
-        machine_cfg = {
-            "name": "M1",
-            "failure_modes": [
-                {
-                    "name": "mechanical",
-                    "type": "wearout",
-                    "mttf": {"distribution": "weibull", "shape": 2.5, "scale": 500},
-                    "mttr": {"distribution": "constant", "value": 10}
-                }
-            ]
-        }
-        validate_failure_modes(machine_cfg)  # Should not raise
+        validate_failure_modes({
+            "name": "S1",
+            "failure_modes": [{
+                "name": "bearing_wear", "type": "wearout",
+                "mttf": {"distribution": "weibull", "shape": 2.0, "scale": 20000},
+                "mttr": {"distribution": "lognormal", "mean": 300, "std": 60},
+            }],
+        })
 
-    def test_multiple_failure_modes(self):
-        """Multiple failure modes pass validation."""
-        machine_cfg = {
-            "name": "M1",
-            "failure_modes": [
-                {
-                    "name": "mechanical",
-                    "type": "wearout",
-                    "mttf": {"distribution": "constant", "value": 100},
-                    "mttr": {"distribution": "constant", "value": 10}
-                },
-                {
-                    "name": "electrical",
-                    "type": "random",
-                    "mttf": {"distribution": "exponential", "mean": 200},
-                    "mttr": {"distribution": "constant", "value": 5}
-                }
-            ]
-        }
-        validate_failure_modes(machine_cfg)
-
-    def test_failure_modes_not_list(self):
-        """failure_modes as non-list raises error."""
-        machine_cfg = {
-            "name": "M1",
-            "failure_modes": "not_a_list"
-        }
-        with pytest.raises(ValueError, match="must be a list"):
-            validate_failure_modes(machine_cfg)
-
-    def test_failure_modes_empty_list(self):
-        """Empty failure_modes list raises error."""
-        machine_cfg = {
-            "name": "M1",
-            "failure_modes": []
-        }
-        with pytest.raises(ValueError, match="list is empty"):
-            validate_failure_modes(machine_cfg)
-
-    def test_failure_mode_missing_name(self):
-        """Failure mode without name raises error."""
-        machine_cfg = {
-            "name": "M1",
-            "failure_modes": [
-                {
-                    "type": "wearout",
-                    "mttf": {"distribution": "constant", "value": 100},
-                    "mttr": {"distribution": "constant", "value": 10}
-                }
-            ]
-        }
-        with pytest.raises(ValueError, match="missing 'name' field"):
-            validate_failure_modes(machine_cfg)
-
-    def test_failure_mode_missing_type(self):
-        """Failure mode without type raises error."""
-        machine_cfg = {
-            "name": "M1",
-            "failure_modes": [
-                {
-                    "name": "mechanical",
-                    "mttf": {"distribution": "constant", "value": 100},
-                    "mttr": {"distribution": "constant", "value": 10}
-                }
-            ]
-        }
-        with pytest.raises(ValueError, match="missing 'type' field"):
-            validate_failure_modes(machine_cfg)
-
-    def test_failure_mode_invalid_type(self):
-        """Failure mode with invalid type raises error."""
-        machine_cfg = {
-            "name": "M1",
-            "failure_modes": [
-                {
-                    "name": "mechanical",
-                    "type": "invalid_type",
-                    "mttf": {"distribution": "constant", "value": 100},
-                    "mttr": {"distribution": "constant", "value": 10}
-                }
-            ]
-        }
+    def test_invalid_type(self):
         with pytest.raises(ValueError, match="invalid type"):
-            validate_failure_modes(machine_cfg)
+            validate_failure_modes({
+                "name": "S1",
+                "failure_modes": [{
+                    "name": "x", "type": "cosmic_ray",
+                    "mttf": {"distribution": "constant", "value": 1},
+                    "mttr": {"distribution": "constant", "value": 1},
+                }],
+            })
 
-    def test_failure_mode_missing_mttf(self):
-        """Failure mode without mttf raises error."""
-        machine_cfg = {
-            "name": "M1",
-            "failure_modes": [
-                {
-                    "name": "mechanical",
-                    "type": "wearout",
-                    "mttr": {"distribution": "constant", "value": 10}
-                }
-            ]
-        }
-        with pytest.raises(ValueError, match="missing 'mttf' field"):
-            validate_failure_modes(machine_cfg)
+    def test_missing_mttr(self):
+        with pytest.raises(ValueError, match="mttr"):
+            validate_failure_modes({
+                "name": "S1",
+                "failure_modes": [{
+                    "name": "x", "type": "random",
+                    "mttf": {"distribution": "constant", "value": 1},
+                }],
+            })
 
-    def test_failure_mode_missing_mttr(self):
-        """Failure mode without mttr raises error."""
-        machine_cfg = {
-            "name": "M1",
-            "failure_modes": [
-                {
-                    "name": "mechanical",
-                    "type": "wearout",
-                    "mttf": {"distribution": "constant", "value": 100}
-                }
-            ]
-        }
-        with pytest.raises(ValueError, match="missing 'mttr' field"):
-            validate_failure_modes(machine_cfg)
-
-    def test_duplicate_failure_mode_names(self):
-        """Duplicate failure mode names raise error."""
-        machine_cfg = {
-            "name": "M1",
-            "failure_modes": [
-                {
-                    "name": "mechanical",
-                    "type": "wearout",
-                    "mttf": {"distribution": "constant", "value": 100},
-                    "mttr": {"distribution": "constant", "value": 10}
-                },
-                {
-                    "name": "mechanical",  # Duplicate
-                    "type": "random",
-                    "mttf": {"distribution": "constant", "value": 100},
-                    "mttr": {"distribution": "constant", "value": 10}
-                }
-            ]
-        }
-        with pytest.raises(ValueError, match="must be unique"):
-            validate_failure_modes(machine_cfg)
-
-    def test_no_failure_modes_field(self):
-        """Machine without failure_modes field passes validation."""
-        machine_cfg = {"name": "M1"}
-        validate_failure_modes(machine_cfg)  # Should not raise (optional field)
-
-
-class TestMaintenanceStrategyValidation:
-    """Test maintenance strategy configuration validation."""
-
-    def test_corrective_strategy(self):
-        """Corrective maintenance strategy passes validation."""
-        machine_cfg = {
-            "name": "M1",
-            "maintenance_strategy": {
-                "type": "corrective"
-            }
-        }
-        validate_maintenance_strategy(machine_cfg)
-
-    def test_preventive_strategy_valid(self):
-        """Preventive maintenance strategy with pm_interval passes validation."""
-        machine_cfg = {
-            "name": "M1",
-            "maintenance_strategy": {
-                "type": "preventive",
-                "pm_interval": 100
-            }
-        }
-        validate_maintenance_strategy(machine_cfg)
-
-    def test_preventive_missing_pm_interval(self):
-        """Preventive strategy without pm_interval raises error."""
-        machine_cfg = {
-            "name": "M1",
-            "maintenance_strategy": {
-                "type": "preventive"
-            }
-        }
-        with pytest.raises(ValueError, match="requires 'pm_interval' parameter"):
-            validate_maintenance_strategy(machine_cfg)
-
-    def test_preventive_negative_pm_interval(self):
-        """Preventive strategy with negative pm_interval raises error."""
-        machine_cfg = {
-            "name": "M1",
-            "maintenance_strategy": {
-                "type": "preventive",
-                "pm_interval": -10
-            }
-        }
-        with pytest.raises(ValueError, match="must be positive"):
-            validate_maintenance_strategy(machine_cfg)
-
-    def test_predictive_strategy_valid(self):
-        """Predictive maintenance strategy with cbm_threshold passes validation."""
-        machine_cfg = {
-            "name": "M1",
-            "maintenance_strategy": {
-                "type": "predictive",
-                "cbm_threshold": 1
-            }
-        }
-        validate_maintenance_strategy(machine_cfg)
-
-    def test_predictive_missing_cbm_threshold(self):
-        """Predictive strategy without cbm_threshold raises error."""
-        machine_cfg = {
-            "name": "M1",
-            "maintenance_strategy": {
-                "type": "predictive"
-            }
-        }
-        with pytest.raises(ValueError, match="requires 'cbm_threshold' parameter"):
-            validate_maintenance_strategy(machine_cfg)
-
-    def test_predictive_negative_cbm_threshold(self):
-        """Predictive strategy with negative cbm_threshold raises error."""
-        machine_cfg = {
-            "name": "M1",
-            "maintenance_strategy": {
-                "type": "predictive",
-                "cbm_threshold": -1
-            }
-        }
-        with pytest.raises(ValueError, match="must be non-negative"):
-            validate_maintenance_strategy(machine_cfg)
-
-    def test_invalid_strategy_type(self):
-        """Invalid maintenance strategy type raises error."""
-        machine_cfg = {
-            "name": "M1",
-            "maintenance_strategy": {
-                "type": "invalid_type"
-            }
-        }
-        with pytest.raises(ValueError, match="invalid maintenance strategy type"):
-            validate_maintenance_strategy(machine_cfg)
-
-    def test_strategy_not_dict(self):
-        """maintenance_strategy as non-dict raises error."""
-        machine_cfg = {
-            "name": "M1",
-            "maintenance_strategy": "not_a_dict"
-        }
-        with pytest.raises(ValueError, match="must be a dictionary"):
-            validate_maintenance_strategy(machine_cfg)
-
-    def test_strategy_missing_type(self):
-        """maintenance_strategy without type raises error."""
-        machine_cfg = {
-            "name": "M1",
-            "maintenance_strategy": {}
-        }
-        with pytest.raises(ValueError, match="missing 'type' field"):
-            validate_maintenance_strategy(machine_cfg)
-
-    def test_no_maintenance_strategy_field(self):
-        """Machine without maintenance_strategy field passes validation."""
-        machine_cfg = {"name": "M1"}
-        validate_maintenance_strategy(machine_cfg)  # Should not raise (optional field)
-
-
-class TestHistorianConfigValidation:
-    """Tests for historian configuration validation."""
-
-    def test_no_historian_config_passes(self):
-        """Config without historian section passes validation."""
-        config = {"machines": [], "buffers": []}
-        validate_historian_config(config)  # Should not raise
-
-    def test_disabled_historian_passes(self):
-        """Disabled historian passes validation."""
-        config = {"historian": {"enabled": False}}
-        validate_historian_config(config)  # Should not raise
-
-    def test_valid_csv_config_passes(self):
-        """Valid CSV historian config passes validation."""
-        config = {
-            "historian": {
-                "enabled": True,
-                "csv": {"enabled": True, "output_dir": "results/historian"},
-            }
-        }
-        validate_historian_config(config)  # Should not raise
-
-    def test_csv_missing_output_dir_raises(self):
-        """CSV enabled without output_dir raises error."""
-        config = {
-            "historian": {
-                "enabled": True,
-                "csv": {"enabled": True},
-            }
-        }
-        with pytest.raises(ValueError, match="output_dir"):
-            validate_historian_config(config)
-
-    def test_csv_invalid_max_size_raises(self):
-        """CSV with non-positive max_file_size_mb raises error."""
-        config = {
-            "historian": {
-                "enabled": True,
-                "csv": {"enabled": True, "output_dir": "results", "max_file_size_mb": -1},
-            }
-        }
-        with pytest.raises(ValueError, match="max_file_size_mb"):
-            validate_historian_config(config)
-
-    def test_influxdb_missing_fields_raises(self):
-        """InfluxDB enabled without required fields raises error."""
-        config = {
-            "historian": {
-                "enabled": True,
-                "influxdb": {"enabled": True, "url": "http://localhost:8086"},
-            }
-        }
-        with pytest.raises(ValueError, match="token"):
-            validate_historian_config(config)
-
-    def test_neo4j_missing_fields_raises(self):
-        """Neo4j enabled without required fields raises error."""
-        config = {
-            "historian": {
-                "enabled": True,
-                "neo4j": {"enabled": True, "uri": "bolt://localhost:7687"},
-            }
-        }
-        with pytest.raises(ValueError, match="user"):
-            validate_historian_config(config)
-
-    def test_invalid_production_summary_interval_raises(self):
-        """Non-positive production_summary_interval raises error."""
-        config = {
-            "historian": {
-                "enabled": True,
-                "events": {"production_summary_interval": 0},
-            }
-        }
-        with pytest.raises(ValueError, match="production_summary_interval"):
-            validate_historian_config(config)
-
-    def test_historian_line_scenario_loads(self):
-        """historian_line scenario loads and validates successfully."""
-        config = load_line_config("historian_line")
-        assert "historian" in config
-        assert config["historian"]["enabled"] is True
-        assert config["historian"]["csv"]["enabled"] is True
+    def test_distribution_validation(self):
+        validate_distribution_config(
+            {"distribution": "weibull", "shape": 2.0, "scale": 100}, "ctx")
+        with pytest.raises(ValueError):
+            validate_distribution_config({"distribution": "weibull"}, "ctx")
+        with pytest.raises(ValueError):
+            validate_distribution_config({}, "ctx")

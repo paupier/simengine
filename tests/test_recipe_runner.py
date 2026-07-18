@@ -61,7 +61,7 @@ def full_recipe_dict():
                 "quantity": 50,
                 "max_duration": 1800,
                 "overrides": {
-                    "machines": [
+                    "stations": [
                         {"name": "M1", "cycle_time": 10},
                     ],
                 },
@@ -83,7 +83,7 @@ def full_recipe_dict():
 def base_config():
     """Minimal base config matching balanced_line structure."""
     return {
-        "machines": [
+        "stations": [
             {"name": "M1", "cycle_time": 5},
             {"name": "M2", "cycle_time": 5},
             {"name": "M3", "cycle_time": 5},
@@ -105,14 +105,14 @@ class TestLoadRecipeConfig:
         """Load the quick_test recipe from config/recipes/."""
         raw = load_recipe_config("quick_test")
         assert raw["name"] == "Quick Test Recipe"
-        assert raw["base_scenario"] == "balanced_line"
+        assert raw["base_scenario"] == "demo_line"
         assert len(raw["segments"]) == 2
 
     def test_load_monday_schedule(self):
         """Load the monday_schedule recipe."""
         raw = load_recipe_config("monday_schedule")
         assert raw["name"] == "Monday Production Schedule"
-        assert raw["base_scenario"] == "full_feature_line"
+        assert raw["base_scenario"] == "press_line_8"
         assert len(raw["segments"]) == 3
 
     def test_load_single_product(self):
@@ -391,7 +391,7 @@ class TestValidateRecipe:
                     name="S1",
                     quantity=10,
                     overrides={
-                        "machines": [
+                        "stations": [
                             {"name": "NONEXISTENT_MACHINE", "cycle_time": 5},
                         ]
                     },
@@ -412,7 +412,7 @@ class TestValidateRecipe:
                     name="S1",
                     quantity=10,
                     overrides={
-                        "machines": [
+                        "stations": [
                             {"name": "M1", "buffer_capacity": 99},
                         ]
                     },
@@ -431,16 +431,16 @@ class TestApplySegmentOverrides:
 
     def test_cycle_time_override(self, base_config):
         """cycle_time override is applied."""
-        overrides = {"machines": [{"name": "M1", "cycle_time": 20}]}
+        overrides = {"stations": [{"name": "M1", "cycle_time": 20}]}
         result = apply_segment_overrides(base_config, overrides)
-        m1 = next(m for m in result["machines"] if m["name"] == "M1")
+        m1 = next(m for m in result["stations"] if m["name"] == "M1")
         assert m1["cycle_time"] == 20
 
     def test_defect_rate_override(self, base_config):
         """defect_rate override is applied."""
-        overrides = {"machines": [{"name": "M2", "defect_rate": 0.05}]}
+        overrides = {"stations": [{"name": "M2", "defect_rate": 0.05}]}
         result = apply_segment_overrides(base_config, overrides)
-        m2 = next(m for m in result["machines"] if m["name"] == "M2")
+        m2 = next(m for m in result["stations"] if m["name"] == "M2")
         assert m2["defect_rate"] == 0.05
 
     def test_no_overrides(self, base_config):
@@ -451,32 +451,32 @@ class TestApplySegmentOverrides:
 
     def test_base_config_unchanged(self, base_config):
         """Original base_config is not mutated."""
-        original_ct = base_config["machines"][0]["cycle_time"]
-        overrides = {"machines": [{"name": "M1", "cycle_time": 99}]}
+        original_ct = base_config["stations"][0]["cycle_time"]
+        overrides = {"stations": [{"name": "M1", "cycle_time": 99}]}
         apply_segment_overrides(base_config, overrides)
-        assert base_config["machines"][0]["cycle_time"] == original_ct
+        assert base_config["stations"][0]["cycle_time"] == original_ct
 
     def test_multiple_machine_overrides(self, base_config):
         """Multiple machines can be overridden at once."""
         overrides = {
-            "machines": [
+            "stations": [
                 {"name": "M1", "cycle_time": 10},
                 {"name": "M3", "cycle_time": 15},
             ]
         }
         result = apply_segment_overrides(base_config, overrides)
-        m1 = next(m for m in result["machines"] if m["name"] == "M1")
-        m2 = next(m for m in result["machines"] if m["name"] == "M2")
-        m3 = next(m for m in result["machines"] if m["name"] == "M3")
+        m1 = next(m for m in result["stations"] if m["name"] == "M1")
+        m2 = next(m for m in result["stations"] if m["name"] == "M2")
+        m3 = next(m for m in result["stations"] if m["name"] == "M3")
         assert m1["cycle_time"] == 10
         assert m2["cycle_time"] == 5  # unchanged
         assert m3["cycle_time"] == 15
 
     def test_target_ppm_override(self, base_config):
         """target_ppm override is applied."""
-        overrides = {"machines": [{"name": "M1", "target_ppm": 12}]}
+        overrides = {"stations": [{"name": "M1", "target_ppm": 12}]}
         result = apply_segment_overrides(base_config, overrides)
-        m1 = next(m for m in result["machines"] if m["name"] == "M1")
+        m1 = next(m for m in result["stations"] if m["name"] == "M1")
         assert m1["target_ppm"] == 12
 
     def test_source_interarrival_override(self, base_config):
@@ -488,7 +488,7 @@ class TestApplySegmentOverrides:
     def test_quality_routing_defect_rate_sync(self):
         """defect_rate override also updates quality_routing.defect_rate."""
         config = {
-            "machines": [
+            "stations": [
                 {
                     "name": "M1",
                     "cycle_time": 5,
@@ -497,9 +497,9 @@ class TestApplySegmentOverrides:
             ],
             "buffers": [],
         }
-        overrides = {"machines": [{"name": "M1", "defect_rate": 0.1}]}
+        overrides = {"stations": [{"name": "M1", "defect_rate": 0.1}]}
         result = apply_segment_overrides(config, overrides)
-        m1 = result["machines"][0]
+        m1 = result["stations"][0]
         assert m1["defect_rate"] == 0.1
         assert m1["quality_routing"]["defect_rate"] == 0.1
 
@@ -729,15 +729,24 @@ class TestExampleRecipes:
         assert len(recipe.segments) == 1
         assert recipe.segments[0].quantity == 200
 
-    def test_validate_quick_test(self):
-        """quick_test recipe validates against balanced_line."""
+    def test_validate_quick_test(self, monkeypatch):
+        """quick_test recipe validates against the shipped demo_line scenario."""
+        monkeypatch.delenv("SIMENGINE_CONFIG_PATH", raising=False)
         raw = load_recipe_config("quick_test")
         recipe = parse_recipe(raw)
         validate_recipe(recipe)  # Should not raise
 
-    def test_validate_single_product(self):
-        """single_product recipe validates against balanced_line."""
+    def test_validate_single_product(self, monkeypatch):
+        """single_product recipe validates against the shipped demo_line scenario."""
+        monkeypatch.delenv("SIMENGINE_CONFIG_PATH", raising=False)
         raw = load_recipe_config("single_product")
+        recipe = parse_recipe(raw)
+        validate_recipe(recipe)  # Should not raise
+
+    def test_validate_monday_schedule(self, monkeypatch):
+        """monday_schedule recipe validates against the shipped press_line_8 scenario."""
+        monkeypatch.delenv("SIMENGINE_CONFIG_PATH", raising=False)
+        raw = load_recipe_config("monday_schedule")
         recipe = parse_recipe(raw)
         validate_recipe(recipe)  # Should not raise
 
@@ -785,7 +794,7 @@ class TestEdgeCases:
         seg = SegmentConfig(
             name="S1",
             quantity=10,
-            overrides={"machines": "not a list"},
+            overrides={"stations": "not a list"},
         )
         with pytest.raises(ValueError, match="must be a list"):
             _validate_segment_overrides(seg, {"M1"}, 0)
@@ -795,7 +804,7 @@ class TestEdgeCases:
         seg = SegmentConfig(
             name="S1",
             quantity=10,
-            overrides={"machines": [{"cycle_time": 5}]},
+            overrides={"stations": [{"cycle_time": 5}]},
         )
         with pytest.raises(ValueError, match="missing 'name'"):
             _validate_segment_overrides(seg, {"M1"}, 0)
@@ -805,7 +814,7 @@ class TestEdgeCases:
         seg = SegmentConfig(
             name="S1",
             quantity=10,
-            overrides={"machines": ["not a dict"]},
+            overrides={"stations": ["not a dict"]},
         )
         with pytest.raises(ValueError, match="must be a mapping"):
             _validate_segment_overrides(seg, {"M1"}, 0)

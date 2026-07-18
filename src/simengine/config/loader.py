@@ -17,7 +17,7 @@ def load_line_config(scenario_name: str = "balanced_line") -> Dict[str, Any]:
         scenario_name: Key from line_models.yaml (e.g., "balanced_line", "extended_line")
 
     Returns:
-        Dict with keys: machines, buffers, maintainer
+        Dict with keys: stations, buffers, comms, ...
 
     Raises:
         ValueError: If scenario not found or config is invalid
@@ -36,7 +36,7 @@ def load_line_config(scenario_name: str = "balanced_line") -> Dict[str, Any]:
     if scenario_name not in all_configs:
         available = list(all_configs.keys())
         raise ValueError(
-            f"Scenario '{scenario_name}' not found in line_models.yaml. "
+            f"Scenario '{scenario_name}' not found in scenario config. "
             f"Available scenarios: {available}"
         )
 
@@ -50,7 +50,10 @@ def load_line_config(scenario_name: str = "balanced_line") -> Dict[str, Any]:
 
 def validate_serial_topology(config: Dict[str, Any]) -> None:
     """
-    Validate that config represents a valid serial line topology.
+    Validate that config represents a valid serial line topology (§3 schema).
+
+    Stations are connected in list order through the buffers, which carry no
+    explicit routing: Source -> S1 -> B1 -> S2 -> ... -> Sink.
 
     Args:
         config: Configuration dictionary
@@ -59,76 +62,312 @@ def validate_serial_topology(config: Dict[str, Any]) -> None:
         ValueError: If config is invalid or represents non-serial topology
     """
     # Check required fields
-    if "machines" not in config or "buffers" not in config:
-        raise ValueError("Config must have 'machines' and 'buffers' fields")
+    if "stations" not in config or "buffers" not in config:
+        raise ValueError("Config must have 'stations' and 'buffers' fields")
 
-    machines = config["machines"]
+    stations = config["stations"]
     buffers = config["buffers"]
 
-    # Must have at least 2 machines
-    if len(machines) < 2:
-        raise ValueError(f"Must have at least 2 machines, got {len(machines)}")
+    # Must have at least 2 stations
+    if len(stations) < 2:
+        raise ValueError(f"Must have at least 2 stations, got {len(stations)}")
 
-    # Serial topology: N machines require N-1 buffers
-    if len(buffers) != len(machines) - 1:
+    # Serial topology: N stations require N-1 buffers
+    if len(buffers) != len(stations) - 1:
         raise ValueError(
-            f"Serial topology requires {len(machines)-1} buffers for {len(machines)} machines, "
+            f"Serial topology requires {len(stations)-1} buffers for {len(stations)} stations, "
             f"got {len(buffers)} buffers"
         )
 
-    # Validate machine names are unique
-    machine_names = [m["name"] for m in machines]
-    if len(machine_names) != len(set(machine_names)):
-        raise ValueError("Machine names must be unique")
+    # Validate station names are unique
+    station_names = [s.get("name") for s in stations]
+    if len(station_names) != len(set(station_names)):
+        raise ValueError("Station names must be unique")
 
     # Validate buffer names are unique
-    buffer_names = [b["name"] for b in buffers]
+    buffer_names = [b.get("name") for b in buffers]
     if len(buffer_names) != len(set(buffer_names)):
         raise ValueError("Buffer names must be unique")
 
-    # Validate each machine has required fields
-    for i, machine in enumerate(machines):
-        if "name" not in machine:
-            raise ValueError(f"Machine at index {i} missing 'name' field")
+    # Validate each station has required fields
+    for i, station in enumerate(stations):
+        if "name" not in station:
+            raise ValueError(f"Station at index {i} missing 'name' field")
 
-        # Validate quality parameters
-        validate_machine_quality_config(machine)
+        if "cycle_time" not in station and "target_ppm" not in station:
+            raise ValueError(
+                f"Station '{station['name']}': must specify 'cycle_time' or 'target_ppm'"
+            )
+        if "cycle_time" in station:
+            ct = station["cycle_time"]
+            if not isinstance(ct, (int, float)) or ct <= 0:
+                raise ValueError(
+                    f"Station '{station['name']}': cycle_time must be positive, got {ct}"
+                )
 
-        # Validate advanced failure modes
-        if machine.get("enable_advanced_failures", False):
-            validate_failure_modes(machine)
-            validate_maintenance_strategy(machine)
+        # Validate quality parameters (defect_rate, target_ppm)
+        validate_machine_quality_config(station)
 
-    # Validate each buffer has required fields and correct routing
+        # Validate optional per-station blocks
+        validate_failure_modes(station)
+        validate_health(station)
+        validate_process_values(station)
+        validate_cycle_stops(station)
+
+    # Validate each buffer has required fields
     for i, buffer in enumerate(buffers):
         if "name" not in buffer:
             raise ValueError(f"Buffer at index {i} missing 'name' field")
-
-        if "upstream" not in buffer or "downstream" not in buffer:
-            raise ValueError(f"Buffer '{buffer['name']}' missing upstream/downstream routing")
-
-        expected_upstream = machine_names[i]
-        expected_downstream = machine_names[i + 1]
-
-        if buffer["upstream"] != expected_upstream or buffer["downstream"] != expected_downstream:
+        capacity = buffer.get("capacity")
+        if not isinstance(capacity, int) or capacity <= 0:
             raise ValueError(
-                f"Buffer '{buffer['name']}' routing invalid. "
-                f"Expected {expected_upstream}→{expected_downstream}, "
-                f"got {buffer['upstream']}→{buffer['downstream']}"
+                f"Buffer '{buffer['name']}': capacity must be a positive integer, got {capacity}"
             )
 
-    # Validate quality routing
-    for machine in machines:
-        validate_quality_routing(machine)
-    validate_scrap_sinks(config)
-
-    # Validate historian config
-    validate_historian_config(config)
-
-    # Validate optional fault injection block
+    # Validate optional scenario-level blocks
+    validate_comms(config)
+    validate_historians(config)
+    validate_warm_up(config)
     validate_fault_injection(config)
 
-    print(f"[OK] Configuration validated: {len(machines)} machines, {len(buffers)} buffers")
+    print(f"[OK] Configuration validated: {len(stations)} stations, {len(buffers)} buffers")
+
+
+def resolve_cycle_time(station_cfg: dict) -> float:
+    """Return the effective cycle time: target_ppm takes precedence (60/ppm)."""
+    if "target_ppm" in station_cfg:
+        return 60.0 / float(station_cfg["target_ppm"])
+    return float(station_cfg["cycle_time"])
+
+
+VALID_PV_PROFILES = ("cycle_peak", "first_order_lag", "cycle_ramp", "constant_noise")
+
+# Required keys per profile (§5); distributions validated separately.
+_PV_REQUIRED_KEYS = {
+    "cycle_peak": ("baseline", "peak"),
+    "first_order_lag": ("setpoint", "tau", "initial"),
+    "cycle_ramp": ("range",),
+    "constant_noise": ("mean",),
+}
+
+_PV_DIST_KEYS = ("peak", "noise")
+
+
+def validate_health(station_cfg: dict) -> None:
+    """
+    Validate the per-station health block (§3): h_max, p_degrade,
+    cbm_threshold, mttr.
+
+    Raises:
+        ValueError: If the health configuration is invalid.
+    """
+    if "health" not in station_cfg:
+        return
+
+    name = station_cfg["name"]
+    health = station_cfg["health"]
+    if not isinstance(health, dict):
+        raise ValueError(f"Station '{name}': health must be a mapping")
+
+    h_max = health.get("h_max")
+    if not isinstance(h_max, int) or h_max < 1:
+        raise ValueError(f"Station '{name}': health.h_max must be a positive integer")
+
+    p_degrade = health.get("p_degrade")
+    if p_degrade is None or not isinstance(p_degrade, (int, float)) or not (0.0 <= p_degrade <= 1.0):
+        raise ValueError(f"Station '{name}': health.p_degrade must be in [0, 1]")
+
+    cbm = health.get("cbm_threshold", h_max)
+    if not isinstance(cbm, int) or not (0 < cbm <= h_max):
+        raise ValueError(
+            f"Station '{name}': health.cbm_threshold must satisfy 0 < cbm_threshold <= h_max"
+        )
+
+    if "mttr" not in health:
+        raise ValueError(f"Station '{name}': health block requires 'mttr' distribution")
+    validate_distribution_config(health["mttr"], f"{name}.health.mttr")
+
+
+def validate_process_values(station_cfg: dict) -> None:
+    """
+    Validate the per-station process_values list (§3/§5).
+
+    Raises:
+        ValueError: If any process value config is invalid.
+    """
+    if "process_values" not in station_cfg:
+        return
+
+    name = station_cfg["name"]
+    pvs = station_cfg["process_values"]
+    if not isinstance(pvs, list):
+        raise ValueError(f"Station '{name}': process_values must be a list")
+
+    pv_names = []
+    for i, pv in enumerate(pvs):
+        if not isinstance(pv, dict) or "name" not in pv:
+            raise ValueError(f"Station '{name}': process value at index {i} missing 'name'")
+        pv_name = pv["name"]
+        pv_names.append(pv_name)
+
+        if "unit" not in pv:
+            raise ValueError(f"Station '{name}': process value '{pv_name}' missing 'unit'")
+
+        profile = pv.get("profile")
+        if profile not in VALID_PV_PROFILES:
+            raise ValueError(
+                f"Station '{name}': process value '{pv_name}' has invalid profile "
+                f"'{profile}'. Must be one of: {', '.join(VALID_PV_PROFILES)}"
+            )
+
+        for key in _PV_REQUIRED_KEYS[profile]:
+            if key not in pv:
+                raise ValueError(
+                    f"Station '{name}': process value '{pv_name}' (profile {profile}) "
+                    f"missing required key '{key}'"
+                )
+
+        if profile == "cycle_ramp":
+            rng = pv["range"]
+            if (not isinstance(rng, list) or len(rng) != 2
+                    or not all(isinstance(v, (int, float)) for v in rng)
+                    or rng[0] >= rng[1]):
+                raise ValueError(
+                    f"Station '{name}': process value '{pv_name}': range must be "
+                    f"[low, high] with low < high"
+                )
+
+        for key in _PV_DIST_KEYS:
+            if key in pv:
+                validate_distribution_config(pv[key], f"{name}.{pv_name}.{key}")
+
+        if "health_drift" in pv:
+            hd = pv["health_drift"]
+            if not isinstance(hd, (int, float)) or hd < 0:
+                raise ValueError(
+                    f"Station '{name}': process value '{pv_name}': health_drift must be >= 0"
+                )
+
+        alarm_high = pv.get("alarm_high")
+        alarm_low = pv.get("alarm_low")
+        if alarm_high is not None and alarm_low is not None and alarm_high <= alarm_low:
+            raise ValueError(
+                f"Station '{name}': process value '{pv_name}': alarm_high must be "
+                f"greater than alarm_low"
+            )
+
+    if len(pv_names) != len(set(pv_names)):
+        raise ValueError(f"Station '{name}': process value names must be unique")
+
+
+def validate_cycle_stops(station_cfg: dict) -> None:
+    """
+    Validate the per-station cycle_stops list (§3): reason + mtbe/duration
+    distributions.
+
+    Raises:
+        ValueError: If any cycle stop config is invalid.
+    """
+    if "cycle_stops" not in station_cfg:
+        return
+
+    name = station_cfg["name"]
+    stops = station_cfg["cycle_stops"]
+    if not isinstance(stops, list):
+        raise ValueError(f"Station '{name}': cycle_stops must be a list")
+
+    reasons = []
+    for i, stop in enumerate(stops):
+        if not isinstance(stop, dict) or "reason" not in stop:
+            raise ValueError(f"Station '{name}': cycle stop at index {i} missing 'reason'")
+        reasons.append(stop["reason"])
+
+        for key in ("mtbe", "duration"):
+            if key not in stop:
+                raise ValueError(
+                    f"Station '{name}': cycle stop '{stop['reason']}' missing '{key}' distribution"
+                )
+            validate_distribution_config(stop[key], f"{name}.{stop['reason']}.{key}")
+
+    if len(reasons) != len(set(reasons)):
+        raise ValueError(f"Station '{name}': cycle stop reasons must be unique")
+
+
+def _validate_broker_url(url: str, context: str) -> None:
+    if not isinstance(url, str) or not url.startswith("mqtt://"):
+        raise ValueError(f"{context}: broker must be an mqtt://host:port URL, got {url!r}")
+    rest = url[len("mqtt://"):]
+    if ":" not in rest:
+        raise ValueError(f"{context}: broker URL must include a port, got {url!r}")
+    host, _, port = rest.rpartition(":")
+    if not host or not port.isdigit() or not (0 < int(port) < 65536):
+        raise ValueError(f"{context}: broker URL must be mqtt://host:port, got {url!r}")
+
+
+def validate_comms(config: Dict[str, Any]) -> None:
+    """
+    Validate the scenario-level comms block (§3): opcua, opcua_mqtt, sparkplugb.
+
+    Raises:
+        ValueError: If the comms configuration is invalid.
+    """
+    if "comms" not in config:
+        return
+
+    comms = config["comms"]
+    if not isinstance(comms, dict):
+        raise ValueError("comms must be a mapping")
+
+    for proto in ("opcua", "opcua_mqtt", "sparkplugb"):
+        block = comms.get(proto)
+        if block is None:
+            continue
+        if not isinstance(block, dict):
+            raise ValueError(f"comms.{proto} must be a mapping")
+        enabled = block.get("enabled", False)
+        if not isinstance(enabled, bool):
+            raise ValueError(f"comms.{proto}.enabled must be a boolean")
+
+    opcua = comms.get("opcua", {})
+    if "port" in opcua:
+        port = opcua["port"]
+        if not isinstance(port, int) or not (0 < port < 65536):
+            raise ValueError(f"comms.opcua.port must be an integer in 1-65535, got {port}")
+
+    for proto in ("opcua_mqtt", "sparkplugb"):
+        block = comms.get(proto, {})
+        if block.get("enabled", False):
+            if "broker" not in block:
+                raise ValueError(f"comms.{proto}: broker required when enabled")
+            _validate_broker_url(block["broker"], f"comms.{proto}")
+
+    mqtt_block = comms.get("opcua_mqtt", {})
+    if "publish_interval" in mqtt_block:
+        interval = mqtt_block["publish_interval"]
+        if not isinstance(interval, (int, float)) or interval <= 0:
+            raise ValueError("comms.opcua_mqtt.publish_interval must be positive")
+
+    spb = comms.get("sparkplugb", {})
+    if spb.get("enabled", False):
+        for key in ("group_id", "edge_node_id"):
+            if not isinstance(spb.get(key), str) or not spb.get(key):
+                raise ValueError(f"comms.sparkplugb.{key} required when enabled")
+
+
+def validate_historians(config: Dict[str, Any]) -> None:
+    """
+    Validate the scenario-level historians list (§3): plugin name strings.
+
+    Raises:
+        ValueError: If the historians configuration is invalid.
+    """
+    if "historians" not in config:
+        return
+    historians = config["historians"]
+    if not isinstance(historians, list) or not all(
+        isinstance(h, str) and h for h in historians
+    ):
+        raise ValueError("historians must be a list of plugin name strings")
 
 
 def validate_machine_quality_config(machine_cfg: dict) -> None:
@@ -323,64 +562,6 @@ def validate_distribution_config(dist_cfg: dict, context: str) -> None:
         )
 
 
-def validate_maintenance_strategy(machine_cfg: dict) -> None:
-    """
-    Validate maintenance_strategy configuration.
-
-    Args:
-        machine_cfg: Machine configuration dictionary
-
-    Raises:
-        ValueError: If maintenance strategy configuration is invalid
-    """
-    if "maintenance_strategy" not in machine_cfg:
-        return
-
-    strategy = machine_cfg["maintenance_strategy"]
-
-    if not isinstance(strategy, dict):
-        raise ValueError(f"Machine '{machine_cfg['name']}': maintenance_strategy must be a dictionary")
-
-    if "type" not in strategy:
-        raise ValueError(f"Machine '{machine_cfg['name']}': maintenance_strategy missing 'type' field")
-
-    valid_types = ["corrective", "reactive", "preventive", "predictive"]
-    if strategy["type"] not in valid_types:
-        raise ValueError(
-            f"Machine '{machine_cfg['name']}': invalid maintenance strategy type '{strategy['type']}'. "
-            f"Must be one of: {', '.join(valid_types)}"
-        )
-
-    # Type-specific validation
-    if strategy["type"] == "preventive":
-        if "pm_interval" not in strategy:
-            raise ValueError(
-                f"Machine '{machine_cfg['name']}': preventive strategy requires 'pm_interval' parameter"
-            )
-        if not isinstance(strategy["pm_interval"], (int, float)):
-            raise ValueError(
-                f"Machine '{machine_cfg['name']}': pm_interval must be numeric"
-            )
-        if strategy["pm_interval"] <= 0:
-            raise ValueError(
-                f"Machine '{machine_cfg['name']}': pm_interval must be positive"
-            )
-
-    if strategy["type"] == "predictive":
-        if "cbm_threshold" not in strategy:
-            raise ValueError(
-                f"Machine '{machine_cfg['name']}': predictive strategy requires 'cbm_threshold' parameter"
-            )
-        if not isinstance(strategy["cbm_threshold"], (int, float)):
-            raise ValueError(
-                f"Machine '{machine_cfg['name']}': cbm_threshold must be numeric"
-            )
-        if strategy["cbm_threshold"] < 0:
-            raise ValueError(
-                f"Machine '{machine_cfg['name']}': cbm_threshold must be non-negative"
-            )
-
-
 def validate_historian_config(config: Dict[str, Any]) -> None:
     """
     Validate historian configuration.
@@ -430,104 +611,6 @@ def validate_historian_config(config: Dict[str, Any]) -> None:
         raise ValueError("historian.events: 'production_summary_interval' must be a positive number")
 
 
-def validate_quality_routing(machine_cfg: dict) -> None:
-    """
-    Validate quality_routing configuration for a machine.
-
-    Args:
-        machine_cfg: Machine configuration dictionary
-
-    Raises:
-        ValueError: If quality_routing configuration is invalid
-    """
-    qr = machine_cfg.get("quality_routing")
-    if not qr or not qr.get("enabled", False):
-        return
-
-    name = machine_cfg.get("name", "unknown")
-
-    mode = qr.get("mode", "scrap")
-    if mode not in ("scrap", "rework", "scrap_and_rework"):
-        raise ValueError(
-            f"Machine '{name}': quality_routing.mode must be "
-            f"'scrap', 'rework', or 'scrap_and_rework', got '{mode}'"
-        )
-
-    if mode in ("scrap", "scrap_and_rework") and "scrap_sink" not in qr:
-        raise ValueError(
-            f"Machine '{name}': quality_routing mode '{mode}' requires 'scrap_sink'"
-        )
-
-    if "defect_rate" in qr:
-        dr = qr["defect_rate"]
-        if not isinstance(dr, (int, float)) or not (0.0 <= dr <= 1.0):
-            raise ValueError(
-                f"Machine '{name}': quality_routing.defect_rate must be 0.0-1.0, got {dr}"
-            )
-
-    if "health_multiplier" in qr:
-        hm = qr["health_multiplier"]
-        if not isinstance(hm, (int, float)) or hm < 0:
-            raise ValueError(
-                f"Machine '{name}': quality_routing.health_multiplier must be >= 0, got {hm}"
-            )
-
-    if mode in ("rework", "scrap_and_rework"):
-        rsr = qr.get("rework_success_rate", 0.8)
-        if not isinstance(rsr, (int, float)) or not (0.0 <= rsr <= 1.0):
-            raise ValueError(
-                f"Machine '{name}': quality_routing.rework_success_rate must be 0.0-1.0, got {rsr}"
-            )
-
-        mr = qr.get("max_rework", 3)
-        if not isinstance(mr, int) or mr < 1:
-            raise ValueError(
-                f"Machine '{name}': quality_routing.max_rework must be a positive integer, got {mr}"
-            )
-
-
-def validate_scrap_sinks(config: Dict[str, Any]) -> None:
-    """
-    Validate scrap_sinks configuration and cross-references.
-
-    Args:
-        config: Full scenario configuration dictionary
-
-    Raises:
-        ValueError: If scrap_sinks are invalid or referenced sinks don't exist
-    """
-    scrap_sinks = config.get("scrap_sinks", [])
-    if not scrap_sinks:
-        # No scrap sinks - verify no machine references one
-        for m in config.get("machines", []):
-            qr = m.get("quality_routing", {})
-            if qr.get("enabled", False) and qr.get("scrap_sink"):
-                raise ValueError(
-                    f"Machine '{m['name']}' references scrap_sink '{qr['scrap_sink']}' "
-                    f"but no 'scrap_sinks' section defined"
-                )
-        return
-
-    # Validate scrap sink entries
-    scrap_names = set()
-    for i, s in enumerate(scrap_sinks):
-        if "name" not in s:
-            raise ValueError(f"Scrap sink at index {i} missing 'name' field")
-        if s["name"] in scrap_names:
-            raise ValueError(f"Duplicate scrap sink name: '{s['name']}'")
-        scrap_names.add(s["name"])
-
-    # Verify all referenced scrap sinks exist
-    for m in config.get("machines", []):
-        qr = m.get("quality_routing", {})
-        if qr.get("enabled", False):
-            ref = qr.get("scrap_sink")
-            if ref and ref not in scrap_names:
-                raise ValueError(
-                    f"Machine '{m['name']}' references undefined scrap_sink '{ref}'"
-                )
-
-
 def validate_warm_up(config: Dict[str, Any]) -> None:
     """
     Validate warm_up_time configuration.
@@ -546,67 +629,6 @@ def validate_warm_up(config: Dict[str, Any]) -> None:
         raise ValueError("warm_up_time must be numeric")
     if wut < 0:
         raise ValueError("warm_up_time must be non-negative")
-
-
-def validate_maintainer_config(config: Dict[str, Any]) -> None:
-    """
-    Validate maintainer scheduling configuration.
-
-    Args:
-        config: Full scenario configuration dictionary
-
-    Raises:
-        ValueError: If strategy is invalid, priorities reference unknown machines,
-                    or priority values are negative
-    """
-    maint = config.get("maintainer", {})
-    if not maint.get("enabled", False):
-        return
-
-    valid_strategies = {"fifo", "spt", "priority", "bottleneck"}
-    strategy = maint.get("strategy", "fifo")
-    if strategy not in valid_strategies:
-        raise ValueError(
-            f"Maintainer strategy '{strategy}' must be one of: {sorted(valid_strategies)}"
-        )
-
-    if strategy == "priority":
-        priorities = maint.get("machine_priorities", {})
-        machine_names = {m["name"] for m in config.get("machines", [])}
-        for name, prio in priorities.items():
-            if name not in machine_names:
-                raise ValueError(
-                    f"machine_priorities references unknown machine '{name}'"
-                )
-            if not isinstance(prio, (int, float)) or prio < 0:
-                raise ValueError(
-                    f"Priority for '{name}' must be non-negative, got {prio}"
-                )
-
-
-def validate_interarrival_distribution(config: Dict[str, Any]) -> None:
-    """
-    Validate interarrival_distribution configuration.
-
-    Args:
-        config: Scenario configuration dictionary
-
-    Raises:
-        ValueError: If distribution type is unknown or config is malformed
-    """
-    if "interarrival_distribution" not in config:
-        return
-
-    dist = config["interarrival_distribution"]
-    if not isinstance(dist, dict):
-        raise ValueError("interarrival_distribution must be a dictionary")
-
-    valid_types = {"constant", "uniform", "exponential"}
-    dist_type = dist.get("distribution", "")
-    if dist_type not in valid_types:
-        raise ValueError(
-            f"unknown distribution type '{dist_type}' — must be one of: {sorted(valid_types)}"
-        )
 
 
 def validate_fault_injection(config: Dict[str, Any]) -> None:

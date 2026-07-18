@@ -1,6 +1,6 @@
 name: "Quick Test Recipe"
 description: "Short recipe for automated testing and CI validation"
-base_scenario: balanced_line
+base_scenario: demo_line
 
 segments:
   - name: "Batch 1"
