@@ -5,6 +5,8 @@ Implements control charts (X-bar, R), capability indices (Cp/Cpk/Pp/Ppk),
 and Western Electric rules for out-of-control detection.
 
 """
+import math
+
 import numpy as np
 from collections import deque
 from typing import List, Dict, Tuple, Optional
@@ -326,8 +328,11 @@ class ProcessMonitor:
     def __init__(self, config: SPCConfiguration):
         self.config = config
         self.control_chart = ControlChart(config)
-        self.all_samples: List[float] = []  # All individual samples
         self.total_sample_count = 0
+        # Welford running aggregates (perf spec P1): O(1) memory and update,
+        # mathematically identical to batch mean/std over the full history.
+        self._mean = 0.0
+        self._m2 = 0.0
 
     def add_measurement(self, value: float) -> None:
         """
@@ -336,9 +341,18 @@ class ProcessMonitor:
         Args:
             value: Measured value (e.g., cycle time, dimension, etc.)
         """
-        self.all_samples.append(value)
         self.total_sample_count += 1
+        delta = value - self._mean
+        self._mean += delta / self.total_sample_count
+        self._m2 += delta * (value - self._mean)
         self.control_chart.add_sample(value)
+
+    @property
+    def _overall_std(self) -> float:
+        """Sample standard deviation (ddof=1) over the full history."""
+        if self.total_sample_count < 2:
+            return 0.0
+        return math.sqrt(self._m2 / (self.total_sample_count - 1))
 
     def get_metrics(self) -> SPCMetrics:
         """
@@ -370,16 +384,22 @@ class ProcessMonitor:
         # Out-of-control detection
         in_control, violations = self.control_chart.check_out_of_control()
 
-        # Capability indices (require spec limits and sufficient data)
+        # Capability indices (require spec limits and sufficient data).
+        # Computed from the Welford running stats — same formulas as the
+        # array-based CapabilityAnalysis statics, zero array construction.
         has_specs = (self.config.usl is not None and self.config.lsl is not None)
-        has_data = len(self.all_samples) > 10
+        has_data = self.total_sample_count > 10
 
         if has_specs and has_data:
-            data = np.array(self.all_samples)
-            cp = CapabilityAnalysis.calculate_cp(data, self.config.usl, self.config.lsl)
-            cpk = CapabilityAnalysis.calculate_cpk(data, self.config.usl, self.config.lsl)
-            pp = CapabilityAnalysis.calculate_pp(data, self.config.usl, self.config.lsl)
-            ppk = CapabilityAnalysis.calculate_ppk(data, self.config.usl, self.config.lsl)
+            usl, lsl = self.config.usl, self.config.lsl
+            mu, sigma = self._mean, self._overall_std
+            if sigma == 0 or math.isnan(sigma):
+                cp = float('inf') if usl > lsl else 0.0
+                cpk = float('inf') if lsl < mu < usl else 0.0
+            else:
+                cp = (usl - lsl) / (6 * sigma)
+                cpk = min((usl - mu) / (3 * sigma), (mu - lsl) / (3 * sigma))
+            pp, ppk = cp, cpk  # overall-sigma variants share the formulas here
             sigma_level = CapabilityAnalysis.estimate_sigma_level(cpk)
         else:
             cp = cpk = pp = ppk = sigma_level = 0.0
@@ -407,5 +427,6 @@ class ProcessMonitor:
     def reset(self) -> None:
         """Reset SPC monitoring (clear all data)."""
         self.control_chart = ControlChart(self.config)
-        self.all_samples = []
         self.total_sample_count = 0
+        self._mean = 0.0
+        self._m2 = 0.0

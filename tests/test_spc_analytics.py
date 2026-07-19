@@ -4,6 +4,7 @@ Unit Tests for SPC Analytics Module
 Tests control charts, capability indices, and Western Electric rules.
 """
 import pytest
+from collections import deque
 import numpy as np
 from simengine.runtime.spc import (
     SPCConfiguration,
@@ -282,7 +283,6 @@ class TestProcessMonitor:
         monitor = ProcessMonitor(config)
 
         assert monitor.config == config
-        assert len(monitor.all_samples) == 0
         assert monitor.total_sample_count == 0
 
     def test_add_measurements(self):
@@ -295,7 +295,6 @@ class TestProcessMonitor:
             monitor.add_measurement(1.0 + i * 0.01)
 
         assert monitor.total_sample_count == 10
-        assert len(monitor.all_samples) == 10
 
     def test_get_metrics_insufficient_data(self):
         """Test getting metrics with insufficient data returns zeros."""
@@ -404,7 +403,6 @@ class TestProcessMonitor:
 
         # Should be cleared
         assert monitor.total_sample_count == 0
-        assert len(monitor.all_samples) == 0
         assert len(monitor.control_chart.subgroups) == 0
 
     def test_capability_with_no_spec_limits(self):
@@ -479,3 +477,60 @@ class TestControlLimits:
 
 
 # Run tests with: pytest tests/test_spc_analytics.py -v
+
+
+class TestBoundedMemory:
+    """Regression for the soak-run leak: ProcessMonitor must retain O(1)
+    sample storage regardless of run length (perf spec P1, Welford)."""
+
+    @staticmethod
+    def _retained_container_sizes(monitor):
+        """Lengths of every list/deque held by the monitor and its chart."""
+        sizes = {}
+        for owner_name, owner in (("monitor", monitor),
+                                  ("chart", monitor.control_chart)):
+            for attr, value in vars(owner).items():
+                if isinstance(value, (list, deque)):
+                    sizes[f"{owner_name}.{attr}"] = len(value)
+        return sizes
+
+    def test_sample_storage_bounded(self):
+        config = SPCConfiguration(subgroup_size=5, num_subgroups=25,
+                                  usl=12.0, lsl=8.0, target=10.0)
+        monitor = ProcessMonitor(config)
+        rng = np.random.default_rng(1)
+
+        for value in rng.normal(10.0, 0.5, 1_000):
+            monitor.add_measurement(float(value))
+        sizes_1k = self._retained_container_sizes(monitor)
+
+        for value in rng.normal(10.0, 0.5, 49_000):
+            monitor.add_measurement(float(value))
+        sizes_50k = self._retained_container_sizes(monitor)
+
+        # bounded: no container may grow between 1k and 50k samples
+        for name, size in sizes_50k.items():
+            assert size <= sizes_1k.get(name, 0) or size <= 2 * (
+                config.num_subgroups * config.subgroup_size), (
+                f"{name} grew unboundedly: {sizes_1k.get(name)} -> {size}")
+        assert monitor.total_sample_count == 50_000
+
+    def test_capability_indices_match_batch_computation(self):
+        """Cp/Cpk/Pp/Ppk must equal the full-history batch numpy computation
+        (mean + ddof=1 std) within 1e-9 — the Welford path is transparent."""
+        config = SPCConfiguration(subgroup_size=5, num_subgroups=25,
+                                  usl=12.0, lsl=8.0, target=10.0)
+        monitor = ProcessMonitor(config)
+        rng = np.random.default_rng(7)
+        samples = [float(v) for v in rng.normal(10.2, 0.4, 5_000)]
+        for v in samples:
+            monitor.add_measurement(v)
+
+        metrics = monitor.get_metrics()
+        data = np.array(samples)
+        mu, sigma = np.mean(data), np.std(data, ddof=1)
+        assert abs(metrics.cp - (12.0 - 8.0) / (6 * sigma)) < 1e-9
+        assert abs(metrics.cpk - min((12.0 - mu) / (3 * sigma),
+                                     (mu - 8.0) / (3 * sigma))) < 1e-9
+        assert abs(metrics.pp - metrics.cp) < 1e-9
+        assert abs(metrics.ppk - metrics.cpk) < 1e-9

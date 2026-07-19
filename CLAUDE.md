@@ -90,5 +90,10 @@ Knowledge graph (`engine/knowledge_graph.py`, stdlib-only, deterministic, built 
 ## Known deferred items
 
 - Parent Telegraf generator + Grafana dashboards (target the parent address space; events reach InfluxDB directly via the historian backend).
-- SPC `ProcessMonitor.all_samples` grows unbounded on very long runs (parent perf spec P1 Welford fix not yet applied here).
 - The `historian-csv` install-hint error path can't fire in this single-distribution repo (the package is always importable); hints apply to missing third-party deps (influx/neo4j).
+
+`ProcessMonitor` keeps Welford running aggregates (`_mean`/`_m2`), not raw
+samples — capability indices are O(1) in run length. Do not reintroduce an
+unbounded sample list (it failed the memory-flatness acceptance run at
+~95 MB/hour with just 4 monitors); `tests/test_spc_analytics.py::TestBoundedMemory`
+guards this.
