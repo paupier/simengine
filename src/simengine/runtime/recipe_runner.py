@@ -88,6 +88,13 @@ def load_recipe_config(recipe_name: str) -> dict:
     Raises:
         FileNotFoundError: If recipe file does not exist.
     """
+    # Recipe names arrive from REST/MCP callers — reject path traversal
+    import re
+    if not re.match(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$", recipe_name or "") \
+            or ".." in recipe_name:
+        raise ValueError(
+            f"invalid recipe name {recipe_name!r} — use letters, digits, '_', '-'")
+
     # Check env var first
     recipe_dir = os.environ.get("SIMENGINE_RECIPE_PATH")
     if recipe_dir:

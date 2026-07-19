@@ -97,7 +97,7 @@ class ToolRegistry:
 
     def get_recipe(self, name: str) -> dict:
         """Full configuration of one recipe."""
-        path = get_recipes_dir() / f"{name}.yaml"
+        path = config_files.recipe_path(name)
         if not path.exists():
             raise ValueError(f"unknown recipe '{name}'")
         return config_files.plain(config_files.load_recipe_file(path))
@@ -179,7 +179,7 @@ class ToolRegistry:
             raise ValueError("recipe YAML must be a mapping")
         recipe = parse_recipe(body)
         validate_recipe(recipe)
-        path = get_recipes_dir() / f"{name}.yaml"
+        path = config_files.recipe_path(name)
         if not path.exists():
             raise ValueError(f"unknown recipe '{name}'")
         config_files.dump_recipe_file(body, path)

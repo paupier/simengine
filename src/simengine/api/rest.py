@@ -12,6 +12,7 @@ from flask import Blueprint, Flask, jsonify, render_template, request
 
 from simengine.api.config_files import (
     dump_recipe_file,
+    recipe_path,
     dump_scenarios_file as _dump_scenarios_file,
     load_recipe_file,
     load_scenarios_file as _load_scenarios_file,
@@ -156,7 +157,10 @@ def create_api_blueprint(run_manager: RunManager) -> Blueprint:
 
     @api.get("/api/v1/recipes/<name>")
     def get_recipe(name):
-        path = get_recipes_dir() / f"{name}.yaml"
+        try:
+            path = recipe_path(name)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
         if not path.exists():
             return jsonify({"error": f"unknown recipe '{name}'"}), 404
         return jsonify(_plain(load_recipe_file(path)))
@@ -171,7 +175,10 @@ def create_api_blueprint(run_manager: RunManager) -> Blueprint:
             validate_recipe(recipe)
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
-        path = get_recipes_dir() / f"{name}.yaml"
+        try:
+            path = recipe_path(name)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
         if not path.exists():
             return jsonify({"error": f"unknown recipe '{name}'"}), 404
         dump_recipe_file(body, path)
@@ -189,7 +196,10 @@ def create_api_blueprint(run_manager: RunManager) -> Blueprint:
             validate_recipe(recipe)
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
-        path = get_recipes_dir() / f"{name}.yaml"
+        try:
+            path = recipe_path(name)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
         if path.exists():
             return jsonify({"error": f"recipe '{name}' already exists"}), 409
         dump_recipe_file(config, path)

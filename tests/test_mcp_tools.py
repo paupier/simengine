@@ -181,3 +181,49 @@ class TestMcpServer:
         names = {t.name for t in listed}
         assert len(names) == 16
         assert names == set(reg.READ_TOOLS) | set(reg.CONTROL_TOOLS)
+
+
+class TestPathTraversal:
+    """Recipe names are user/LLM-supplied — must not escape the recipes dir."""
+
+    BAD_NAMES = ["../scenarios", "../../etc/passwd", "..", "a/../../b",
+                 "/etc/passwd", ".hidden", ""]
+
+    def test_get_recipe_rejects_traversal(self, registry):
+        reg, _ = registry
+        for bad in self.BAD_NAMES:
+            with pytest.raises(ValueError, match="invalid recipe name"):
+                reg.get_recipe(bad)
+
+    def test_update_recipe_rejects_traversal(self, registry, tmp_path):
+        reg, _ = registry
+        outside = tmp_path / "scenarios.yaml"
+        before = outside.read_text()
+        valid = ("name: X\nbase_scenario: demo_line\n"
+                 "segments:\n  - {name: S, quantity: 1}\n")
+        with pytest.raises(ValueError, match="invalid recipe name"):
+            reg.update_recipe("../scenarios", valid)
+        assert outside.read_text() == before  # file untouched
+
+    def test_start_recipe_rejects_traversal(self, registry):
+        from simengine.runtime.recipe_runner import load_recipe_config
+        with pytest.raises(ValueError, match="invalid recipe name"):
+            load_recipe_config("../scenarios")
+
+    def test_rest_recipe_traversal_rejected(self, registry, tmp_path, monkeypatch):
+        from simengine.api.rest import create_app
+        from simengine.runtime.run_manager import RunManager
+        app = create_app(RunManager())
+        app.config["TESTING"] = True
+        client = app.test_client()
+        # Flask blocks '/' in <name>; dotfile/.. stems must 400 too
+        r = client.put("/api/v1/recipes/..%2F..%2Fscenarios",
+                       json={"name": "X", "base_scenario": "demo_line",
+                             "segments": [{"name": "S", "quantity": 1}]})
+        assert r.status_code in (400, 404)
+        r2 = client.post("/api/v1/recipes",
+                         json={"name": "../evil",
+                               "config": {"name": "X", "base_scenario": "demo_line",
+                                          "segments": [{"name": "S", "quantity": 1}]}})
+        assert r2.status_code == 400
+        assert "invalid recipe name" in r2.get_json()["error"]
