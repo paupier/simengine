@@ -44,6 +44,12 @@ def _parse_mqtt_url(url: str) -> tuple[str, int]:
     return host, port
 
 
+def flat_topic(line: str, station: str, metric: str) -> str:
+    """Flat MQTT topic for one metric — single source of truth (KG uses it too)."""
+    metric_path = metric.replace("/", "_").lower()
+    return f"simengine/{line}/{station}/{metric_path}"
+
+
 try:
     import paho.mqtt.client as mqtt
     from paho.mqtt.properties import Properties
@@ -270,8 +276,7 @@ class OPCUAMqttPublisher(StatePublisher):
         return f"opcua/{self._publisher_id}/json"
 
     def flat_topic(self, station: str, metric: str) -> str:
-        metric_path = metric.replace("/", "_").lower()
-        return f"simengine/{self._line_name}/{station}/{metric_path}"
+        return flat_topic(self._line_name, station, metric)
 
     # ----- lifecycle -----
 

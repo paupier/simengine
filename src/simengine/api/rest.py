@@ -6,42 +6,24 @@ returns the exact snapshot object the publishers consume (dataclasses.asdict).
 Scenario/recipe writes go through ruamel round-trip loading so YAML comments
 are preserved.
 """
-import io
 from dataclasses import asdict
 
 from flask import Blueprint, Flask, jsonify, render_template, request
-from ruamel.yaml import YAML
 
+from simengine.api.config_files import (
+    dump_recipe_file,
+    dump_scenarios_file as _dump_scenarios_file,
+    load_recipe_file,
+    load_scenarios_file as _load_scenarios_file,
+    plain as _plain,
+)
 from simengine.config.loader import (
-    get_config_path,
     get_recipes_dir,
     validate_comms,
     validate_serial_topology,
 )
 from simengine.runtime.recipe_runner import parse_recipe, validate_recipe
 from simengine.runtime.run_manager import IDLE, RunConflictError, RunManager
-
-_yaml = YAML()
-_yaml.preserve_quotes = True
-
-
-def _load_scenarios_file():
-    path = get_config_path()
-    with open(path) as f:
-        return _yaml.load(f) or {}, path
-
-
-def _dump_scenarios_file(data, path):
-    with open(path, "w") as f:
-        _yaml.dump(data, f)
-
-
-def _plain(obj):
-    """ruamel round-trip objects -> plain dict/list for validation + JSON."""
-    buf = io.StringIO()
-    _yaml.dump(obj, buf)
-    import yaml as pyyaml
-    return pyyaml.safe_load(buf.getvalue())
 
 
 def create_api_blueprint(run_manager: RunManager) -> Blueprint:
@@ -177,8 +159,7 @@ def create_api_blueprint(run_manager: RunManager) -> Blueprint:
         path = get_recipes_dir() / f"{name}.yaml"
         if not path.exists():
             return jsonify({"error": f"unknown recipe '{name}'"}), 404
-        with open(path) as f:
-            return jsonify(_plain(_yaml.load(f)))
+        return jsonify(_plain(load_recipe_file(path)))
 
     @api.put("/api/v1/recipes/<name>")
     def put_recipe(name):
@@ -193,8 +174,7 @@ def create_api_blueprint(run_manager: RunManager) -> Blueprint:
         path = get_recipes_dir() / f"{name}.yaml"
         if not path.exists():
             return jsonify({"error": f"unknown recipe '{name}'"}), 404
-        with open(path, "w") as f:
-            _yaml.dump(body, f)
+        dump_recipe_file(body, path)
         return jsonify({"updated": name})
 
     @api.post("/api/v1/recipes")
@@ -212,8 +192,7 @@ def create_api_blueprint(run_manager: RunManager) -> Blueprint:
         path = get_recipes_dir() / f"{name}.yaml"
         if path.exists():
             return jsonify({"error": f"recipe '{name}' already exists"}), 409
-        with open(path, "w") as f:
-            _yaml.dump(config, f)
+        dump_recipe_file(config, path)
         return jsonify({"created": name}), 201
 
     # ----- comms -----
@@ -246,6 +225,19 @@ def create_api_blueprint(run_manager: RunManager) -> Blueprint:
         _dump_scenarios_file(data, path)
         return jsonify({"updated": scenario, "applies": "next_run"})
 
+    # ----- knowledge graph -----
+
+    @api.get("/api/v1/kg")
+    def get_kg():
+        kg = run_manager.knowledge_graph
+        if kg is None:
+            return jsonify({"error": "no run — the knowledge graph is built at run start"}), 404
+        return jsonify(kg.to_node_link(
+            node_type=request.args.get("type"),
+            station=request.args.get("station"),
+            edge=request.args.get("edge"),
+        ))
+
     # ----- plugins helper (comms page) -----
 
     @api.get("/api/v1/plugins")
@@ -273,9 +265,16 @@ def create_api_blueprint(run_manager: RunManager) -> Blueprint:
 
 
 def create_app(run_manager: RunManager) -> Flask:
-    """Flask app: REST blueprint + 3-page UI."""
+    """Flask app: REST blueprint + UI pages (+ chat when available)."""
+    import secrets
+
+    from simengine.api.chat import create_chat_blueprint
+    from simengine.api.tools import ToolRegistry
+
     app = Flask(__name__, template_folder="ui")
+    app.secret_key = secrets.token_hex(32)  # per-process; chat session cookie
     app.register_blueprint(create_api_blueprint(run_manager))
+    app.register_blueprint(create_chat_blueprint(ToolRegistry(run_manager)))
 
     @app.get("/")
     def dashboard():
@@ -288,5 +287,9 @@ def create_app(run_manager: RunManager) -> Flask:
     @app.get("/comms")
     def comms():
         return render_template("comms.html")
+
+    @app.get("/assistant")
+    def assistant():
+        return render_template("chat.html")
 
     return app

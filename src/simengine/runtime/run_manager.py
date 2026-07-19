@@ -45,6 +45,7 @@ class RunManager:
         self.recipe_name: Optional[str] = None
         self.latest_snapshot = None
         self.engine: Optional[LineEngine] = None
+        self.knowledge_graph = None  # built at run start, static per run
         self._thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
         self._lock = threading.Lock()
@@ -123,6 +124,8 @@ class RunManager:
             engine = LineEngine(config, scenario, seed=seed, run_id=run_id,
                                 speed_ratio=speed_ratio)
             self.engine = engine
+            from simengine.engine.knowledge_graph import build_knowledge_graph
+            self.knowledge_graph = build_knowledge_graph(config, scenario)
             shift_mgr = create_shift_manager_from_config(
                 config, [s.name for s in engine.stations])
             publishers.on_run_start(engine.snapshot())
@@ -144,6 +147,9 @@ class RunManager:
     def _run_recipe(self, recipe, seed, speed_ratio, run_id):
         base_config = load_line_config(recipe.base_scenario)
         publishers = build_publishers(base_config)
+        from simengine.engine.knowledge_graph import build_knowledge_graph
+        self.knowledge_graph = build_knowledge_graph(
+            base_config, recipe.base_scenario, recipe_name=recipe.name)
         historian = build_historians(base_config, recipe.base_scenario, run_id)
         collector = SnapshotEventCollector() if historian else None
         try:

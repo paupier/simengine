@@ -19,6 +19,9 @@ def main(argv=None):
     parser.add_argument("--speed-ratio", type=float, default=1.0,
                         help="sim seconds per wall second (1.0 = real time)")
     parser.add_argument("--port", type=int, default=8080, help="REST/UI port")
+    parser.add_argument("--mcp-port", type=int, default=8765, help="MCP server port")
+    parser.add_argument("--no-mcp", action="store_true",
+                        help="disable the MCP server")
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args(argv)
 
@@ -43,6 +46,12 @@ def main(argv=None):
         run_id = run_manager.start_recipe(args.recipe, seed=args.seed,
                                           speed_ratio=args.speed_ratio)
         print(f"recipe run started: {run_id}")
+
+    if not args.no_mcp:
+        from simengine.api.mcp_server import start_mcp_server_thread
+        from simengine.api.tools import ToolRegistry
+        start_mcp_server_thread(ToolRegistry(run_manager), port=args.mcp_port)
+        print(f"MCP server listening on http://0.0.0.0:{args.mcp_port}/mcp")
 
     app = create_app(run_manager)
     print(f"REST/UI listening on http://0.0.0.0:{args.port}/")
