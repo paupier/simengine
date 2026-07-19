@@ -15,6 +15,8 @@ from typing import Optional
 
 from simengine.config.loader import load_line_config
 from simengine.engine.line import CHANGEOVER, RUNNING, STOPPED, LineEngine
+from simengine.events.collect import SnapshotEventCollector
+from simengine.plugins import build_historians
 from simengine.publishers import build_publishers
 from simengine.runtime.recipe_runner import (
     apply_segment_overrides,
@@ -115,6 +117,8 @@ class RunManager:
 
     def _run_scenario(self, config, scenario, seed, speed_ratio, run_id):
         publishers = build_publishers(config)
+        historian = build_historians(config, scenario, run_id)
+        collector = SnapshotEventCollector() if historian else None
         try:
             engine = LineEngine(config, scenario, seed=seed, run_id=run_id,
                                 speed_ratio=speed_ratio)
@@ -123,17 +127,25 @@ class RunManager:
                 config, [s.name for s in engine.stations])
             publishers.on_run_start(engine.snapshot())
             self.run_segment(engine, publishers, speed_ratio,
-                             shift_mgr=shift_mgr)
+                             shift_mgr=shift_mgr,
+                             historian=historian, collector=collector)
             publishers.on_run_end()
         except Exception:
             logger.exception("run %s crashed", run_id)
         finally:
+            if historian is not None:
+                end_event = collector.run_end_event(self.latest_snapshot)
+                if end_event is not None:
+                    historian.record_event(end_event)
+                historian.close()
             publishers.close()
             self._finish()
 
     def _run_recipe(self, recipe, seed, speed_ratio, run_id):
         base_config = load_line_config(recipe.base_scenario)
         publishers = build_publishers(base_config)
+        historian = build_historians(base_config, recipe.base_scenario, run_id)
+        collector = SnapshotEventCollector() if historian else None
         try:
             total = len(recipe.segments)
             recipe_state = {
@@ -168,6 +180,7 @@ class RunManager:
                     max_sim_time=seg.duration or seg.max_duration,
                     target_quantity=seg.quantity,
                     recipe_state=recipe_state,
+                    historian=historian, collector=collector,
                 )
                 # Changeover between segments (not after the last)
                 if seg.changeover and i < total - 1 and not self._stop_event.is_set():
@@ -191,13 +204,19 @@ class RunManager:
         except Exception:
             logger.exception("recipe run %s crashed", run_id)
         finally:
+            if historian is not None:
+                end_event = collector.run_end_event(self.latest_snapshot)
+                if end_event is not None:
+                    historian.record_event(end_event)
+                historian.close()
             publishers.close()
             self._finish()
 
     def run_segment(self, engine: LineEngine, publishers, speed_ratio: float,
                     shift_mgr=None, max_sim_time: Optional[float] = None,
                     target_quantity: Optional[int] = None,
-                    recipe_state: Optional[dict] = None):
+                    recipe_state: Optional[dict] = None,
+                    historian=None, collector=None):
         """Wall-clock-locked step loop with stop conditions.
 
         Returns (sim_time, parts_produced, stop_reason).
@@ -223,6 +242,11 @@ class RunManager:
             )
             self.latest_snapshot = snap
             publishers.publish(snap)
+
+            if historian is not None and collector is not None:
+                events = collector.collect(snap)
+                if events:
+                    historian.record_events(events)
 
             if target_quantity is not None and parts >= target_quantity:
                 stop_reason = "quantity_reached"
