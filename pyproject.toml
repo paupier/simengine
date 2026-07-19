@@ -13,7 +13,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-sparkplug = ["mqtt-spb-wrapper>=2.0"]
+# Binding decision fallback (clone_build_plan.md §1 P0.4): mqtt-spb-wrapper
+# hard-pins paho_mqtt==1.6.1 (conflicts with core paho-mqtt>=2.0), so the
+# vendored Eclipse Tahu pb2 + paho path is used instead.
+sparkplug = ["protobuf>=7.35"]
 historian-influx = ["influxdb-client>=1.30"]
 historian-neo4j = ["neo4j>=5.0"]
 analysis = ["pandas>=2.0"]
