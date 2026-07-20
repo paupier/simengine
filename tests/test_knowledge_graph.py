@@ -58,6 +58,25 @@ class TestStructure:
         assert "MT_REPAIR" in press_alarms
 
 
+
+class TestStationHealthAttrs:
+    def test_health_attrs_present_when_configured(self, demo_kg):
+        kg, _ = demo_kg
+        press = kg.nodes["station:Press01"]
+        assert press["health_h_max"] == 5
+        assert press["health_cbm_threshold"] == 5  # cbm == h_max -> run-to-failure
+
+        weld = kg.nodes["station:Weld02"]
+        assert weld["health_h_max"] == 4
+        assert weld["health_cbm_threshold"] == 3  # cbm < h_max -> CBM
+
+    def test_health_attrs_none_when_not_configured(self, demo_kg):
+        kg, _ = demo_kg
+        pack = kg.nodes["station:Pack03"]
+        assert pack["health_h_max"] is None
+        assert pack["health_cbm_threshold"] is None
+
+
 class TestAddressBinding:
     def test_every_pv_has_all_four_addresses(self, demo_kg):
         kg, config = demo_kg
