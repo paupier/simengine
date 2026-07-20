@@ -23,6 +23,7 @@ from simengine.config.loader import (
     validate_comms,
     validate_serial_topology,
 )
+from simengine.engine.knowledge_graph import build_knowledge_graph
 from simengine.runtime.recipe_runner import parse_recipe, validate_recipe
 from simengine.runtime.run_manager import IDLE, RunConflictError, RunManager
 
@@ -247,6 +248,19 @@ def create_api_blueprint(run_manager: RunManager) -> Blueprint:
             station=request.args.get("station"),
             edge=request.args.get("edge"),
         ))
+
+    @api.post("/api/v1/kg/preview")
+    def preview_kg():
+        body = request.get_json(force=True, silent=True) or {}
+        config = body.get("config")
+        if not isinstance(config, dict):
+            return jsonify({"error": "body must be {config: {...}}"}), 400
+        name = body.get("name") or "draft"
+        try:
+            kg = build_knowledge_graph(config, name)
+        except (KeyError, TypeError, AttributeError) as exc:
+            return jsonify({"error": f"invalid config: {exc}"}), 400
+        return jsonify(kg.to_node_link())
 
     # ----- plugins helper (comms page) -----
 

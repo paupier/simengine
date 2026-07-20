@@ -187,6 +187,37 @@ class TestRunLifecycle:
         assert client.get("/api/v1/state").status_code == 404
 
 
+class TestKGPreview:
+    def test_preview_matches_scenario_stations(self, client):
+        cfg = client.get("/api/v1/scenarios/demo_line").get_json()
+        r = client.post("/api/v1/kg/preview", json={"config": cfg, "name": "demo_line"})
+        assert r.status_code == 200
+        data = r.get_json()
+        station_names = {n["name"] for n in data["nodes"] if n["type"] == "Station"}
+        assert station_names == {"Press01", "Weld02", "Pack03"}
+
+    def test_preview_requires_no_active_run(self, client):
+        # No run has been started anywhere in this test — proves the pure-function path.
+        cfg = client.get("/api/v1/scenarios/two_station_minimal").get_json()
+        r = client.post("/api/v1/kg/preview", json={"config": cfg})
+        assert r.status_code == 200
+        assert len(r.get_json()["nodes"]) > 0
+
+    def test_preview_deterministic(self, client):
+        cfg = client.get("/api/v1/scenarios/demo_line").get_json()
+        r1 = client.post("/api/v1/kg/preview", json={"config": cfg, "name": "x"})
+        r2 = client.post("/api/v1/kg/preview", json={"config": cfg, "name": "x"})
+        assert r1.get_json() == r2.get_json()
+
+    def test_preview_missing_config_400(self, client):
+        r = client.post("/api/v1/kg/preview", json={})
+        assert r.status_code == 400
+
+    def test_preview_invalid_config_400(self, client):
+        r = client.post("/api/v1/kg/preview", json={"config": {"stations": "not-a-list"}})
+        assert r.status_code == 400
+
+
 class TestMisc:
     def test_healthz(self, client):
         data = client.get("/healthz").get_json()
