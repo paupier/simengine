@@ -213,6 +213,8 @@ An unconfigured/uninstalled historian fails with an explicit `pip install simeng
 
 ## Docker
 
+**Local dev** (builds from source):
+
 ```bash
 docker compose -f docker/docker-compose.yml up --build -d          # simengine + Mosquitto
 docker compose -f docker/docker-compose.yml --profile influx up -d # + InfluxDB
@@ -220,6 +222,8 @@ docker compose -f docker/docker-compose.yml --profile graph up -d  # + Neo4j
 ```
 
 The Dockerfile is a multi-stage build (builder venv, slim runtime image); pass `EXTRAS` to bake in optional dependencies (`--build-arg EXTRAS=historian-influx,sparkplug`).
+
+**Portainer / any host** (pulls a pre-built image from GHCR — no build step, no host bind mounts): use `docker/docker-compose.portainer.yml`, published by `.github/workflows/publish-image.yml`. See [`docs/deployment.md`](docs/deployment.md) for the full walk-through.
 
 ---
 

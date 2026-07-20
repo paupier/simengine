@@ -1,0 +1,103 @@
+# simengine — Portainer-ready stack (pre-built GHCR image, no build step,
+# no host bind mounts). Paste this straight into a Portainer stack, or point a
+# Portainer Git stack at it.
+#
+# Optional services are gated behind compose profiles. Portainer has no profile
+# toggle in the UI, so enable them by adding this stack environment variable:
+#   COMPOSE_PROFILES=influx        (adds InfluxDB)
+#   COMPOSE_PROFILES=influx,graph  (adds InfluxDB + Neo4j)
+#
+# Override any default below via the stack's Environment variables in Portainer.
+
+services:
+  simengine:
+    image: ghcr.io/paupier/simengine:latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"     # REST API + web UI
+      - "4840:4840"     # OPC UA TCP
+      - "8765:8765"     # MCP server
+    environment:
+      SIMENGINE_CONFIG_PATH: /app/config/scenarios.yaml
+      SIMENGINE_HISTORIAN_DIR: /app/results/historian
+      INFLUXDB_URL: http://influxdb:8086
+      INFLUXDB_TOKEN: ${INFLUXDB_TOKEN:-simengine-dev-token}
+      INFLUXDB_ORG: simengine
+      INFLUXDB_BUCKET: manufacturing
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: ${NEO4J_USER:-neo4j}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-simengine-dev}
+    volumes:
+      # Named volumes seed from the image on first run (default scenarios), then
+      # persist UI/REST edits and historian CSVs across redeploys.
+      - simengine-config:/app/config
+      - simengine-results:/app/results
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    ports:
+      - "1883:1883"     # MQTT
+      - "9001:9001"     # MQTT over WebSocket
+    # The broker config is written at startup so the stack needs no host files.
+    # Passes through the image entrypoint (which fixes /mosquitto ownership),
+    # matching docker/mosquitto/mosquitto.conf.
+    command:
+      - sh
+      - -c
+      - |
+        cat > /mosquitto/config/mosquitto.conf <<'EOF'
+        listener 1883
+        listener 9001
+        protocol websockets
+        allow_anonymous true
+        persistence true
+        persistence_location /mosquitto/data/
+        log_dest stdout
+        log_type error
+        log_type warning
+        log_type information
+        EOF
+        exec /usr/sbin/mosquitto -c /mosquitto/config/mosquitto.conf
+    volumes:
+      - mosquitto-data:/mosquitto/data
+
+  influxdb:
+    image: influxdb:2.7
+    profiles: ["influx"]
+    restart: unless-stopped
+    ports:
+      - "8086:8086"
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUXDB_USER:-admin}
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUXDB_PASSWORD:-simengine-dev}
+      DOCKER_INFLUXDB_INIT_ORG: simengine
+      DOCKER_INFLUXDB_INIT_BUCKET: manufacturing
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUXDB_TOKEN:-simengine-dev-token}
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  neo4j:
+    image: neo4j:5
+    profiles: ["graph"]
+    restart: unless-stopped
+    ports:
+      - "7474:7474"     # Neo4j Browser
+      - "7687:7687"     # Bolt
+    environment:
+      NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-simengine-dev}
+    volumes:
+      - neo4j-data:/data
+
+volumes:
+  simengine-config:
+  simengine-results:
+  mosquitto-data:
+  influxdb-data:
+  neo4j-data:
