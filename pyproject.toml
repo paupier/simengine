@@ -21,7 +21,14 @@ chat = ["anthropic[mcp]>=0.50"]
 historian-influx = ["influxdb-client>=1.30"]
 historian-neo4j = ["neo4j>=5.0"]
 analysis = ["pandas>=2.0"]
-dev = ["pytest>=7.0", "pytest-cov>=3.0", "flake8>=6.0", "black>=23.0"]
+# dev pulls in sparkplug/chat deps too: test_sparkplugb.py and test_chat.py
+# exercise those code paths (test_chat.py resolves "anthropic.Anthropic" via
+# unittest.mock.patch, which requires the module importable even though it's
+# never imported directly) and must pass in a plain `pip install -e ".[dev]"`.
+dev = [
+  "pytest>=7.0", "pytest-cov>=3.0", "flake8>=6.0", "black>=23.0",
+  "protobuf>=7.35", "anthropic[mcp]>=0.50",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

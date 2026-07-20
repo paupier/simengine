@@ -17,15 +17,16 @@ A clear and concise description of what you want to happen.
 A clear and concise description of any alternative solutions or features you've considered.
 
 **Which feature area would this affect?**
-- [ ] OPC UA Server (connectivity, address space, controls)
-- [ ] Simulation Engine (stepping, state detection, OEE)
-- [ ] Configuration (YAML loading, validation, scenarios)
-- [ ] Quality & SPC (defects, control charts, capability)
-- [ ] Failure Modes (distributions, maintenance, MTBF/MTTR)
-- [ ] Shifts & Historian (rotation, CSV/InfluxDB/Neo4j logging)
-- [ ] Scrap & Rework (quality routing, scrap sinks)
-- [ ] Web UI (Flask dashboard, config editor)
-- [ ] Docker (compose, Grafana, InfluxDB)
+- [ ] Engine (station state machine, health/CBM, cycle stops, quality, OEE)
+- [ ] Process Values (cycle_peak/first_order_lag/cycle_ramp/constant_noise, alarms)
+- [ ] Configuration (YAML loading, validation, scenarios/recipes)
+- [ ] OPC UA publisher (address space, batched writes)
+- [ ] MQTT publishers (OPC UA PubSub Part 14 JSON, SparkplugB)
+- [ ] REST API / run manager
+- [ ] Web UI (dashboard, configure, comms, assistant)
+- [ ] AI interface (knowledge graph, MCP server, chat)
+- [ ] Historian plugins (CSV/InfluxDB/Neo4j)
+- [ ] Docker / compose
 - [ ] Other (specify)
 
 **Additional context**
