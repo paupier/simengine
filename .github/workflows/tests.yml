@@ -36,6 +36,28 @@ jobs:
     - name: Run tests with coverage
       run: pytest tests/ -v --cov=src --cov-report=html
 
+    # Every test above runs against the editable install (`pip install -e`),
+    # which reads templates/data files straight from the source tree — so it
+    # cannot catch a missing package-data declaration. setuptools packages
+    # .py files only by default; non-.py package data (the UI's Jinja
+    # templates) is silently dropped from a *built* wheel without an explicit
+    # [tool.setuptools.package-data] entry. That gap shipped a real prod-only
+    # 500 on every UI page (Docker installs non-editable) that the full test
+    # suite passed straight through. Build the actual wheel and assert the
+    # templates are inside it.
+    - name: Verify built wheel packages the UI templates
+      run: |
+        pip install build
+        python -m build --wheel -o dist .
+        python -c "
+        import glob, zipfile
+        path = sorted(glob.glob('dist/*.whl'))[-1]
+        names = zipfile.ZipFile(path).namelist()
+        html = [n for n in names if n.endswith('.html')]
+        assert html, f'No .html templates found in {path} — check [tool.setuptools.package-data]'
+        print(f'OK: {len(html)} templates packaged: {html}')
+        "
+
     - name: Upload coverage
       uses: actions/upload-artifact@v4
       with:

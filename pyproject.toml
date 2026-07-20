@@ -33,6 +33,13 @@ dev = [
 [tool.setuptools.packages.find]
 where = ["src"]
 
+# setuptools packages .py files only by default — the Jinja templates behind
+# the dashboard/configure/comms/assistant pages are .html and would be
+# silently dropped from a built wheel (invisible under `pip install -e`,
+# which reads straight from the source tree) without this.
+[tool.setuptools.package-data]
+simengine = ["api/ui/*.html"]
+
 [tool.pytest.ini_options]
 pythonpath = ["src", "tests"]
 testpaths = ["tests"]
