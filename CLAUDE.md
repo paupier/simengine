@@ -97,3 +97,53 @@ samples — capability indices are O(1) in run length. Do not reintroduce an
 unbounded sample list (it failed the memory-flatness acceptance run at
 ~95 MB/hour with just 4 monitors); `tests/test_spc_analytics.py::TestBoundedMemory`
 guards this.
+
+## Candidate feature: i3X interface (under consideration — do not build without sign-off)
+
+**Status:** evaluated, high-alignment, deferred pending owner decision. The org is
+looking to adopt i3X to some degree, so **if built, build the whole thing**
+(read + write + subscriptions + conformance), not a partial read-only projection.
+
+**What i3X is:** a CESMII (US DOE Smart Manufacturing institute) standard — a
+REST+JSON API (with SSE streaming and poll-with-ack subscriptions) that presents
+an industrial data source as a typed **object/relationship graph** with live
+**Value-Quality-Timestamp** values. Spec lives at github.com/cesmii/i3X (use the
+`1.0-Beta` branch — `IMPLEMENTATION_GUIDE.md` + `UNDERSTANDING_RELATIONSHIPS.md`
+are the substance; the OpenAPI is at `api.i3x.dev/v1/openapi.json`). It has a
+`conformance-tests/` suite to validate against. Note the spec is still
+stabilizing — pin against a snapshot, don't track the moving branch.
+
+**Why it fits simengine (the pieces are ~80–90% already here):** i3X's model is
+almost exactly the KG + snapshot we already built for the AI interface.
+Architecturally it is a *pull* REST+SSE API, so it's a new Flask blueprint
+(`api/i3x.py`) reading the KG + snapshot + run_manager + historians — **not** a
+`StatePublisher` push class, and **no engine changes**.
+
+Concrete mapping (i3X ← simengine):
+- object ← KG node; `elementId`←node id, `displayName`←name, `typeId`←node type,
+  `parentId`←`CONTAINS` parent, `isComposition`←`HAS_PV` edge, `relationships`←edges
+- `/objecttypes` ← KG node types; `/relationshiptypes` ← KG edge types
+- `/objects/related` ← `KnowledgeGraph.neighbors()`
+- `/objects/value` (VQT) ← `LineSnapshot` (PV/metric value + unit); quality =
+  Good while RUNNING, GoodNoData when IDLE/no run
+- `/objects/history` ← historian plugins (**only meaningful with `historian-influx`**
+  — core keeps no value history by design; see the SPC memory note above)
+- `/subscriptions/stream` (SSE) ← SSE already implemented for chat; run_manager
+  already emits a fresh snapshot every step
+- `namespaceUri` projection ← the KG already binds every metric to OPC UA /
+  SparkplugB / MQTT / REST addresses; i3X is a fifth projection over the same
+  registry (i3X explicitly supports `?projection=i3X` namespace URIs)
+
+**Full-implementation scope (what "the whole thing" means here):**
+- Read surface: `/info`, `/namespaces`, `/objecttypes`(+`/query`),
+  `/relationshiptypes`(+`/query`), `/objects`(+`/list`), `/objects/related`,
+  `/objects/value` (with `maxDepth` composition recursion), `/objects/history`
+- Subscriptions: create/register/unregister/list/delete, `/stream` (SSE) and
+  `/sync` (sequence-numbered poll-with-ack)
+- Writes (`PUT /objects/{id}/value|history`): the hard part — simengine *computes*
+  values, it doesn't accept them. For a full impl this means deciding what a write
+  means (config/setpoint override applied at next step? a scenario edit? rejected
+  as read-only with 501?). Resolve this before starting; it's the main design
+  question, not the endpoints.
+- Enable via the `comms` block (like the other protocols) + a `[i3x]` extra if any
+  new dep is needed; validate against the CESMII `conformance-tests/` suite.
