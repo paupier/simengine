@@ -159,7 +159,7 @@
     const names = await jget("/api/v1/scenarios");
     const sel = $("hdr-scenario");
     const prev = localStorage.getItem("simengine.scenario");
-    sel.innerHTML = names.map(n => `<option>${n}</option>`).join("");
+    sel.innerHTML = names.map(n => `<option>${esc(n)}</option>`).join("");
     if (prev && names.includes(prev)) sel.value = prev;
     sel.onchange = () => localStorage.setItem("simengine.scenario", sel.value);
   }
