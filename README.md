@@ -58,7 +58,7 @@ Open `http://localhost:8080/` for the dashboard (material-flow strip, per-statio
 
 ### Connect a client
 
-- **OPC UA:** point UaExpert / any OPC UA client at `opc.tcp://localhost:4840/simengine/` and browse `Objects → {Enterprise} → {Site} → {Area} → {Line}_Equipment`.
+- **OPC UA:** point UaExpert / any OPC UA client at `opc.tcp://localhost:4840/simengine/` and browse `Objects → {Enterprise} → {Site} → {Area} → {Line}_Equipment`. Full node tree in [`docs/address_space.md`](docs/address_space.md).
 - **MQTT:** `mosquitto_sub -t 'opcua/#' -v` for Part 14 JSON, `mosquitto_sub -t 'spBv1.0/#' -v` for SparkplugB Protobuf — both enabled per scenario under `comms:` (see `config/scenarios.yaml`).
 - **MCP:** any MCP-capable host (Claude Desktop, Claude Code, ...) — `{"mcpServers": {"simengine": {"url": "http://localhost:8765/mcp"}}}`. See [`docs/ai_interface.md`](docs/ai_interface.md).
 
@@ -252,7 +252,7 @@ src/simengine/
 src/simengine_historian_{csv,influx,neo4j}/   optional historian backends
 config/         scenarios.yaml, recipes/*.yaml
 docker/         Dockerfile, docker-compose.yml (mosquitto + influx/graph profiles)
-docs/           ai_interface.md, specs/ (governing build-plan documents)
+docs/           address_space.md, ai_interface.md, specs/ (governing build-plan documents)
 ```
 
 See `CLAUDE.md` for engine invariants (determinism, health/CBM semantics, KPI formulas) that should not be changed casually, and `docs/specs/` for the original architecture and build-plan documents this engine was built from.

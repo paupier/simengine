@@ -1,323 +1,141 @@
-# OPC UA Address Space Reference (ISA-95/ISO 23247)
+# OPC UA Address Space Reference (ISA-95)
 
-**Namespace URI:** `http://simantha.nist.gov/`
+**Namespace URI:** `http://simengine.local/`
 **Namespace Index:** `ns=2`
-**Last Updated:** 2026-03-26
+**Source:** `src/simengine/publishers/opcua_server.py`, `opcua_nodes.py`
 
-> **Authoritative reference:** See the [User Manual, Section 9](user_manual.md#9-opc-ua-address-space-reference) for full tables with descriptions.
-
----
-
-## ISA-95 Hierarchy
-
-The address space follows the ISA-95 (IEC 62264) equipment hierarchy with ISO 23247 digital twin identification. Hierarchy names are configurable in scenario YAML via `enterprise`, `site`, `area`, and `line_name` keys.
+Hierarchy names are configurable per scenario via `enterprise`, `site`, `area`, `line_name` (all default to generic placeholders — see `config/scenarios.yaml`).
 
 ```
 Objects/
-└─ {Enterprise}/                                  # default: WeylandIndustries
-   └─ {Site}/                                     # default: LV426_Colony
-      └─ {Area}/                                  # default: AtmosphereProcessor01
-         ├─ {Line}_Equipment/                     # Live process data (Equipment model)
+└─ {Enterprise}/
+   └─ {Site}/
+      └─ {Area}/
+         ├─ {Line}_Equipment/
          │  ├─ Identification/
-         │  │  ├─ EquipmentID                     (String, READ)
-         │  │  ├─ EquipmentClass                  (String, READ)
-         │  │  └─ Description                     (String, READ)
+         │  │  ├─ EquipmentID        (String)
+         │  │  ├─ EquipmentClass     (String)  "ProductionLine"
+         │  │  ├─ Description        (String)
+         │  │  └─ RunID              (String)  {scenario}_{YYYYMMDD_HHMMSS}
          │  │
          │  ├─ OperationsState/
-         │  │  ├─ SimTime                         (Double, READ)
-         │  │  ├─ LineState                       (String, READ)
-         │  │  ├─ LineMode                        (String, READ)
-         │  │  ├─ Controls/
-         │  │  │  └─ SetInterarrivalTime          (Double, READ)   set at run start, read-only during run
-         │  │  └─ Recipe/                          (populated when --recipe is used)
-         │  │     ├─ RecipeName                    (String, READ)
-         │  │     ├─ RecipeDescription             (String, READ)
-         │  │     ├─ SegmentName                   (String, READ)
-         │  │     ├─ SegmentIndex                  (Int32, READ)   1-based
-         │  │     ├─ TotalSegments                 (Int32, READ)
-         │  │     ├─ SegmentTimeRemaining          (Double, READ)
-         │  │     ├─ SegmentQuantityTarget         (Int32, READ)   0 if time-based
-         │  │     ├─ SegmentQuantityProduced        (Int32, READ)
-         │  │     ├─ SegmentStopMode               (String, READ)  "quantity" or "duration"
-         │  │     ├─ ChangeoverState               (Boolean, READ) True during changeover
-         │  │     ├─ LastChangeoverPlanned          (Double, READ)
-         │  │     └─ LastChangeoverActual           (Double, READ)
+         │  │  ├─ SimTime            (Double)
+         │  │  ├─ LineState          (String)  RUNNING | CHANGEOVER | STOPPED
+         │  │  └─ Controls/
+         │  │     └─ SimSpeedRatio   (Double)  fixed at run start; sim-seconds per wall-second
          │  │
          │  ├─ OperationsPerformance/
-         │  │  ├─ Throughput                      (Int32, READ)
-         │  │  ├─ TotalWIP                        (Int32, READ)
-         │  │  ├─ TotalScrap                      (Int32, READ)
-         │  │  └─ ScrapRate                       (Double, READ)
+         │  │  ├─ Throughput         (Double)  parts/sim-second, cumulative
+         │  │  ├─ TotalWIP           (Int32)
+         │  │  └─ TotalScrap         (Int32)
          │  │
-         │  ├─ OEE/                               (Line-level OEE, bottleneck model)
-         │  │  ├─ Availability                    (Double, READ)
-         │  │  ├─ Performance                     (Double, READ)
-         │  │  ├─ Quality                         (Double, READ)
-         │  │  ├─ OEE                             (Double, READ)
-         │  │  ├─ GoodPartCount                   (Int32, READ)
-         │  │  └─ DefectivePartCount              (Int32, READ)
+         │  ├─ OEE/                  (bottleneck line-level model)
+         │  │  ├─ OEE                (Double)
+         │  │  └─ GoodPartCount      (Int32)
          │  │
          │  ├─ Resources/
-         │  │  ├─ Machine1/ ... MachineN/         (see Per-Machine below)
-         │  │  ├─ Buffer1/ ... BufferN/           (see Per-Buffer below)
-         │  │  └─ ScrapBin1/ ... ScrapBinN/       (if scrap_sinks configured)
-         │  │     └─ Level                        (Int32, READ)
+         │  │  ├─ {Station}_Equipment/    one per configured station — see below
+         │  │  ├─ {Station}_Asset/        static identification (Vendor/Model/SerialNumber)
+         │  │  └─ {Buffer}_StorageUnit/   one per configured buffer — see below
          │  │
-         │  ├─ SupportFunctions/
-         │  │  ├─ Maintenance/
-         │  │  │  ├─ MaintenanceActive            (Boolean, READ)
-         │  │  │  ├─ QueueLength                  (Int32, READ)
-         │  │  │  └─ TotalRepairs                 (Int32, READ)
-         │  │  └─ ShiftManagement/                (if shifts configured)
-         │  │     ├─ CurrentShiftNumber           (Int32, READ)
-         │  │     ├─ CurrentShiftName             (String, READ)
-         │  │     ├─ ShiftStartTime               (Double, READ)
-         │  │     ├─ ShiftEndTime                 (Double, READ)
-         │  │     ├─ ShiftDuration                (Double, READ)
-         │  │     ├─ ShiftElapsedTime             (Double, READ)
-         │  │     ├─ ShiftTimeRemaining           (Double, READ)
-         │  │     ├─ CurrentShift/                (resets each shift)
-         │  │     │  ├─ PartsProduced, GoodParts, DefectiveParts, DefectRate
-         │  │     │  └─ Availability, Performance, Quality, OEE
-         │  │     ├─ PreviousShift/               (last completed shift)
-         │  │     │  ├─ ShiftNumber, ShiftName, PartsProduced
-         │  │     │  └─ GoodParts, DefectiveParts, DefectRate, OEE
-         │  │     └─ Totals/                      (cumulative, never reset)
-         │  │        ├─ TotalPartsProduced, TotalGoodParts, TotalDefectiveParts
-         │  │        └─ TotalDefectRate, TotalShiftsCompleted
-         │  │
-         │  └─ EventLog/
-         │     └─ TotalEventsGenerated            (Int32, READ)
+         │  └─ SupportFunctions/          (only present if shifts are configured)
+         │     └─ ShiftManagement/
+         │        ├─ CurrentShiftNumber   (Int32)
+         │        ├─ CurrentShiftName     (String)
+         │        ├─ ShiftElapsedTime     (Double)
+         │        ├─ ShiftTimeRemaining   (Double)
+         │        ├─ CurrentShiftParts    (Int32)
+         │        └─ CurrentShiftGoodParts (Int32)
          │
-         └─ {Line}_Asset/                         # Physical asset model (static metadata)
-            ├─ Identification/
-            │  ├─ PhysicalAssetID                 (String, READ)
-            │  ├─ AssetClass                      (String, READ)
-            │  └─ Description                     (String, READ)
-            ├─ M1_Asset/ ... MN_Asset/
-            │  └─ Identification/
-            │     ├─ PhysicalAssetID, AssetClass, Vendor, Model, SerialNumber
-            │     └─ InstallDate, NominalCycleTime
-            └─ MaintenanceLog/
-               └─ TotalRepairs                    (Int32, READ)
+         └─ {Line}_Asset/
+            └─ Identification/
+               ├─ PhysicalAssetID  (String)
+               └─ AssetClass       (String)  "ProductionLine"
 ```
 
----
-
-## Per-Machine Node Structure
-
-Each `MachineN/` under `Resources/` contains ISA-95 sub-groups:
+## Per-station node structure (`{Station}_Equipment/`)
 
 ```
-MachineN/
+{Station}_Equipment/
   ├─ Identification/
-  │  ├─ EquipmentID                               (String, READ)
-  │  ├─ EquipmentClass                            (String, READ)
-  │  ├─ CycleTime                                 (Double, READ)
-  │  └─ TargetPPM                                 (Double, READ)
+  │  ├─ EquipmentID     (String)
+  │  ├─ EquipmentClass  (String)  "WorkCell"
+  │  └─ Description     (String)
   │
   ├─ OperationsState/
-  │  ├─ State                                     (String, READ)
-  │  ├─ HealthState                               (Int32, READ)   0=healthy, N=failed
-  │  ├─ HealthPercent                             (Double, READ)  100=healthy, 0=failed
-  │  ├─ BlockedTime                               (Double, READ)  accumulated when BLOCKED
-  │  ├─ StarvedTime                               (Double, READ)  accumulated when STARVED
-  │  ├─ DownTime                                  (Double, READ)  accumulated when FAILED/UNDER_REPAIR
-  │  ├─ ProcessingTime                            (Double, READ)  accumulated when PROCESSING/DEGRADED
-  │  └─ IdleTime                                  (Double, READ)  accumulated when IDLE/PAUSED
+  │  ├─ State            (String)  IDLE | PROCESSING | BLOCKED | STARVED |
+  │  │                              DEGRADED | FAILED | UNDER_REPAIR
+  │  ├─ HealthState       (Int32)   only present if `health:` is configured
+  │  ├─ HealthPercent     (Double)  100*(1 - health/h_max); only if health configured
+  │  └─ CyclePhase        (Double)  0.0-1.0 progress through the current cycle
   │
   ├─ OperationsPerformance/
-  │  ├─ PartCount                                 (Int32, READ)
-  │  ├─ Utilisation                               (Double, READ)  0.0-1.0
-  │  └─ ActualPPM                                 (Double, READ)
+  │  ├─ PartCount         (Int32)
+  │  ├─ ScrapCount        (Int32)
+  │  ├─ ReworkCount       (Int32)
+  │  ├─ BlockedTime, StarvedTime, DownTime,
+  │  │  ProcessingTime, IdleTime, MinorStopTime  (Double, seconds accumulated)
   │
-  ├─ OEE/                                        (recalculated every step, shift-relative)
-  │  ├─ Availability, Performance, Quality, OEE   (Double, READ)
-  │  ├─ GoodPartCount, DefectivePartCount         (Int32, READ)
-  │  └─ TheoreticalOutput                         (Double, READ)
+  ├─ OEE/
+  │  ├─ Availability, Performance, Quality, OEE   (Double)
+  │  └─ GoodPartCount, DefectivePartCount         (Int32)
   │
   ├─ Alarms/
-  │  ├─ ActiveAlarmCount                          (Int32, READ)
-  │  ├─ MachineFailedActive                       (Boolean, READ)
-  │  ├─ MaintenanceActive                         (Boolean, READ)
-  │  └─ QualityAlertActive                        (Boolean, READ)
+  │  ├─ ActiveAlarmCount        (Int32)
+  │  ├─ ActiveReasonCode        (String)  highest-severity active code, e.g. FM_BEARING_WEAR
+  │  ├─ ActiveReasonText        (String)  human-readable
+  │  ├─ LastAlarmMessage        (String)
+  │  ├─ LastAlarmSeverity       (String)
+  │  ├─ MachineFailureActive    (Boolean) any FM_* alarm active
+  │  ├─ MaintenanceActive       (Boolean) any MT_* alarm active
+  │  └─ QualityAlertActive      (Boolean) any PV_* alarm active
   │
-  ├─ FailureModes/                                (if enable_advanced_failures)
-  │  ├─ ActiveFailureMode                         (String, READ)
-  │  ├─ {Mode}FailureCount                        (Int32, READ)
-  │  ├─ {Mode}TotalDowntime                       (Double, READ)
-  │  ├─ {Mode}MTBF                                (Double, READ)
-  │  └─ {Mode}MTTR                                (Double, READ)
-  │
-  ├─ MaintenanceStrategy/                         (if enable_advanced_failures)
-  │  ├─ StrategyType                              (String, READ)
-  │  ├─ NextPMScheduled                           (Double, READ)
-  │  ├─ PMCount                                   (Int32, READ)
-  │  └─ CMCount                                   (Int32, READ)
-  │
-  ├─ QualityRouting/                              (if quality_routing enabled)
-  │  ├─ ScrapCount                                (Int32, READ)
-  │  ├─ ReworkCount                               (Int32, READ)
-  │  ├─ ReworkSuccessCount                        (Int32, READ)
-  │  ├─ ReworkSuccessRate                         (Double, READ)
-  │  └─ GoodCount                                 (Int32, READ)
-  │
-  └─ SPC/                                        (if enable_spc)
-     ├─ XBarChart/ {XBar, UCL, CL, LCL}
-     ├─ RChart/ {Range, UCL, CL, LCL}
-     ├─ Capability/ {Cp, Cpk, Pp, Ppk, SigmaLevel}
-     └─ Status/ {InControl, Violations, TotalSamples, NumSubgroups}
+  └─ ProcessValues/             (only present if `process_values:` is configured)
+     └─ {PVName}                (Double)  one Float variable per configured process value
 ```
 
----
+Reason codes follow the taxonomy `FM_*` (failure modes, CRITICAL), `PV_*` (process-value threshold, HIGH), `CS_*` (cycle stops, WARNING), `MT_*` (maintenance, INFO) — see `src/simengine/engine/alarms.py`.
 
-## Per-Buffer Node Structure
+## Per-buffer node structure (`{Buffer}_StorageUnit/`)
 
 ```
-BufferN/                                          (StorageUnit under Resources/)
-  ├─ Level                                        (Int32, READ)
-  ├─ Capacity                                     (Int32, READ)
+{Buffer}_StorageUnit/
+  ├─ CurrentLevel   (Int32)
+  ├─ Capacity       (Int32)
   └─ Alarms/
-     ├─ ActiveAlarmCount                          (Int32, READ)
-     ├─ HighLevelWarningActive                    (Boolean, READ)
-     └─ LowLevelWarningActive                     (Boolean, READ)
+     ├─ ActiveAlarmCount           (Int32)
+     ├─ HighLevelWarningActive     (Boolean)  level >= capacity
+     └─ LowLevelWarningActive      (Boolean)  level == 0
 ```
 
----
+## Writes
 
-## Access Rights
+All variables are **read-only** during a run. `SimSpeedRatio` reflects the value the run was started with and cannot be changed via an OPC UA client at runtime; stop and restart the run (via REST, the UI, or an MCP tool) to change it.
 
-All OPC UA variables are **read-only** during a run.
+## Optional node groups
 
-`SetInterarrivalTime` (under `OperationsState/Controls/`) reflects the inter-arrival delay set when the simulation was started. It cannot be changed via OPC UA clients at runtime. Set it via the Web UI before starting a run.
+| Node group | Present when |
+|---|---|
+| `HealthState`, `HealthPercent` | station has a `health:` block |
+| `ProcessValues/` | station has a `process_values:` list |
+| `SupportFunctions/ShiftManagement/` | scenario has `shifts.schedule` configured |
 
-> **Removed in v2.6:** `CmdPauseLine` (runtime pause) was removed. Use the Web UI Stop button to end a run.
-
----
-
-## State Machine
-
-Machine `State` values (checked in priority order):
-
-```
-FAILED ─────────────────────────────── (health >= failed_health, repair countdown started)
-UNDER_REPAIR ───────────────────────── (health >= failed_health, repair countdown active)
-BLOCKED ────────────────────────────── (downstream buffer full)
-STARVED ────────────────────────────── (upstream buffer empty)
-DEGRADED ───────────────────────────── (health > 0 but < failed_health)
-PROCESSING ─────────────────────────── (has_part = true)
-IDLE ───────────────────────────────── (default)
-```
-
-With multi-state degradation, `failed_health = h_max` (the highest health state index). The DEGRADED state indicates the machine is operational but has begun degrading.
-
-> **Removed in v2.6:** `PAUSED` state and `CmdPauseLine` node were removed. There are exactly 7 states.
-
----
-
-## Alarm Severity Levels
-
-| Severity | Value | Triggers |
-|----------|-------|----------|
-| CRITICAL | 1000 | Machine failure |
-| MEDIUM | 500 | Quality alert (defect rate > 5%) |
-| LOW | 300 | Buffer high/low warnings |
-| INFO | 100 | Maintenance start/end |
-
----
-
-## Derivation Notes
-
-**Time accumulators** (`BlockedTime`, `StarvedTime`, `DownTime`, `ProcessingTime`, `IdleTime`) are maintained by the main loop, not Simantha internals. Each step, 1 second is added to the bucket matching the machine's previous state. They naturally exclude warm-up time.
-
-**OEE** recalculates every step using shift-relative deltas. Availability uses the main loop's `DownTime` accumulator (excludes warm-up), not Simantha's `machine.downtime`. Quality uses quality routing counters that only increment after warm-up, matching `parts_made`.
-
-**HealthState** comes directly from Simantha's Markov chain (`machine.health`). With multi-state degradation, MTTF per degradation step = configured MTTF / `failed_health`.
-
----
-
-## Recipe Node Structure
-
-The `Recipe/` node under `OperationsState/` tracks multi-segment recipe execution. All variables are always present in the address space but only populated when running with `--recipe`.
-
-```
-OperationsState/
-  └─ Recipe/
-     ├─ RecipeName                    (String)   Active recipe name ("" if none)
-     ├─ RecipeDescription             (String)   Recipe description
-     ├─ SegmentName                   (String)   Current segment name
-     ├─ SegmentIndex                  (Int32)    Current segment (1-based, 0 if inactive)
-     ├─ TotalSegments                 (Int32)    Total segments in recipe
-     ├─ SegmentTimeRemaining          (Double)   Countdown for duration-based segments
-     ├─ SegmentQuantityTarget         (Int32)    Target parts (0 if time-based)
-     ├─ SegmentQuantityProduced       (Int32)    Parts produced in current segment
-     ├─ SegmentStopMode               (String)   "quantity" or "duration"
-     ├─ ChangeoverState               (Boolean)  True during changeover period
-     ├─ LastChangeoverPlanned         (Double)   Last changeover planned duration (seconds)
-     └─ LastChangeoverActual          (Double)   Last changeover actual duration (seconds)
-```
-
-During a changeover between segments, `ChangeoverState = True` and `LineState = "CHANGEOVER"`. The `SegmentTimeRemaining` counts down during changeovers.
-
----
-
-## Browsing Nodes (Python Client)
-
-Navigate the ISA-95 hierarchy using browse paths:
+## Browsing (Python client)
 
 ```python
 from opcua import Client
 
-client = Client("opc.tcp://localhost:4840/simantha/")
+client = Client("opc.tcp://localhost:4840/simengine/")
 client.connect()
 
 root = client.get_objects_node()
-enterprise = root.get_child(["2:WeylandIndustries"])
-site = enterprise.get_child(["2:LV426_Colony"])
-area = site.get_child(["2:AtmosphereProcessor01"])
-equip = area.get_child(["2:Nostromo_BioProductPakaging_Equipment"])
-
-# Machine state
-resources = equip.get_child(["2:Resources"])
-machine1 = resources.get_child(["2:Machine1"])
-ops_state = machine1.get_child(["2:OperationsState"])
-state = ops_state.get_child(["2:State"])
+line = root.get_child(["2:Acme", "2:Plant1", "2:Area01", "2:Line1_Equipment"])
+press01 = line.get_child(["2:Resources", "2:Press01_Equipment"])
+state = press01.get_child(["2:OperationsState", "2:State"])
 print(state.get_value())  # "PROCESSING"
+
+oil_temp = press01.get_child(["2:ProcessValues", "2:OilTemp"])
+print(oil_temp.get_value())
 ```
 
----
-
-## Optional Node Groups
-
-These nodes only appear when enabled in the scenario config (`config/line_models.yaml`):
-
-| Node Group | Config Flag |
-|------------|------------|
-| `FailureModes/` | `enable_advanced_failures: true` |
-| `MaintenanceStrategy/` | `enable_advanced_failures: true` |
-| `SPC/` | `enable_spc: true` |
-| `QualityRouting/` | `quality_routing.enabled: true` |
-| `ShiftManagement/` | `shifts: schedule: [...]` |
-| `ScrapBinN/` | `scrap_sinks: [...]` |
-| `Recipe/` | `--recipe` CLI argument (always present, populated when active) |
-
----
-
-## ISA-95 Hierarchy Configuration
-
-Override the default hierarchy names in your scenario YAML:
-
-```yaml
-my_scenario:
-  enterprise: "AcmeCorp"
-  site: "PlantA"
-  area: "Assembly"
-  line_name: "Line1"
-  machines:
-    - name: M1
-      cycle_time: 1
-    # ...
-```
-
-This creates the OPC UA path:
-`Objects / AcmeCorp / PlantA / Assembly / Line1_Equipment / ...`
+Or resolve NodeIds via the knowledge graph instead of walking browse paths — `GET /api/v1/kg?type=ProcessValue` returns the exact `ns=2;s=...` NodeId for every configured process value alongside its SparkplugB, MQTT, and REST addresses. See [`docs/ai_interface.md`](ai_interface.md).
