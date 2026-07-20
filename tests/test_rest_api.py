@@ -218,6 +218,36 @@ class TestKGPreview:
         assert r.status_code == 400
 
 
+class TestScenarioValidateEndpoint:
+    def test_valid_draft(self, client):
+        cfg = client.get("/api/v1/scenarios/two_station_minimal").get_json()
+        r = client.post("/api/v1/scenarios/validate", json=cfg)
+        assert r.status_code == 200
+        assert r.get_json() == {"valid": True}
+
+    def test_invalid_draft_400(self, client):
+        bad = {"stations": [{"name": "only_one", "cycle_time": 1}], "buffers": []}
+        r = client.post("/api/v1/scenarios/validate", json=bad)
+        assert r.status_code == 400
+        body = r.get_json()
+        assert body["valid"] is False
+        assert "at least 2 stations" in body["error"]
+
+    def test_never_writes_to_disk(self, client):
+        from simengine.config.loader import get_config_path
+        path = get_config_path()
+        before = path.read_text()
+        before_mtime = path.stat().st_mtime_ns
+
+        bad = {"stations": [{"name": "x", "cycle_time": 1}], "buffers": []}
+        client.post("/api/v1/scenarios/validate", json=bad)
+        good = client.get("/api/v1/scenarios/two_station_minimal").get_json()
+        client.post("/api/v1/scenarios/validate", json=good)
+
+        assert path.read_text() == before
+        assert path.stat().st_mtime_ns == before_mtime
+
+
 class TestMisc:
     def test_healthz(self, client):
         data = client.get("/healthz").get_json()

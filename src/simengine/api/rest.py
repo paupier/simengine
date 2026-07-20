@@ -148,6 +148,17 @@ def create_api_blueprint(run_manager: RunManager) -> Blueprint:
         _dump_scenarios_file(data, path)
         return jsonify({"created": name}), 201
 
+    @api.post("/api/v1/scenarios/validate")
+    def validate_scenario_draft():
+        body = request.get_json(force=True, silent=True)
+        if not isinstance(body, dict):
+            return jsonify({"valid": False, "error": "body must be a JSON object"}), 400
+        try:
+            validate_serial_topology(body)
+        except ValueError as exc:
+            return jsonify({"valid": False, "error": str(exc)}), 400
+        return jsonify({"valid": True})
+
     # ----- recipes -----
 
     @api.get("/api/v1/recipes")
