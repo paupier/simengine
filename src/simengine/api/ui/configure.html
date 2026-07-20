@@ -146,7 +146,7 @@
 
   function bindList(listId, names, onPick) {
     const ul = $(listId);
-    ul.innerHTML = names.map(n => `<li data-name="${n}">${n}</li>`).join("");
+    ul.innerHTML = names.map(n => `<li data-name="${esc(n)}">${esc(n)}</li>`).join("");
     ul.querySelectorAll("li").forEach(li => li.onclick = () => {
       ul.querySelectorAll("li").forEach(x => x.classList.remove("active"));
       li.classList.add("active");
@@ -274,11 +274,11 @@
 
     $("settings-body").innerHTML = `
       <div class="row">
-        <label>Enterprise <input type="text" id="s-enterprise" value="${d.enterprise || ""}"></label>
-        <label>Site <input type="text" id="s-site" value="${d.site || ""}"></label>
-        <label>Area <input type="text" id="s-area" value="${d.area || ""}"></label>
-        <label>Line name <input type="text" id="s-line-name" value="${d.line_name || ""}"></label>
-        <label>Warm-up (s) <input type="number" id="s-warmup" value="${d.warm_up_time || 0}"></label>
+        <label>Enterprise <input type="text" id="s-enterprise" value="${esc(d.enterprise || "")}"></label>
+        <label>Site <input type="text" id="s-site" value="${esc(d.site || "")}"></label>
+        <label>Area <input type="text" id="s-area" value="${esc(d.area || "")}"></label>
+        <label>Line name <input type="text" id="s-line-name" value="${esc(d.line_name || "")}"></label>
+        <label>Warm-up (s) <input type="number" id="s-warmup" value="${esc(d.warm_up_time || 0)}"></label>
       </div>
       <div class="row">
         <label>Historians
@@ -286,10 +286,10 @@
             const name = k.replace("historian-", "");
             return `
             <label style="flex-direction:row;gap:4px;display:inline-flex;align-items:center">
-              <input type="checkbox" class="s-historian" data-key="${name}"
+              <input type="checkbox" class="s-historian" data-key="${esc(name)}"
                 ${pluginStatus[k] ? "" : "disabled"}
                 ${historianList.includes(name) ? "checked" : ""}>
-              ${name}${pluginStatus[k] ? "" : " (not installed)"}
+              ${esc(name)}${pluginStatus[k] ? "" : " (not installed)"}
             </label>`;
           }).join("")}
           </span>
@@ -300,9 +300,9 @@
         <table class="shifts" id="shifts-table"><tbody>
           ${shifts.map((sh, i) => `
             <tr data-i="${i}">
-              <td><input type="text" class="sh-name" value="${sh.name}"></td>
-              <td><input type="number" class="sh-duration" value="${sh.duration}"> s</td>
-              <td><input type="number" class="sh-offset" value="${sh.start_offset}"> offset</td>
+              <td><input type="text" class="sh-name" value="${esc(sh.name)}"></td>
+              <td><input type="number" class="sh-duration" value="${esc(sh.duration)}"> s</td>
+              <td><input type="number" class="sh-offset" value="${esc(sh.start_offset)}"> offset</td>
               <td><button class="quiet sh-remove">Remove</button></td>
             </tr>`).join("")}
         </tbody></table>
