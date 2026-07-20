@@ -347,3 +347,31 @@ class TestSnapshotIntegration:
         assert d["buffers"]["B1"]["capacity"] == 4
         assert 0 <= d["stations"]["S1"]["cycle_phase"] <= 1.0
         assert d["step_count"] == 100
+
+
+class TestEngineBoundedMemory:
+    """Regression for the soak-run residual leak: the engine must hold no
+    per-step-growing containers over arbitrarily long runs."""
+
+    @staticmethod
+    def _container_sizes(eng):
+        sizes = {}
+        for attr, value in vars(eng.alarms).items():
+            if isinstance(value, (list, dict)):
+                sizes[f"alarms.{attr}"] = len(value)
+        return sizes
+
+    def test_alarm_registry_bounded_under_churn(self):
+        # stochastic_config exercises FM raise/clear, MT_REPAIR, and CS churn
+        eng = LineEngine(stochastic_config(), "test", seed=3, run_id="bounded")
+        for _ in range(2_000):
+            eng.step()
+        sizes_2k = self._container_sizes(eng)
+        for _ in range(8_000):
+            eng.step()
+        sizes_10k = self._container_sizes(eng)
+        for name, size in sizes_10k.items():
+            # active set is bounded by (stations x codes); nothing may scale
+            # with elapsed steps
+            assert size <= max(sizes_2k.get(name, 0), 32), (
+                f"{name} grew with run length: {sizes_2k.get(name)} -> {size}")

@@ -29,7 +29,8 @@ class TestExponentialConvergence:
         )
 
         # Sample time-to-failure
-        samples = [fm.sample_time_to_failure() for _ in range(N_SAMPLES)]
+        rng = np.random.default_rng(0)
+        samples = [fm.sample_time_to_failure(random_state=rng) for _ in range(N_SAMPLES)]
         sample_mean = np.mean(samples)
         sample_std = np.std(samples)
 
@@ -61,7 +62,8 @@ class TestExponentialConvergence:
             mttr_config={"distribution": "constant", "value": 5}
         )
 
-        samples = [fm.sample_time_to_failure() for _ in range(N_SAMPLES)]
+        rng = np.random.default_rng(0)
+        samples = [fm.sample_time_to_failure(random_state=rng) for _ in range(N_SAMPLES)]
         sample_mean = np.mean(samples)
 
         # Allow 10% tolerance
@@ -84,7 +86,8 @@ class TestWeibullBathtubCurve:
         )
 
         N_SAMPLES = 2000
-        samples = [fm.sample_time_to_failure() for _ in range(N_SAMPLES)]
+        rng = np.random.default_rng(0)
+        samples = [fm.sample_time_to_failure(random_state=rng) for _ in range(N_SAMPLES)]
 
         # Divide into time periods
         scale = 500
@@ -124,7 +127,8 @@ class TestWeibullBathtubCurve:
         )
 
         N_SAMPLES = 2000
-        samples = [fm.sample_time_to_failure() for _ in range(N_SAMPLES)]
+        rng = np.random.default_rng(0)
+        samples = [fm.sample_time_to_failure(random_state=rng) for _ in range(N_SAMPLES)]
 
         scale = 500
         early_period = (0, scale * 0.5)
@@ -158,7 +162,8 @@ class TestLognormalRepairTime:
         )
 
         N_SAMPLES = 1000
-        samples = [fm.sample_repair_time() for _ in range(N_SAMPLES)]
+        rng = np.random.default_rng(0)
+        samples = [fm.sample_repair_time(random_state=rng) for _ in range(N_SAMPLES)]
 
         sample_mean = np.mean(samples)
         sample_median = np.median(samples)
@@ -188,7 +193,8 @@ class TestLognormalRepairTime:
         )
 
         # Sample many times
-        samples = [fm.sample_repair_time() for _ in range(1000)]
+        rng = np.random.default_rng(0)
+        samples = [fm.sample_repair_time(random_state=rng) for _ in range(1000)]
 
         # All must be positive
         assert all(s > 0 for s in samples)
@@ -209,7 +215,8 @@ class TestNormalTruncation:
         )
 
         # Sample many times
-        samples = [fm.sample_time_to_failure() for _ in range(1000)]
+        rng = np.random.default_rng(0)
+        samples = [fm.sample_time_to_failure(random_state=rng) for _ in range(1000)]
 
         # All must be non-negative (truncated at 0)
         assert all(s >= 0 for s in samples), "Truncated normal must be non-negative"
@@ -238,7 +245,8 @@ class TestUniformDistribution:
             mttr_config={"distribution": "constant", "value": 5}
         )
 
-        samples = [fm.sample_time_to_failure() for _ in range(1000)]
+        rng = np.random.default_rng(0)
+        samples = [fm.sample_time_to_failure(random_state=rng) for _ in range(1000)]
 
         # All samples must be in range
         assert all(MIN_VAL <= s <= MAX_VAL for s in samples)
@@ -260,7 +268,8 @@ class TestUniformDistribution:
             mttr_config={"distribution": "constant", "value": 5}
         )
 
-        samples = [fm.sample_time_to_failure() for _ in range(1000)]
+        rng = np.random.default_rng(0)
+        samples = [fm.sample_time_to_failure(random_state=rng) for _ in range(1000)]
 
         # Divide into 10 bins
         bins = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
@@ -362,8 +371,9 @@ class TestCompetingRisksStatistics:
         fast_count = 0
         slow_count = 0
 
+        rng = np.random.default_rng(0)
         for _ in range(N_SAMPLES):
-            time, mode = manager.sample_next_failure()
+            time, mode = manager.sample_next_failure(random_state=rng)
             if mode == "fast":
                 fast_count += 1
             else:

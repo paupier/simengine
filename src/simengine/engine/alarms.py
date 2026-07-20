@@ -6,8 +6,10 @@ Codes follow the taxonomy:
   CS_*  cycle stops          (WARNING)
   MT_*  maintenance          (INFO)
 
-The active set is edge-detected: raise/clear events are emitted exactly once
-per transition and drained by the historian layer.
+The registry holds only the *active* set. Historian raise/clear events are
+edge-detected downstream by diffing consecutive snapshots
+(events/collect.py) — the registry keeps no event log of its own, so its
+memory footprint is bounded by the number of concurrently active alarms.
 """
 from typing import Dict, List, Optional, Tuple
 
@@ -55,7 +57,6 @@ class AlarmRegistry:
 
     def __init__(self):
         self._active: Dict[Tuple[str, str], ActiveAlarm] = {}
-        self._events: List[Tuple[str, ActiveAlarm]] = []  # ("RAISE"|"CLEAR", alarm)
 
     def raise_(self, code: str, station: str, severity: str, text: str,
                sim_time: float) -> None:
@@ -65,15 +66,12 @@ class AlarmRegistry:
         if existing is not None:
             existing.text = text
             return
-        alarm = ActiveAlarm(code=code, severity=severity, source=station,
-                            text=text, activated_at=sim_time)
-        self._active[key] = alarm
-        self._events.append(("RAISE", alarm))
+        self._active[key] = ActiveAlarm(code=code, severity=severity,
+                                        source=station, text=text,
+                                        activated_at=sim_time)
 
     def clear(self, code: str, station: str) -> None:
-        alarm = self._active.pop((station, code), None)
-        if alarm is not None:
-            self._events.append(("CLEAR", alarm))
+        self._active.pop((station, code), None)
 
     def is_active(self, code: str, station: str) -> bool:
         return (station, code) in self._active
@@ -88,7 +86,3 @@ class AlarmRegistry:
             return None
         return max(alarms, key=lambda a: (SEVERITY_ORDER.get(a.severity, -1),
                                           a.activated_at))
-
-    def drain_events(self) -> List[Tuple[str, ActiveAlarm]]:
-        events, self._events = self._events, []
-        return events
