@@ -257,6 +257,11 @@ class TestMisc:
         data = client.get("/api/v1/plugins").get_json()
         assert "historian-influx" in data
 
+    def test_static_js_served(self, client):
+        r = client.get("/static/kg-graph.js")
+        assert r.status_code == 200
+        assert b"renderKGGraph" in r.data
+
     def test_ui_pages_render(self, client):
         for path in ("/", "/configure", "/comms"):
             r = client.get(path)

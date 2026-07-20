@@ -306,7 +306,7 @@ def create_app(run_manager: RunManager) -> Flask:
     from simengine.api.chat import create_chat_blueprint
     from simengine.api.tools import ToolRegistry
 
-    app = Flask(__name__, template_folder="ui")
+    app = Flask(__name__, template_folder="ui", static_folder="ui/static", static_url_path="/static")
     app.secret_key = secrets.token_hex(32)  # per-process; chat session cookie
     app.register_blueprint(create_api_blueprint(run_manager))
     app.register_blueprint(create_chat_blueprint(ToolRegistry(run_manager)))
