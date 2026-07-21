@@ -157,6 +157,131 @@
     container.appendChild(section);
   }
 
+  function blankFailureMode(name) {
+    return {
+      name: name, type: "random",
+      mttf: { distribution: "exponential", mean: 10000 },
+      mttr: { distribution: "lognormal", mean: 300, std: 60 },
+    };
+  }
+
+  function renderFailureModeForm(container, fm, station, index, rerender) {
+    container.innerHTML = "";
+    container.appendChild(textField("name", fm, "name", "failure_mode_" + index));
+    container.appendChild(textField("type", fm, "type", "random"));
+
+    const mttfField = document.createElement("div");
+    mttfField.className = "fe-field";
+    mttfField.innerHTML = "<span>mttf</span>";
+    const mttfPicker = document.createElement("div");
+    mttfField.appendChild(mttfPicker);
+    createDistributionPicker(mttfPicker, fm.mttf, (cfg) => { fm.mttf = cfg; });
+    container.appendChild(mttfField);
+
+    const mttrField = document.createElement("div");
+    mttrField.className = "fe-field";
+    mttrField.innerHTML = "<span>mttr</span>";
+    const mttrPicker = document.createElement("div");
+    mttrField.appendChild(mttrPicker);
+    createDistributionPicker(mttrPicker, fm.mttr, (cfg) => { fm.mttr = cfg; });
+    container.appendChild(mttrField);
+
+    const removeBtn = document.createElement("button");
+    removeBtn.className = "quiet fe-remove-btn";
+    removeBtn.textContent = "Remove";
+    removeBtn.onclick = () => { station.failure_modes.splice(index, 1); rerender(); };
+    container.appendChild(removeBtn);
+  }
+
+  function renderFailureModes(container, station, rerender) {
+    container.innerHTML = "";
+    station.failure_modes = station.failure_modes || [];
+    const section = document.createElement("div");
+    section.className = "fe-sub-section";
+    section.innerHTML = "<h4>Failure Modes</h4>";
+
+    station.failure_modes.forEach((fm, i) => {
+      const row = document.createElement("div");
+      row.className = "fe-sub-row";
+      section.appendChild(row);
+      renderFailureModeForm(row, fm, station, i, rerender);
+    });
+
+    const addBtn = document.createElement("button");
+    addBtn.className = "quiet fe-add-btn";
+    addBtn.textContent = "+ Add failure mode";
+    addBtn.onclick = () => {
+      station.failure_modes.push(blankFailureMode("failure_mode_" + (station.failure_modes.length + 1)));
+      rerender();
+    };
+    section.appendChild(addBtn);
+
+    container.appendChild(section);
+  }
+
+  function blankCycleStop(reason) {
+    return {
+      reason: reason,
+      mtbe: { distribution: "exponential", mean: 900 },
+      duration: { distribution: "lognormal", mean: 25, std: 10 },
+    };
+  }
+
+  function renderCycleStopForm(container, cs, station, index, rerender) {
+    container.innerHTML = "";
+    container.appendChild(textField("reason", cs, "reason", "CS_" + index));
+
+    const mtbeField = document.createElement("div");
+    mtbeField.className = "fe-field";
+    mtbeField.innerHTML = "<span>mtbe</span>";
+    const mtbePicker = document.createElement("div");
+    mtbeField.appendChild(mtbePicker);
+    createDistributionPicker(mtbePicker, cs.mtbe, (cfg) => { cs.mtbe = cfg; });
+    container.appendChild(mtbeField);
+
+    const durField = document.createElement("div");
+    durField.className = "fe-field";
+    durField.innerHTML = "<span>duration</span>";
+    const durPicker = document.createElement("div");
+    durField.appendChild(durPicker);
+    createDistributionPicker(durPicker, cs.duration, (cfg) => { cs.duration = cfg; });
+    container.appendChild(durField);
+
+    const removeBtn = document.createElement("button");
+    removeBtn.className = "quiet fe-remove-btn";
+    removeBtn.textContent = "Remove";
+    removeBtn.onclick = () => { station.cycle_stops.splice(index, 1); rerender(); };
+    container.appendChild(removeBtn);
+  }
+
+  function renderCycleStops(container, station, rerender) {
+    container.innerHTML = "";
+    station.cycle_stops = station.cycle_stops || [];
+    const section = document.createElement("div");
+    section.className = "fe-sub-section";
+    section.innerHTML = "<h4>Cycle Stops</h4>";
+
+    station.cycle_stops.forEach((cs, i) => {
+      const row = document.createElement("div");
+      row.className = "fe-sub-row";
+      section.appendChild(row);
+      renderCycleStopForm(row, cs, station, i, rerender);
+    });
+
+    const addBtn = document.createElement("button");
+    addBtn.className = "quiet fe-add-btn";
+    addBtn.textContent = "+ Add cycle stop";
+    addBtn.onclick = () => {
+      station.cycle_stops.push(blankCycleStop("CS_" + (station.cycle_stops.length + 1)));
+      rerender();
+    };
+    section.appendChild(addBtn);
+
+    container.appendChild(section);
+  }
+
   window.entityForms = window.entityForms || {};
   window.entityForms.renderProcessValues = renderProcessValues;
+  window.entityForms.renderFailureModes = renderFailureModes;
+  window.entityForms.renderCycleStops = renderCycleStops;
 })();

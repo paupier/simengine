@@ -577,6 +577,14 @@
     const pvContainer = document.createElement("div");
     body.appendChild(pvContainer);
     entityForms.renderProcessValues(pvContainer, st, renderEditMode);
+
+    const fmContainer = document.createElement("div");
+    body.appendChild(fmContainer);
+    entityForms.renderFailureModes(fmContainer, st, renderEditMode);
+
+    const csContainer = document.createElement("div");
+    body.appendChild(csContainer);
+    entityForms.renderCycleStops(csContainer, st, renderEditMode);
   }
 
   async function loadEditScenarioList() {
