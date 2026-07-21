@@ -25,6 +25,7 @@
       esc(obj[key] != null ? obj[key] : initial)}">`;
     wrap.querySelector("input").oninput = (e) => {
       obj[key] = e.target.value === "" ? initial : parseFloat(e.target.value);
+      scheduleValidate();
     };
     return wrap;
   }
@@ -33,7 +34,7 @@
     const wrap = document.createElement("label");
     wrap.className = "fe-field";
     wrap.innerHTML = `${esc(label)} <input type="text" value="${esc(obj[key] != null ? obj[key] : initial)}">`;
-    wrap.querySelector("input").oninput = (e) => { obj[key] = e.target.value; };
+    wrap.querySelector("input").oninput = (e) => { obj[key] = e.target.value; scheduleValidate(); };
     return wrap;
   }
 
@@ -49,13 +50,14 @@
     function draw() {
       pickerDiv.innerHTML = "";
       if (obj[key]) {
-        createDistributionPicker(pickerDiv, obj[key], (cfg) => { obj[key] = cfg; });
+        createDistributionPicker(pickerDiv, obj[key], (cfg) => { obj[key] = cfg; scheduleValidate(); });
       }
     }
     cb.querySelector("input").onchange = (e) => {
       if (e.target.checked) obj[key] = { distribution: "normal", mean: 0, std: 1 };
       else delete obj[key];
       draw();
+      scheduleValidate();
     };
     draw();
     return wrap;
@@ -97,7 +99,7 @@
       peakField.innerHTML = "<span>peak</span>";
       const peakPicker = document.createElement("div");
       peakField.appendChild(peakPicker);
-      createDistributionPicker(peakPicker, pv.peak, (cfg) => { pv.peak = cfg; });
+      createDistributionPicker(peakPicker, pv.peak, (cfg) => { pv.peak = cfg; scheduleValidate(); });
       container.appendChild(peakField);
     } else if (pv.profile === "first_order_lag") {
       ["setpoint", "tau", "initial", "ambient"].forEach(f =>
@@ -109,8 +111,8 @@
       rangeField.innerHTML = `range
         <input type="number" step="any" class="r-lo" value="${esc(r[0])}" style="width:70px">
         <input type="number" step="any" class="r-hi" value="${esc(r[1])}" style="width:70px">`;
-      rangeField.querySelector(".r-lo").oninput = (e) => { pv.range = [parseFloat(e.target.value) || 0, (pv.range || r)[1]]; };
-      rangeField.querySelector(".r-hi").oninput = (e) => { pv.range = [(pv.range || r)[0], parseFloat(e.target.value) || 0]; };
+      rangeField.querySelector(".r-lo").oninput = (e) => { pv.range = [parseFloat(e.target.value) || 0, (pv.range || r)[1]]; scheduleValidate(); };
+      rangeField.querySelector(".r-hi").oninput = (e) => { pv.range = [(pv.range || r)[0], parseFloat(e.target.value) || 0]; scheduleValidate(); };
       container.appendChild(rangeField);
     } else if (pv.profile === "constant_noise") {
       container.appendChild(numField("mean", pv, "mean", 0));
@@ -175,7 +177,7 @@
     mttfField.innerHTML = "<span>mttf</span>";
     const mttfPicker = document.createElement("div");
     mttfField.appendChild(mttfPicker);
-    createDistributionPicker(mttfPicker, fm.mttf, (cfg) => { fm.mttf = cfg; });
+    createDistributionPicker(mttfPicker, fm.mttf, (cfg) => { fm.mttf = cfg; scheduleValidate(); });
     container.appendChild(mttfField);
 
     const mttrField = document.createElement("div");
@@ -183,7 +185,7 @@
     mttrField.innerHTML = "<span>mttr</span>";
     const mttrPicker = document.createElement("div");
     mttrField.appendChild(mttrPicker);
-    createDistributionPicker(mttrPicker, fm.mttr, (cfg) => { fm.mttr = cfg; });
+    createDistributionPicker(mttrPicker, fm.mttr, (cfg) => { fm.mttr = cfg; scheduleValidate(); });
     container.appendChild(mttrField);
 
     const removeBtn = document.createElement("button");
@@ -236,7 +238,7 @@
     mtbeField.innerHTML = "<span>mtbe</span>";
     const mtbePicker = document.createElement("div");
     mtbeField.appendChild(mtbePicker);
-    createDistributionPicker(mtbePicker, cs.mtbe, (cfg) => { cs.mtbe = cfg; });
+    createDistributionPicker(mtbePicker, cs.mtbe, (cfg) => { cs.mtbe = cfg; scheduleValidate(); });
     container.appendChild(mtbeField);
 
     const durField = document.createElement("div");
@@ -244,7 +246,7 @@
     durField.innerHTML = "<span>duration</span>";
     const durPicker = document.createElement("div");
     durField.appendChild(durPicker);
-    createDistributionPicker(durPicker, cs.duration, (cfg) => { cs.duration = cfg; });
+    createDistributionPicker(durPicker, cs.duration, (cfg) => { cs.duration = cfg; scheduleValidate(); });
     container.appendChild(durField);
 
     const removeBtn = document.createElement("button");

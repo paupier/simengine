@@ -91,6 +91,10 @@
   .fe-sub-row .fe-sub-row-head { display: flex; justify-content: space-between; align-items: center; }
   .fe-remove-btn, .fe-add-btn { font-size: 10px; padding: 3px 7px; }
   .fe-add-station { min-width: 90px; align-self: center; margin: 0 10px; }
+
+  #edit-validation { margin: 10px 0; }
+  #edit-validation.ok { color: var(--st-processing); }
+  #edit-validation.err { color: var(--st-failed); }
 </style>
 {% endblock %}
 {% block content %}
@@ -122,6 +126,7 @@
       <div id="settings-body"></div>
     </details>
     <div id="flow-editor"></div>
+    <div class="msg" id="edit-validation" hidden></div>
   </div>
 
   <div id="pane-raw" class="mode-pane">
@@ -341,9 +346,9 @@
 
     ["s-enterprise", "s-site", "s-area", "s-line-name"].forEach(id => {
       const key = id.replace("s-", "").replace("-name", "_name");
-      $(id).oninput = () => { d[key] = $(id).value; };
+      $(id).oninput = () => { d[key] = $(id).value; scheduleValidate(); };
     });
-    $("s-warmup").oninput = () => { d.warm_up_time = parseFloat($("s-warmup").value) || 0; };
+    $("s-warmup").oninput = () => { d.warm_up_time = parseFloat($("s-warmup").value) || 0; scheduleValidate(); };
 
     document.querySelectorAll(".s-historian").forEach(cb => {
       cb.onchange = () => {
@@ -352,19 +357,21 @@
         const idx = d.historians.indexOf(key);
         if (cb.checked && idx === -1) d.historians.push(key);
         if (!cb.checked && idx !== -1) d.historians.splice(idx, 1);
+        scheduleValidate();
       };
     });
 
     document.querySelectorAll("#shifts-table tr").forEach(tr => {
       const i = parseInt(tr.dataset.i, 10);
-      tr.querySelector(".sh-name").oninput = (e) => { shifts[i].name = e.target.value; };
-      tr.querySelector(".sh-duration").oninput = (e) => { shifts[i].duration = parseFloat(e.target.value) || 0; };
-      tr.querySelector(".sh-offset").oninput = (e) => { shifts[i].start_offset = parseFloat(e.target.value) || 0; };
-      tr.querySelector(".sh-remove").onclick = () => { shifts.splice(i, 1); d.shifts.schedule = shifts; renderSettingsPanel(); };
+      tr.querySelector(".sh-name").oninput = (e) => { shifts[i].name = e.target.value; scheduleValidate(); };
+      tr.querySelector(".sh-duration").oninput = (e) => { shifts[i].duration = parseFloat(e.target.value) || 0; scheduleValidate(); };
+      tr.querySelector(".sh-offset").oninput = (e) => { shifts[i].start_offset = parseFloat(e.target.value) || 0; scheduleValidate(); };
+      tr.querySelector(".sh-remove").onclick = () => { shifts.splice(i, 1); d.shifts.schedule = shifts; renderSettingsPanel(); scheduleValidate(); };
     });
     $("sh-add").onclick = () => {
       d.shifts.schedule = shifts.concat([blankShift()]);
       renderSettingsPanel();
+      scheduleValidate();
     };
   }
 
@@ -373,8 +380,40 @@
     renderSettingsPanel();
     // flow editor body is populated starting in Task 6
     if (window.renderFlowEditor) window.renderFlowEditor($("flow-editor"), EDIT_DRAFT);
+    scheduleValidate();
   }
   window.renderEditMode = renderEditMode;
+
+  // ---- Inline validation (debounced, race-safe) ----
+  let validateTimer = null;
+  let validateRequestId = 0;
+
+  function scheduleValidate() {
+    if (validateTimer) clearTimeout(validateTimer);
+    validateTimer = setTimeout(runValidate, 500);
+  }
+
+  async function runValidate() {
+    if (!EDIT_DRAFT) return;
+    const myId = ++validateRequestId;
+    try {
+      const r = await fetch("/api/v1/scenarios/validate", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(EDIT_DRAFT),
+      });
+      const data = await r.json();
+      if (myId !== validateRequestId) return;  // stale response, discard
+      const el = $("edit-validation");
+      el.hidden = false;
+      if (data.valid) {
+        el.textContent = "Valid.";
+        el.className = "msg ok";
+      } else {
+        el.textContent = data.error || "Invalid configuration.";
+        el.className = "msg err";
+      }
+    } catch (e) { /* network hiccup — leave last banner state */ }
+  }
 
   // ---- Flow-line editor: stations, buffers, health ----
   // Keyed by station object identity (not array index) so removing a station
@@ -439,8 +478,8 @@
         bw.innerHTML = `<label class="fe-field" style="font-size:10px">name
           <input type="text" value="${esc(b.name)}" class="fe-buf-name"></label>
           <input type="number" value="${esc(b.capacity)}" class="fe-buf-cap">`;
-        bw.querySelector(".fe-buf-name").oninput = (e) => { b.name = e.target.value; };
-        bw.querySelector(".fe-buf-cap").oninput = (e) => { b.capacity = parseInt(e.target.value, 10) || 1; };
+        bw.querySelector(".fe-buf-name").oninput = (e) => { b.name = e.target.value; scheduleValidate(); };
+        bw.querySelector(".fe-buf-cap").oninput = (e) => { b.capacity = parseInt(e.target.value, 10) || 1; scheduleValidate(); };
         wrap.appendChild(bw);
       }
     });
@@ -470,7 +509,7 @@
     const nameField = document.createElement("label");
     nameField.className = "fe-field";
     nameField.innerHTML = `name <input type="text" class="fe-st-name" value="${esc(st.name)}">`;
-    nameField.querySelector("input").oninput = (e) => { st.name = e.target.value; };
+    nameField.querySelector("input").oninput = (e) => { st.name = e.target.value; scheduleValidate(); };
     body.appendChild(nameField);
 
     const cycleField = document.createElement("label");
@@ -494,6 +533,7 @@
         st.cycle_time = parseFloat(valInput.value) || 1;
         delete st.target_ppm;
       }
+      scheduleValidate();
     }
     modeSel.onchange = () => { applyCycleMode(); renderEditMode(); };
     valInput.oninput = applyCycleMode;
@@ -503,7 +543,7 @@
     defectField.className = "fe-field";
     defectField.innerHTML = `defect_rate <input type="number" step="any" class="fe-defect"
       value="${esc(st.defect_rate != null ? st.defect_rate : 0)}">`;
-    defectField.querySelector("input").oninput = (e) => { st.defect_rate = parseFloat(e.target.value) || 0; };
+    defectField.querySelector("input").oninput = (e) => { st.defect_rate = parseFloat(e.target.value) || 0; scheduleValidate(); };
     body.appendChild(defectField);
 
     const removeBtn = document.createElement("button");
@@ -536,21 +576,21 @@
       const hMaxField = document.createElement("label");
       hMaxField.className = "fe-field";
       hMaxField.innerHTML = `h_max <input type="number" class="fe-h-hmax" value="${esc(h.h_max != null ? h.h_max : 1)}">`;
-      hMaxField.querySelector("input").oninput = (e) => { h.h_max = parseInt(e.target.value, 10) || 1; };
+      hMaxField.querySelector("input").oninput = (e) => { h.h_max = parseInt(e.target.value, 10) || 1; scheduleValidate(); };
       fieldsDiv.appendChild(hMaxField);
 
       const pDegField = document.createElement("label");
       pDegField.className = "fe-field";
       pDegField.innerHTML = `p_degrade <input type="number" step="any" class="fe-h-pdeg"
         value="${esc(h.p_degrade != null ? h.p_degrade : 0.001)}">`;
-      pDegField.querySelector("input").oninput = (e) => { h.p_degrade = parseFloat(e.target.value) || 0; };
+      pDegField.querySelector("input").oninput = (e) => { h.p_degrade = parseFloat(e.target.value) || 0; scheduleValidate(); };
       fieldsDiv.appendChild(pDegField);
 
       const cbmField = document.createElement("label");
       cbmField.className = "fe-field";
       cbmField.innerHTML = `cbm_threshold <input type="number" class="fe-h-cbm"
         value="${esc(h.cbm_threshold != null ? h.cbm_threshold : (h.h_max || 1))}">`;
-      cbmField.querySelector("input").oninput = (e) => { h.cbm_threshold = parseInt(e.target.value, 10) || 1; };
+      cbmField.querySelector("input").oninput = (e) => { h.cbm_threshold = parseInt(e.target.value, 10) || 1; scheduleValidate(); };
       fieldsDiv.appendChild(cbmField);
 
       const mttrField = document.createElement("div");
@@ -558,7 +598,7 @@
       mttrField.innerHTML = `<span>mttr</span>`;
       const mttrPicker = document.createElement("div");
       mttrField.appendChild(mttrPicker);
-      createDistributionPicker(mttrPicker, h.mttr, (cfg) => { h.mttr = cfg; });
+      createDistributionPicker(mttrPicker, h.mttr, (cfg) => { h.mttr = cfg; scheduleValidate(); });
       fieldsDiv.appendChild(mttrField);
     }
     renderHealthFields();
