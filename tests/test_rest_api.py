@@ -187,6 +187,67 @@ class TestRunLifecycle:
         assert client.get("/api/v1/state").status_code == 404
 
 
+class TestKGPreview:
+    def test_preview_matches_scenario_stations(self, client):
+        cfg = client.get("/api/v1/scenarios/demo_line").get_json()
+        r = client.post("/api/v1/kg/preview", json={"config": cfg, "name": "demo_line"})
+        assert r.status_code == 200
+        data = r.get_json()
+        station_names = {n["name"] for n in data["nodes"] if n["type"] == "Station"}
+        assert station_names == {"Press01", "Weld02", "Pack03"}
+
+    def test_preview_requires_no_active_run(self, client):
+        # No run has been started anywhere in this test — proves the pure-function path.
+        cfg = client.get("/api/v1/scenarios/two_station_minimal").get_json()
+        r = client.post("/api/v1/kg/preview", json={"config": cfg})
+        assert r.status_code == 200
+        assert len(r.get_json()["nodes"]) > 0
+
+    def test_preview_deterministic(self, client):
+        cfg = client.get("/api/v1/scenarios/demo_line").get_json()
+        r1 = client.post("/api/v1/kg/preview", json={"config": cfg, "name": "x"})
+        r2 = client.post("/api/v1/kg/preview", json={"config": cfg, "name": "x"})
+        assert r1.get_json() == r2.get_json()
+
+    def test_preview_missing_config_400(self, client):
+        r = client.post("/api/v1/kg/preview", json={})
+        assert r.status_code == 400
+
+    def test_preview_invalid_config_400(self, client):
+        r = client.post("/api/v1/kg/preview", json={"config": {"stations": "not-a-list"}})
+        assert r.status_code == 400
+
+
+class TestScenarioValidateEndpoint:
+    def test_valid_draft(self, client):
+        cfg = client.get("/api/v1/scenarios/two_station_minimal").get_json()
+        r = client.post("/api/v1/scenarios/validate", json=cfg)
+        assert r.status_code == 200
+        assert r.get_json() == {"valid": True}
+
+    def test_invalid_draft_400(self, client):
+        bad = {"stations": [{"name": "only_one", "cycle_time": 1}], "buffers": []}
+        r = client.post("/api/v1/scenarios/validate", json=bad)
+        assert r.status_code == 400
+        body = r.get_json()
+        assert body["valid"] is False
+        assert "at least 2 stations" in body["error"]
+
+    def test_never_writes_to_disk(self, client):
+        from simengine.config.loader import get_config_path
+        path = get_config_path()
+        before = path.read_text()
+        before_mtime = path.stat().st_mtime_ns
+
+        bad = {"stations": [{"name": "x", "cycle_time": 1}], "buffers": []}
+        client.post("/api/v1/scenarios/validate", json=bad)
+        good = client.get("/api/v1/scenarios/two_station_minimal").get_json()
+        client.post("/api/v1/scenarios/validate", json=good)
+
+        assert path.read_text() == before
+        assert path.stat().st_mtime_ns == before_mtime
+
+
 class TestMisc:
     def test_healthz(self, client):
         data = client.get("/healthz").get_json()
@@ -195,6 +256,11 @@ class TestMisc:
     def test_plugins(self, client):
         data = client.get("/api/v1/plugins").get_json()
         assert "historian-influx" in data
+
+    def test_static_js_served(self, client):
+        r = client.get("/static/kg-graph.js")
+        assert r.status_code == 200
+        assert b"renderKGGraph" in r.data
 
     def test_ui_pages_render(self, client):
         for path in ("/", "/configure", "/comms"):

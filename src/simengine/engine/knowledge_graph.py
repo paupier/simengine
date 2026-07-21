@@ -163,11 +163,14 @@ def build_knowledge_graph(config: dict, scenario_name: str,
     for i, st_cfg in enumerate(stations):
         st_name = st_cfg["name"]
         st_id = f"station:{st_name}"
+        health_cfg = st_cfg.get("health") or {}
         kg.add_node(
             st_id, "Station", name=st_name,
             cycle_time=st_cfg.get("cycle_time"),
             target_ppm=st_cfg.get("target_ppm"),
             defect_rate=st_cfg.get("defect_rate", 0.0),
+            health_h_max=health_cfg.get("h_max"),
+            health_cbm_threshold=health_cfg.get("cbm_threshold"),
             opcua_node_id=opcua_nid(
                 f"{opcua_prefix}.Resources.{st_name}_Equipment"),
         )

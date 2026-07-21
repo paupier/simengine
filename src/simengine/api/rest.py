@@ -23,6 +23,7 @@ from simengine.config.loader import (
     validate_comms,
     validate_serial_topology,
 )
+from simengine.engine.knowledge_graph import build_knowledge_graph
 from simengine.runtime.recipe_runner import parse_recipe, validate_recipe
 from simengine.runtime.run_manager import IDLE, RunConflictError, RunManager
 
@@ -147,6 +148,17 @@ def create_api_blueprint(run_manager: RunManager) -> Blueprint:
         _dump_scenarios_file(data, path)
         return jsonify({"created": name}), 201
 
+    @api.post("/api/v1/scenarios/validate")
+    def validate_scenario_draft():
+        body = request.get_json(force=True, silent=True)
+        if not isinstance(body, dict):
+            return jsonify({"valid": False, "error": "body must be a JSON object"}), 400
+        try:
+            validate_serial_topology(body)
+        except ValueError as exc:
+            return jsonify({"valid": False, "error": str(exc)}), 400
+        return jsonify({"valid": True})
+
     # ----- recipes -----
 
     @api.get("/api/v1/recipes")
@@ -248,6 +260,19 @@ def create_api_blueprint(run_manager: RunManager) -> Blueprint:
             edge=request.args.get("edge"),
         ))
 
+    @api.post("/api/v1/kg/preview")
+    def preview_kg():
+        body = request.get_json(force=True, silent=True) or {}
+        config = body.get("config")
+        if not isinstance(config, dict):
+            return jsonify({"error": "body must be {config: {...}}"}), 400
+        name = body.get("name") or "draft"
+        try:
+            kg = build_knowledge_graph(config, name)
+        except (KeyError, TypeError, AttributeError) as exc:
+            return jsonify({"error": f"invalid config: {exc}"}), 400
+        return jsonify(kg.to_node_link())
+
     # ----- plugins helper (comms page) -----
 
     @api.get("/api/v1/plugins")
@@ -281,7 +306,7 @@ def create_app(run_manager: RunManager) -> Flask:
     from simengine.api.chat import create_chat_blueprint
     from simengine.api.tools import ToolRegistry
 
-    app = Flask(__name__, template_folder="ui")
+    app = Flask(__name__, template_folder="ui", static_folder="ui/static", static_url_path="/static")
     app.secret_key = secrets.token_hex(32)  # per-process; chat session cookie
     app.register_blueprint(create_api_blueprint(run_manager))
     app.register_blueprint(create_chat_blueprint(ToolRegistry(run_manager)))
