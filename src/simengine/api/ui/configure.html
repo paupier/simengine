@@ -541,7 +541,11 @@
           <input type="text" value="${esc(b.name)}" class="fe-buf-name"></label>
           <input type="number" value="${esc(b.capacity)}" class="fe-buf-cap">`;
         bw.querySelector(".fe-buf-name").oninput = (e) => { b.name = e.target.value; scheduleValidate(); };
-        bw.querySelector(".fe-buf-cap").oninput = (e) => { b.capacity = parseInt(e.target.value, 10) || 1; scheduleValidate(); };
+        bw.querySelector(".fe-buf-cap").oninput = (e) => {
+          const parsed = parseInt(e.target.value, 10);
+          b.capacity = Number.isNaN(parsed) ? 1 : parsed;
+          scheduleValidate();
+        };
         wrap.appendChild(bw);
       }
     });
@@ -588,11 +592,13 @@
     const modeSel = cycleField.querySelector(".fe-cycle-mode");
     const valInput = cycleField.querySelector(".fe-cycle-val");
     function applyCycleMode() {
+      const parsed = parseFloat(valInput.value);
+      const value = Number.isNaN(parsed) ? 1 : parsed;
       if (modeSel.value === "target_ppm") {
-        st.target_ppm = parseFloat(valInput.value) || 1;
+        st.target_ppm = value;
         delete st.cycle_time;
       } else {
-        st.cycle_time = parseFloat(valInput.value) || 1;
+        st.cycle_time = value;
         delete st.target_ppm;
       }
       scheduleValidate();
@@ -638,7 +644,11 @@
       const hMaxField = document.createElement("label");
       hMaxField.className = "fe-field";
       hMaxField.innerHTML = `h_max <input type="number" class="fe-h-hmax" value="${esc(h.h_max != null ? h.h_max : 1)}">`;
-      hMaxField.querySelector("input").oninput = (e) => { h.h_max = parseInt(e.target.value, 10) || 1; scheduleValidate(); };
+      hMaxField.querySelector("input").oninput = (e) => {
+        const parsed = parseInt(e.target.value, 10);
+        h.h_max = Number.isNaN(parsed) ? 1 : parsed;
+        scheduleValidate();
+      };
       fieldsDiv.appendChild(hMaxField);
 
       const pDegField = document.createElement("label");
@@ -652,7 +662,11 @@
       cbmField.className = "fe-field";
       cbmField.innerHTML = `cbm_threshold <input type="number" class="fe-h-cbm"
         value="${esc(h.cbm_threshold != null ? h.cbm_threshold : (h.h_max || 1))}">`;
-      cbmField.querySelector("input").oninput = (e) => { h.cbm_threshold = parseInt(e.target.value, 10) || 1; scheduleValidate(); };
+      cbmField.querySelector("input").oninput = (e) => {
+        const parsed = parseInt(e.target.value, 10);
+        h.cbm_threshold = Number.isNaN(parsed) ? 1 : parsed;
+        scheduleValidate();
+      };
       fieldsDiv.appendChild(cbmField);
 
       const mttrField = document.createElement("div");
