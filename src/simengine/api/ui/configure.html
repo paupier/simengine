@@ -160,6 +160,7 @@
 {% block scripts %}
 <script src="/static/kg-graph.js"></script>
 <script src="/static/distribution-picker.js"></script>
+<script src="/static/entity-forms.js"></script>
 <script>
   let currentScenario = null, currentRecipe = null;
   let currentViewScenario = null;
@@ -572,6 +573,10 @@
       renderEditMode();
     };
     body.appendChild(healthSection);
+
+    const pvContainer = document.createElement("div");
+    body.appendChild(pvContainer);
+    entityForms.renderProcessValues(pvContainer, st, renderEditMode);
   }
 
   async function loadEditScenarioList() {
