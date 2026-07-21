@@ -361,8 +361,7 @@
     const historianKeys = Object.keys(pluginStatus).filter(k => k.startsWith("historian-"));
     // shifts config shape is {schedule: [{name, duration, start_offset}, ...]}
     // (see shift_manager.create_shift_manager_from_config) — not a flat array.
-    d.shifts = d.shifts || {};
-    const shifts = d.shifts.schedule || [];
+    const shifts = (d.shifts && d.shifts.schedule) || [];
     // historians config shape is a flat list of plugin name strings (validate_historians
     // in config/loader.py rejects anything else) — not a dict of booleans.
     const historianList = d.historians || [];
@@ -431,6 +430,7 @@
       tr.querySelector(".sh-remove").onclick = () => { shifts.splice(i, 1); d.shifts.schedule = shifts; renderSettingsPanel(); scheduleValidate(); };
     });
     $("sh-add").onclick = () => {
+      d.shifts = d.shifts || {};
       d.shifts.schedule = shifts.concat([blankShift()]);
       renderSettingsPanel();
       scheduleValidate();
