@@ -242,8 +242,8 @@
   function showNodeDetail(node) {
     const skip = new Set(["id", "type"]);
     const rows = Object.keys(node).filter(k => !skip.has(k) && node[k] !== null && node[k] !== undefined)
-      .map(k => `<dt>${k}</dt><dd>${
-        typeof node[k] === "object" ? JSON.stringify(node[k]) : node[k]}</dd>`).join("");
+      .map(k => `<dt>${esc(k)}</dt><dd>${
+        esc(typeof node[k] === "object" ? JSON.stringify(node[k]) : node[k])}</dd>`).join("");
 
     let editBtn = "";
     if (EDITABLE_TYPES[node.type] && node.type !== "AlarmCode") {
@@ -255,8 +255,8 @@
       editBtn = `<p class="muted" style="margin-top:8px">${sources.join(" ")}</p>`;
     }
 
-    $("kg-detail").innerHTML = `<h3>${node.name || node.id}</h3>
-      <div class="muted mono" style="font-size:10.5px">${node.type}</div>
+    $("kg-detail").innerHTML = `<h3>${esc(node.name || node.id)}</h3>
+      <div class="muted mono" style="font-size:10.5px">${esc(node.type)}</div>
       <dl>${rows}</dl>${editBtn}`;
 
     const btn = $("kg-edit-this");
