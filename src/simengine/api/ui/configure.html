@@ -376,6 +376,9 @@
   window.renderEditMode = renderEditMode;
 
   // ---- Flow-line editor: stations, buffers, health ----
+  // Keyed by station object identity (not array index) so removing a station
+  // doesn't shift the expand/collapse state of stations after it — station
+  // objects persist through array splices, only their position changes.
   const expandedStations = new Set();
 
   function blankStation(name) {
@@ -408,7 +411,7 @@
       const card = document.createElement("div");
       card.className = "fe-station";
       card.dataset.stationIndex = i;
-      const expanded = expandedStations.has(i);
+      const expanded = expandedStations.has(st);
 
       const head = document.createElement("div");
       head.className = "fe-head";
@@ -416,7 +419,7 @@
         <div class="fe-summary">${st.cycle_time != null ? esc(st.cycle_time) + "s" : (esc(st.target_ppm) + " ppm")}
           · ${esc(stationSummary(st))}</div></div>`;
       head.onclick = () => {
-        if (expanded) expandedStations.delete(i); else expandedStations.add(i);
+        if (expanded) expandedStations.delete(st); else expandedStations.add(st);
         renderEditMode();
       };
       card.appendChild(head);
@@ -451,7 +454,7 @@
         buffers.push(blankBuffer(nextName("B", buffers.map(b => b.name))));
       }
       stations.push(newStation);
-      expandedStations.add(stations.length - 1);
+      expandedStations.add(newStation);
       renderEditMode();
     };
     wrap.appendChild(addBtn);
@@ -510,7 +513,7 @@
       const bufIdx = i > 0 ? i - 1 : 0;
       if (buffers.length > 0) buffers.splice(bufIdx, 1);
       stations.splice(i, 1);
-      expandedStations.delete(i);
+      expandedStations.delete(st);
       renderEditMode();
     };
     body.appendChild(removeBtn);
