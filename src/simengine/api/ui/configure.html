@@ -118,6 +118,7 @@
   <div id="pane-edit" class="mode-pane">
     <div class="kg-toolbar">
       <ul class="picklist" id="edit-scenario-list" style="width:220px;max-height:120px"></ul>
+      <button id="edit-new" class="quiet">+ New Scenario</button>
       <button id="edit-save" class="quiet">Save scenario</button>
       <span class="msg" id="edit-msg" hidden></span>
     </div>
@@ -640,9 +641,50 @@
   $("edit-save").onclick = async () => {
     if (!EDIT_DRAFT || !currentEditScenario) return note("edit-msg", "Select a scenario first.", true);
     try {
-      await jsend("/api/v1/scenarios/" + currentEditScenario, "PUT", EDIT_DRAFT);
+      const known = await jget("/api/v1/scenarios");
+      if (known.includes(currentEditScenario)) {
+        await jsend("/api/v1/scenarios/" + currentEditScenario, "PUT", EDIT_DRAFT);
+      } else {
+        await jsend("/api/v1/scenarios", "POST", { name: currentEditScenario, config: EDIT_DRAFT });
+        loadViewScenarioList();
+        loadScenarioList();
+        loadScenarioPicker();
+      }
       note("edit-msg", `Saved '${currentEditScenario}'. Applies on next run.`);
+      loadEditScenarioList();
     } catch (e) { note("edit-msg", e.message, true); }
+  };
+
+  function minimalScenarioTemplate(name) {
+    return {
+      description: "",
+      line_name: name,
+      stations: [blankStation("S1"), blankStation("S2")],
+      buffers: [blankBuffer("B1")],
+    };
+  }
+
+  $("edit-new").onclick = async () => {
+    const name = prompt("New scenario name:");
+    if (!name) return;
+    const clone = confirm(
+      currentEditScenario
+        ? `Clone the currently selected scenario ('${currentEditScenario}')?\nCancel = start from a blank 2-station template.`
+        : "No scenario selected to clone — starting from a blank 2-station template."
+    );
+    let config;
+    if (clone && currentEditScenario) {
+      config = JSON.parse(JSON.stringify(EDIT_DRAFT));
+      config.line_name = name;
+    } else {
+      config = minimalScenarioTemplate(name);
+    }
+    currentEditScenario = name;
+    EDIT_DRAFT = config;
+    window.EDIT_DRAFT = EDIT_DRAFT;
+    expandedStations.clear();
+    note("edit-msg", `New scenario '${name}' — unsaved. Click "Save scenario" to persist.`);
+    renderEditMode();
   };
 
   loadEditScenarioList();
