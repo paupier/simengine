@@ -135,12 +135,12 @@
 
   function renderProcessValues(container, station, rerender) {
     container.innerHTML = "";
-    station.process_values = station.process_values || [];
+    const list = station.process_values || [];
     const section = document.createElement("div");
     section.className = "fe-sub-section";
     section.innerHTML = "<h4>Process Values</h4>";
 
-    station.process_values.forEach((pv, i) => {
+    list.forEach((pv, i) => {
       const row = document.createElement("div");
       row.className = "fe-sub-row";
       section.appendChild(row);
@@ -151,7 +151,8 @@
     addBtn.className = "quiet fe-add-btn";
     addBtn.textContent = "+ Add process value";
     addBtn.onclick = () => {
-      station.process_values.push(blankPV("PV" + (station.process_values.length + 1)));
+      if (!station.process_values) station.process_values = [];
+      station.process_values.push(blankPV("PV" + (list.length + 1)));
       rerender();
     };
     section.appendChild(addBtn);
@@ -197,12 +198,12 @@
 
   function renderFailureModes(container, station, rerender) {
     container.innerHTML = "";
-    station.failure_modes = station.failure_modes || [];
+    const list = station.failure_modes || [];
     const section = document.createElement("div");
     section.className = "fe-sub-section";
     section.innerHTML = "<h4>Failure Modes</h4>";
 
-    station.failure_modes.forEach((fm, i) => {
+    list.forEach((fm, i) => {
       const row = document.createElement("div");
       row.className = "fe-sub-row";
       section.appendChild(row);
@@ -213,7 +214,8 @@
     addBtn.className = "quiet fe-add-btn";
     addBtn.textContent = "+ Add failure mode";
     addBtn.onclick = () => {
-      station.failure_modes.push(blankFailureMode("failure_mode_" + (station.failure_modes.length + 1)));
+      if (!station.failure_modes) station.failure_modes = [];
+      station.failure_modes.push(blankFailureMode("failure_mode_" + (list.length + 1)));
       rerender();
     };
     section.appendChild(addBtn);
@@ -258,12 +260,12 @@
 
   function renderCycleStops(container, station, rerender) {
     container.innerHTML = "";
-    station.cycle_stops = station.cycle_stops || [];
+    const list = station.cycle_stops || [];
     const section = document.createElement("div");
     section.className = "fe-sub-section";
     section.innerHTML = "<h4>Cycle Stops</h4>";
 
-    station.cycle_stops.forEach((cs, i) => {
+    list.forEach((cs, i) => {
       const row = document.createElement("div");
       row.className = "fe-sub-row";
       section.appendChild(row);
@@ -274,7 +276,8 @@
     addBtn.className = "quiet fe-add-btn";
     addBtn.textContent = "+ Add cycle stop";
     addBtn.onclick = () => {
-      station.cycle_stops.push(blankCycleStop("CS_" + (station.cycle_stops.length + 1)));
+      if (!station.cycle_stops) station.cycle_stops = [];
+      station.cycle_stops.push(blankCycleStop("CS_" + (list.length + 1)));
       rerender();
     };
     section.appendChild(addBtn);
