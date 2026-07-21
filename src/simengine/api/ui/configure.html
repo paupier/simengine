@@ -95,6 +95,16 @@
   #edit-validation { margin: 10px 0; }
   #edit-validation.ok { color: var(--st-processing); }
   #edit-validation.err { color: var(--st-failed); }
+
+  .kg-view-row { display: flex; gap: 16px; align-items: flex-start; }
+  .kg-view-row .kg-wrap { flex: 1; }
+  #kg-detail { width: 280px; border: 1px solid var(--hairline); background: var(--panel);
+    padding: 12px 14px; font-size: 12.5px; }
+  #kg-detail h3 { font-family: var(--mono); font-size: 14px; margin-bottom: 6px; }
+  #kg-detail dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; margin: 8px 0; }
+  #kg-detail dt { color: var(--ink-2); font-size: 11px; }
+  #kg-detail dd { font-family: var(--mono); font-size: 11.5px; word-break: break-all; }
+  #kg-detail .kg-detail-empty { color: var(--ink-2); }
 </style>
 {% endblock %}
 {% block content %}
@@ -110,9 +120,12 @@
       <ul class="picklist" id="view-scenario-list" style="width:220px;max-height:120px"></ul>
       <label><input type="checkbox" id="kg-show-metrics"> Show wire addresses</label>
     </div>
-    <div class="kg-wrap"><div id="kg-graph">
-      <span class="muted mono">Select a scenario to view its plant model.</span>
-    </div></div>
+    <div class="kg-view-row">
+      <div class="kg-wrap"><div id="kg-graph">
+        <span class="muted mono">Select a scenario to view its plant model.</span>
+      </div></div>
+      <div id="kg-detail"><span class="kg-detail-empty">Click a node for details.</span></div>
+    </div>
   </div>
 
   <div id="pane-edit" class="mode-pane">
@@ -208,12 +221,60 @@
   }
   async function renderView() {
     if (!currentViewScenario) return;
-    const cfg = await jget("/api/v1/scenarios/" + currentViewScenario);
+    let cfg;
+    if (EDIT_DRAFT && currentEditScenario === currentViewScenario) {
+      cfg = EDIT_DRAFT;  // live draft, not necessarily saved yet
+    } else {
+      cfg = await jget("/api/v1/scenarios/" + currentViewScenario);
+    }
     const nodeLink = await jsend("/api/v1/kg/preview", "POST",
       { config: cfg, name: currentViewScenario });
-    renderKGGraph($("kg-graph"), nodeLink, { showMetrics: $("kg-show-metrics").checked });
+    renderKGGraph($("kg-graph"), nodeLink, {
+      showMetrics: $("kg-show-metrics").checked,
+      onNodeClick: showNodeDetail,
+    });
   }
   $("kg-show-metrics").onchange = renderView;
+
+  const EDITABLE_TYPES = { Station: true, Buffer: true, ProcessValue: true,
+    FailureMode: true, CycleStopReason: true };
+
+  function showNodeDetail(node) {
+    const skip = new Set(["id", "type"]);
+    const rows = Object.keys(node).filter(k => !skip.has(k) && node[k] !== null && node[k] !== undefined)
+      .map(k => `<dt>${k}</dt><dd>${
+        typeof node[k] === "object" ? JSON.stringify(node[k]) : node[k]}</dd>`).join("");
+
+    let editBtn = "";
+    if (EDITABLE_TYPES[node.type] && node.type !== "AlarmCode") {
+      editBtn = `<button class="quiet" id="kg-edit-this">Edit this →</button>`;
+    } else if (node.type === "AlarmCode") {
+      const sources = [];
+      // AlarmCode nodes are derived; point at whichever entity types raise them.
+      sources.push("Edit the failure mode, cycle stop, or health block that raises this code.");
+      editBtn = `<p class="muted" style="margin-top:8px">${sources.join(" ")}</p>`;
+    }
+
+    $("kg-detail").innerHTML = `<h3>${node.name || node.id}</h3>
+      <div class="muted mono" style="font-size:10.5px">${node.type}</div>
+      <dl>${rows}</dl>${editBtn}`;
+
+    const btn = $("kg-edit-this");
+    if (btn) btn.onclick = () => editThisNode(node);
+  }
+
+  async function editThisNode(node) {
+    setMode("edit");
+    if (!EDIT_DRAFT || currentEditScenario !== currentViewScenario) {
+      currentEditScenario = currentViewScenario;
+      EDIT_DRAFT = await jget("/api/v1/scenarios/" + currentViewScenario);
+      window.EDIT_DRAFT = EDIT_DRAFT;
+    }
+    const stationName = node.type === "Station" ? node.name : node.station;
+    const idx = EDIT_DRAFT.stations.findIndex(s => s.name === stationName);
+    if (idx >= 0) expandedStations.add(EDIT_DRAFT.stations[idx]);
+    renderEditMode();
+  }
 
   // ---- Raw JSON mode (unchanged behavior) ----
   async function loadScenarioList() {
