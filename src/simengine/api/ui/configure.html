@@ -64,6 +64,33 @@
   .settings-panel table.shifts { border-collapse: collapse; margin-top: 6px; }
   .settings-panel table.shifts td { padding: 3px 6px; }
   .settings-panel table.shifts input { width: 90px; }
+
+  .flow-editor { display: flex; align-items: flex-start; gap: 0; overflow-x: auto;
+    border: 1px solid var(--hairline); background: var(--panel); padding: 16px; min-width: max-content; }
+  .fe-station { border: 1px solid var(--ink); background: #fff; min-width: 170px;
+    max-width: 170px; }
+  .fe-station .fe-head { padding: 8px 10px; cursor: pointer; display: flex;
+    justify-content: space-between; align-items: center; }
+  .fe-station .fe-name { font-family: var(--mono); font-weight: 700; font-size: 13px; }
+  .fe-station .fe-summary { font-size: 10.5px; color: var(--ink-2); margin-top: 4px; }
+  .fe-station .fe-body { padding: 0 10px 10px; border-top: 1px solid var(--hairline); }
+  .fe-station .fe-body.collapsed { display: none; }
+  .fe-field { display: flex; flex-direction: column; gap: 2px; margin: 8px 0; font-size: 11px;
+    color: var(--ink-2); }
+  .fe-field input, .fe-field select { font-family: var(--mono); font-size: 12.5px;
+    padding: 4px 5px; border: 1px solid var(--hairline); }
+  .fe-buffer { display: flex; flex-direction: column; align-items: center; padding: 0 6px;
+    min-width: 90px; align-self: center; }
+  .fe-buffer input { width: 60px; font-family: var(--mono); font-size: 11px;
+    padding: 3px; border: 1px solid var(--hairline); text-align: center; margin-top: 3px; }
+  .fe-sub-section { margin-top: 10px; border-top: 1px dashed var(--hairline); padding-top: 8px; }
+  .fe-sub-section h4 { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--ink-2); margin-bottom: 6px; }
+  .fe-sub-row { border: 1px solid var(--hairline); background: var(--paper); padding: 6px 8px;
+    margin-bottom: 6px; font-size: 11.5px; }
+  .fe-sub-row .fe-sub-row-head { display: flex; justify-content: space-between; align-items: center; }
+  .fe-remove-btn, .fe-add-btn { font-size: 10px; padding: 3px 7px; }
+  .fe-add-station { min-width: 90px; align-self: center; margin: 0 10px; }
 </style>
 {% endblock %}
 {% block content %}
@@ -347,6 +374,202 @@
     if (window.renderFlowEditor) window.renderFlowEditor($("flow-editor"), EDIT_DRAFT);
   }
   window.renderEditMode = renderEditMode;
+
+  // ---- Flow-line editor: stations, buffers, health ----
+  const expandedStations = new Set();
+
+  function blankStation(name) {
+    return { name: name, cycle_time: 10.0 };
+  }
+  function blankBuffer(name) {
+    return { name: name, capacity: 10 };
+  }
+  function nextName(prefix, existing) {
+    let i = 1;
+    while (existing.includes(prefix + i)) i++;
+    return prefix + i;
+  }
+
+  function stationSummary(st) {
+    const pv = (st.process_values || []).length;
+    const fm = (st.failure_modes || []).length;
+    const cs = (st.cycle_stops || []).length;
+    return `${pv} PV · ${fm} FM · ${cs} CS`;
+  }
+
+  function renderFlowEditor(container, draft) {
+    const stations = draft.stations;
+    const buffers = draft.buffers;
+    container.innerHTML = "";
+    const wrap = document.createElement("div");
+    wrap.className = "flow-editor";
+
+    stations.forEach((st, i) => {
+      const card = document.createElement("div");
+      card.className = "fe-station";
+      card.dataset.stationIndex = i;
+      const expanded = expandedStations.has(i);
+
+      const head = document.createElement("div");
+      head.className = "fe-head";
+      head.innerHTML = `<div><div class="fe-name">${esc(st.name)}</div>
+        <div class="fe-summary">${st.cycle_time != null ? esc(st.cycle_time) + "s" : (esc(st.target_ppm) + " ppm")}
+          · ${esc(stationSummary(st))}</div></div>`;
+      head.onclick = () => {
+        if (expanded) expandedStations.delete(i); else expandedStations.add(i);
+        renderEditMode();
+      };
+      card.appendChild(head);
+
+      const body = document.createElement("div");
+      body.className = "fe-body" + (expanded ? "" : " collapsed");
+      if (expanded) buildStationBody(body, st, i, draft);
+      card.appendChild(body);
+
+      wrap.appendChild(card);
+
+      if (i < buffers.length) {
+        const b = buffers[i];
+        const bw = document.createElement("div");
+        bw.className = "fe-buffer";
+        bw.innerHTML = `<label class="fe-field" style="font-size:10px">name
+          <input type="text" value="${esc(b.name)}" class="fe-buf-name"></label>
+          <input type="number" value="${esc(b.capacity)}" class="fe-buf-cap">`;
+        bw.querySelector(".fe-buf-name").oninput = (e) => { b.name = e.target.value; };
+        bw.querySelector(".fe-buf-cap").oninput = (e) => { b.capacity = parseInt(e.target.value, 10) || 1; };
+        wrap.appendChild(bw);
+      }
+    });
+
+    const addBtn = document.createElement("button");
+    addBtn.className = "quiet fe-add-station";
+    addBtn.textContent = "+ Add Station";
+    addBtn.onclick = () => {
+      const names = stations.map(s => s.name);
+      const newStation = blankStation(nextName("S", names));
+      if (stations.length > 0) {
+        buffers.push(blankBuffer(nextName("B", buffers.map(b => b.name))));
+      }
+      stations.push(newStation);
+      expandedStations.add(stations.length - 1);
+      renderEditMode();
+    };
+    wrap.appendChild(addBtn);
+
+    container.appendChild(wrap);
+  }
+  window.renderFlowEditor = renderFlowEditor;
+
+  function buildStationBody(body, st, i, draft) {
+    body.innerHTML = "";
+
+    const nameField = document.createElement("label");
+    nameField.className = "fe-field";
+    nameField.innerHTML = `name <input type="text" class="fe-st-name" value="${esc(st.name)}">`;
+    nameField.querySelector("input").oninput = (e) => { st.name = e.target.value; };
+    body.appendChild(nameField);
+
+    const cycleField = document.createElement("label");
+    cycleField.className = "fe-field";
+    const isPpm = st.target_ppm != null;
+    cycleField.innerHTML = `
+      <span>rate</span>
+      <select class="fe-cycle-mode">
+        <option value="cycle_time" ${!isPpm ? "selected" : ""}>cycle_time (s)</option>
+        <option value="target_ppm" ${isPpm ? "selected" : ""}>target_ppm</option>
+      </select>
+      <input type="number" step="any" class="fe-cycle-val"
+        value="${esc(isPpm ? st.target_ppm : (st.cycle_time != null ? st.cycle_time : 10))}">`;
+    const modeSel = cycleField.querySelector(".fe-cycle-mode");
+    const valInput = cycleField.querySelector(".fe-cycle-val");
+    function applyCycleMode() {
+      if (modeSel.value === "target_ppm") {
+        st.target_ppm = parseFloat(valInput.value) || 1;
+        delete st.cycle_time;
+      } else {
+        st.cycle_time = parseFloat(valInput.value) || 1;
+        delete st.target_ppm;
+      }
+    }
+    modeSel.onchange = () => { applyCycleMode(); renderEditMode(); };
+    valInput.oninput = applyCycleMode;
+    body.appendChild(cycleField);
+
+    const defectField = document.createElement("label");
+    defectField.className = "fe-field";
+    defectField.innerHTML = `defect_rate <input type="number" step="any" class="fe-defect"
+      value="${esc(st.defect_rate != null ? st.defect_rate : 0)}">`;
+    defectField.querySelector("input").oninput = (e) => { st.defect_rate = parseFloat(e.target.value) || 0; };
+    body.appendChild(defectField);
+
+    const removeBtn = document.createElement("button");
+    removeBtn.className = "quiet fe-remove-btn";
+    removeBtn.textContent = "Remove station";
+    removeBtn.onclick = () => {
+      const stations = draft.stations, buffers = draft.buffers;
+      const bufIdx = i > 0 ? i - 1 : 0;
+      if (buffers.length > 0) buffers.splice(bufIdx, 1);
+      stations.splice(i, 1);
+      expandedStations.delete(i);
+      renderEditMode();
+    };
+    body.appendChild(removeBtn);
+
+    // ---- Health sub-section ----
+    const healthSection = document.createElement("div");
+    healthSection.className = "fe-sub-section";
+    const healthEnabled = !!st.health;
+    healthSection.innerHTML = `<h4>Health</h4>
+      <label style="font-size:11px;display:flex;gap:6px;align-items:center">
+        <input type="checkbox" class="fe-health-enabled" ${healthEnabled ? "checked" : ""}> enabled
+      </label>
+      <div class="fe-health-fields"></div>`;
+    const fieldsDiv = healthSection.querySelector(".fe-health-fields");
+    function renderHealthFields() {
+      fieldsDiv.innerHTML = "";
+      if (!st.health) return;
+      const h = st.health;
+      const hMaxField = document.createElement("label");
+      hMaxField.className = "fe-field";
+      hMaxField.innerHTML = `h_max <input type="number" class="fe-h-hmax" value="${esc(h.h_max != null ? h.h_max : 1)}">`;
+      hMaxField.querySelector("input").oninput = (e) => { h.h_max = parseInt(e.target.value, 10) || 1; };
+      fieldsDiv.appendChild(hMaxField);
+
+      const pDegField = document.createElement("label");
+      pDegField.className = "fe-field";
+      pDegField.innerHTML = `p_degrade <input type="number" step="any" class="fe-h-pdeg"
+        value="${esc(h.p_degrade != null ? h.p_degrade : 0.001)}">`;
+      pDegField.querySelector("input").oninput = (e) => { h.p_degrade = parseFloat(e.target.value) || 0; };
+      fieldsDiv.appendChild(pDegField);
+
+      const cbmField = document.createElement("label");
+      cbmField.className = "fe-field";
+      cbmField.innerHTML = `cbm_threshold <input type="number" class="fe-h-cbm"
+        value="${esc(h.cbm_threshold != null ? h.cbm_threshold : (h.h_max || 1))}">`;
+      cbmField.querySelector("input").oninput = (e) => { h.cbm_threshold = parseInt(e.target.value, 10) || 1; };
+      fieldsDiv.appendChild(cbmField);
+
+      const mttrField = document.createElement("div");
+      mttrField.className = "fe-field";
+      mttrField.innerHTML = `<span>mttr</span>`;
+      const mttrPicker = document.createElement("div");
+      mttrField.appendChild(mttrPicker);
+      createDistributionPicker(mttrPicker, h.mttr, (cfg) => { h.mttr = cfg; });
+      fieldsDiv.appendChild(mttrField);
+    }
+    renderHealthFields();
+
+    healthSection.querySelector(".fe-health-enabled").onchange = (e) => {
+      if (e.target.checked) {
+        st.health = { h_max: 3, p_degrade: 0.001, cbm_threshold: 3,
+          mttr: { distribution: "lognormal", mean: 120, std: 30 } };
+      } else {
+        delete st.health;
+      }
+      renderEditMode();
+    };
+    body.appendChild(healthSection);
+  }
 
   async function loadEditScenarioList() {
     if (!Object.keys(pluginStatus).length) pluginStatus = await jget("/api/v1/plugins");
