@@ -124,14 +124,16 @@
     container.appendChild(numField("alarm_high", pv, "alarm_high", null));
     container.appendChild(numField("alarm_low", pv, "alarm_low", null));
 
-    const removeBtn = document.createElement("button");
-    removeBtn.className = "quiet fe-remove-btn";
-    removeBtn.textContent = "Remove";
-    removeBtn.onclick = () => {
-      station.process_values.splice(index, 1);
-      rerender();
-    };
-    container.appendChild(removeBtn);
+  }
+
+  function pvSummaryCells(pv) {
+    const keyVal = pv.profile === "cycle_peak" ? "baseline " + (pv.baseline != null ? pv.baseline : 0)
+      : pv.profile === "first_order_lag" ? "setpoint " + (pv.setpoint != null ? pv.setpoint : 0)
+      : pv.profile === "cycle_ramp" ? "range " + JSON.stringify(pv.range || [0, 1])
+      : "mean " + (pv.mean != null ? pv.mean : 0);
+    const alarms = [pv.alarm_high != null ? "≤" + pv.alarm_high : null,
+      pv.alarm_low != null ? "≥" + pv.alarm_low : null].filter(Boolean).join(" ") || "—";
+    return [pv.name, pv.unit, pv.profile, keyVal, alarms];
   }
 
   function renderProcessValues(container, station, rerender) {
@@ -141,12 +143,47 @@
     section.className = "fe-sub-section";
     section.innerHTML = "<h4>Process Values</h4>";
 
+    const table = document.createElement("table");
+    table.className = "ed-table";
+    table.innerHTML = "<thead><tr><th>name</th><th>unit</th><th>profile</th><th>key value</th><th>alarms</th><th></th></tr></thead>";
+    const tbody = document.createElement("tbody");
+    table.appendChild(tbody);
+
     list.forEach((pv, i) => {
-      const row = document.createElement("div");
-      row.className = "fe-sub-row";
-      section.appendChild(row);
-      renderPVForm(row, pv, station, i, rerender);
+      const summaryRow = document.createElement("tr");
+      summaryRow.className = "ed-table-row";
+      summaryRow.innerHTML = pvSummaryCells(pv).map(c => `<td>${esc(c)}</td>`).join("") + "<td></td>";
+      const removeBtn = document.createElement("button");
+      removeBtn.className = "quiet fe-remove-btn";
+      removeBtn.textContent = "×";
+      removeBtn.onclick = (e) => {
+        e.stopPropagation();
+        station.process_values.splice(i, 1);
+        rerender();
+      };
+      summaryRow.lastElementChild.appendChild(removeBtn);
+
+      const expandRow = document.createElement("tr");
+      expandRow.className = "ed-table-expand";
+      expandRow.hidden = true;
+      const expandCell = document.createElement("td");
+      expandCell.colSpan = 6;
+      expandRow.appendChild(expandCell);
+
+      summaryRow.onclick = () => {
+        const wasHidden = expandRow.hidden;
+        tbody.querySelectorAll(".ed-table-expand").forEach(r => { r.hidden = true; });
+        if (wasHidden) {
+          renderPVForm(expandCell, pv, station, i, rerender);
+          expandRow.hidden = false;
+        }
+      };
+
+      tbody.appendChild(summaryRow);
+      tbody.appendChild(expandRow);
     });
+
+    section.appendChild(table);
 
     const addBtn = document.createElement("button");
     addBtn.className = "quiet fe-add-btn";
@@ -190,11 +227,11 @@
     createDistributionPicker(mttrPicker, fm.mttr, (cfg) => { fm.mttr = cfg; scheduleValidate(); });
     container.appendChild(mttrField);
 
-    const removeBtn = document.createElement("button");
-    removeBtn.className = "quiet fe-remove-btn";
-    removeBtn.textContent = "Remove";
-    removeBtn.onclick = () => { station.failure_modes.splice(index, 1); rerender(); };
-    container.appendChild(removeBtn);
+  }
+
+  function fmSummaryCells(fm) {
+    return [fm.name, fm.type, "mttf " + (fm.mttf ? fm.mttf.distribution : "—"),
+      "mttr " + (fm.mttr ? fm.mttr.distribution : "—")];
   }
 
   function renderFailureModes(container, station, rerender) {
@@ -204,12 +241,47 @@
     section.className = "fe-sub-section";
     section.innerHTML = "<h4>Failure Modes</h4>";
 
+    const table = document.createElement("table");
+    table.className = "ed-table";
+    table.innerHTML = "<thead><tr><th>name</th><th>type</th><th>mttf</th><th>mttr</th><th></th></tr></thead>";
+    const tbody = document.createElement("tbody");
+    table.appendChild(tbody);
+
     list.forEach((fm, i) => {
-      const row = document.createElement("div");
-      row.className = "fe-sub-row";
-      section.appendChild(row);
-      renderFailureModeForm(row, fm, station, i, rerender);
+      const summaryRow = document.createElement("tr");
+      summaryRow.className = "ed-table-row";
+      summaryRow.innerHTML = fmSummaryCells(fm).map(c => `<td>${esc(c)}</td>`).join("") + "<td></td>";
+      const removeBtn = document.createElement("button");
+      removeBtn.className = "quiet fe-remove-btn";
+      removeBtn.textContent = "×";
+      removeBtn.onclick = (e) => {
+        e.stopPropagation();
+        station.failure_modes.splice(i, 1);
+        rerender();
+      };
+      summaryRow.lastElementChild.appendChild(removeBtn);
+
+      const expandRow = document.createElement("tr");
+      expandRow.className = "ed-table-expand";
+      expandRow.hidden = true;
+      const expandCell = document.createElement("td");
+      expandCell.colSpan = 5;
+      expandRow.appendChild(expandCell);
+
+      summaryRow.onclick = () => {
+        const wasHidden = expandRow.hidden;
+        tbody.querySelectorAll(".ed-table-expand").forEach(r => { r.hidden = true; });
+        if (wasHidden) {
+          renderFailureModeForm(expandCell, fm, station, i, rerender);
+          expandRow.hidden = false;
+        }
+      };
+
+      tbody.appendChild(summaryRow);
+      tbody.appendChild(expandRow);
     });
+
+    section.appendChild(table);
 
     const addBtn = document.createElement("button");
     addBtn.className = "quiet fe-add-btn";
@@ -252,11 +324,11 @@
     createDistributionPicker(durPicker, cs.duration, (cfg) => { cs.duration = cfg; scheduleValidate(); });
     container.appendChild(durField);
 
-    const removeBtn = document.createElement("button");
-    removeBtn.className = "quiet fe-remove-btn";
-    removeBtn.textContent = "Remove";
-    removeBtn.onclick = () => { station.cycle_stops.splice(index, 1); rerender(); };
-    container.appendChild(removeBtn);
+  }
+
+  function csSummaryCells(cs) {
+    return [cs.reason, "mtbe " + (cs.mtbe ? cs.mtbe.distribution : "—"),
+      "duration " + (cs.duration ? cs.duration.distribution : "—")];
   }
 
   function renderCycleStops(container, station, rerender) {
@@ -266,12 +338,47 @@
     section.className = "fe-sub-section";
     section.innerHTML = "<h4>Cycle Stops</h4>";
 
+    const table = document.createElement("table");
+    table.className = "ed-table";
+    table.innerHTML = "<thead><tr><th>reason</th><th>mtbe</th><th>duration</th><th></th></tr></thead>";
+    const tbody = document.createElement("tbody");
+    table.appendChild(tbody);
+
     list.forEach((cs, i) => {
-      const row = document.createElement("div");
-      row.className = "fe-sub-row";
-      section.appendChild(row);
-      renderCycleStopForm(row, cs, station, i, rerender);
+      const summaryRow = document.createElement("tr");
+      summaryRow.className = "ed-table-row";
+      summaryRow.innerHTML = csSummaryCells(cs).map(c => `<td>${esc(c)}</td>`).join("") + "<td></td>";
+      const removeBtn = document.createElement("button");
+      removeBtn.className = "quiet fe-remove-btn";
+      removeBtn.textContent = "×";
+      removeBtn.onclick = (e) => {
+        e.stopPropagation();
+        station.cycle_stops.splice(i, 1);
+        rerender();
+      };
+      summaryRow.lastElementChild.appendChild(removeBtn);
+
+      const expandRow = document.createElement("tr");
+      expandRow.className = "ed-table-expand";
+      expandRow.hidden = true;
+      const expandCell = document.createElement("td");
+      expandCell.colSpan = 4;
+      expandRow.appendChild(expandCell);
+
+      summaryRow.onclick = () => {
+        const wasHidden = expandRow.hidden;
+        tbody.querySelectorAll(".ed-table-expand").forEach(r => { r.hidden = true; });
+        if (wasHidden) {
+          renderCycleStopForm(expandCell, cs, station, i, rerender);
+          expandRow.hidden = false;
+        }
+      };
+
+      tbody.appendChild(summaryRow);
+      tbody.appendChild(expandRow);
     });
+
+    section.appendChild(table);
 
     const addBtn = document.createElement("button");
     addBtn.className = "quiet fe-add-btn";
@@ -286,20 +393,96 @@
     container.appendChild(section);
   }
 
-  function buildStationBody(body, st, i, draft) {
-    body.innerHTML = "";
+  // ---- Pipeline row (View mode's renderer, reused) + single-selection detail panel ----
+  function blankStation(name) {
+    return { name: name, cycle_time: 10.0 };
+  }
+  function blankBuffer(name) {
+    return { name: name, capacity: 10 };
+  }
+  function nextName(prefix, existing) {
+    let i = 1;
+    while (existing.includes(prefix + i)) i++;
+    return prefix + i;
+  }
+
+  let selectedNode = null;  // { kind: "station"|"buffer", data: <EDIT_DRAFT.stations[i] or .buffers[i]> } | null
+  let pipelineRequestId = 0;
+
+  async function renderPipelineRow(container, draft) {
+    const myId = ++pipelineRequestId;
+    let nodeLink;
+    try {
+      nodeLink = await jsend("/api/v1/kg/preview", "POST",
+        { config: draft, name: currentEditScenario || "draft" });
+    } catch (e) {
+      return;  // network hiccup or transiently-invalid draft — keep showing the last good row
+    }
+    if (myId !== pipelineRequestId) return;  // stale response, discard (same race-guard runValidate() uses)
+    renderKGGraph(container, nodeLink, { flowOnly: true, onNodeClick: onPipelineNodeClick });
+  }
+
+  function onPipelineNodeClick(node) {
+    if (node.type === "Station") {
+      const st = EDIT_DRAFT.stations.find(function (s) { return s.name === node.name; });
+      selectedNode = st ? { kind: "station", data: st } : null;
+    } else if (node.type === "Buffer") {
+      const b = EDIT_DRAFT.buffers.find(function (b) { return b.name === node.name; });
+      selectedNode = b ? { kind: "buffer", data: b } : null;
+    } else {
+      return;
+    }
+    renderDetailPanel($("edit-detail"));
+  }
+
+  function selectStation(st) {
+    selectedNode = { kind: "station", data: st };
+  }
+  function clearSelection() {
+    selectedNode = null;
+  }
+  function addStation(draft) {
+    const names = draft.stations.map(function (s) { return s.name; });
+    const newStation = blankStation(nextName("S", names));
+    if (draft.stations.length > 0) {
+      draft.buffers.push(blankBuffer(nextName("B", draft.buffers.map(function (b) { return b.name; }))));
+    }
+    draft.stations.push(newStation);
+    selectedNode = { kind: "station", data: newStation };
+  }
+
+  function renderDetailPanel(container) {
+    if (!selectedNode) {
+      container.innerHTML = '<span class="kg-detail-empty">Click a station or buffer to edit it.</span>';
+      return;
+    }
+    if (selectedNode.kind === "station") {
+      if (EDIT_DRAFT.stations.indexOf(selectedNode.data) === -1) { selectedNode = null; return renderDetailPanel(container); }
+      renderStationDetail(container, selectedNode.data);
+    } else if (selectedNode.kind === "buffer") {
+      if (EDIT_DRAFT.buffers.indexOf(selectedNode.data) === -1) { selectedNode = null; return renderDetailPanel(container); }
+      renderBufferDetail(container, selectedNode.data);
+    }
+  }
+
+  function renderStationDetail(el, st) {
+    el.innerHTML = "";
+    const h = document.createElement("h3");
+    h.textContent = st.name;
+    el.appendChild(h);
+
+    const fields = document.createElement("div");
+    fields.className = "ed-fields";
+    el.appendChild(fields);
 
     const nameField = document.createElement("label");
-    nameField.className = "fe-field";
     nameField.innerHTML = `name <input type="text" class="fe-st-name" value="${esc(st.name)}">`;
     nameField.querySelector("input").oninput = (e) => { st.name = e.target.value; scheduleValidate(); };
-    body.appendChild(nameField);
+    fields.appendChild(nameField);
 
     const cycleField = document.createElement("label");
-    cycleField.className = "fe-field";
     const isPpm = st.target_ppm != null;
-    cycleField.innerHTML = `
-      <span>rate</span>
+    cycleField.innerHTML = `rate
       <select class="fe-cycle-mode">
         <option value="cycle_time" ${!isPpm ? "selected" : ""}>cycle_time (s)</option>
         <option value="target_ppm" ${isPpm ? "selected" : ""}>target_ppm</option>
@@ -311,38 +494,34 @@
     function applyCycleMode() {
       const parsed = parseFloat(valInput.value);
       const value = Number.isNaN(parsed) ? 1 : parsed;
-      if (modeSel.value === "target_ppm") {
-        st.target_ppm = value;
-        delete st.cycle_time;
-      } else {
-        st.cycle_time = value;
-        delete st.target_ppm;
-      }
+      if (modeSel.value === "target_ppm") { st.target_ppm = value; delete st.cycle_time; }
+      else { st.cycle_time = value; delete st.target_ppm; }
       scheduleValidate();
     }
     modeSel.onchange = () => { applyCycleMode(); renderEditMode(); };
     valInput.oninput = applyCycleMode;
-    body.appendChild(cycleField);
+    fields.appendChild(cycleField);
 
     const defectField = document.createElement("label");
-    defectField.className = "fe-field";
     defectField.innerHTML = `defect_rate <input type="number" step="any" class="fe-defect"
       value="${esc(st.defect_rate != null ? st.defect_rate : 0)}">`;
     defectField.querySelector("input").oninput = (e) => { st.defect_rate = parseFloat(e.target.value) || 0; scheduleValidate(); };
-    body.appendChild(defectField);
+    fields.appendChild(defectField);
 
     const removeBtn = document.createElement("button");
     removeBtn.className = "quiet fe-remove-btn";
     removeBtn.textContent = "Remove station";
     removeBtn.onclick = () => {
-      const stations = draft.stations, buffers = draft.buffers;
+      const stations = EDIT_DRAFT.stations, buffers = EDIT_DRAFT.buffers;
+      const i = stations.indexOf(st);
+      if (i < 0) return;
       const bufIdx = i > 0 ? i - 1 : 0;
       if (buffers.length > 0) buffers.splice(bufIdx, 1);
       stations.splice(i, 1);
-      expandedStations.delete(st);
+      selectedNode = null;
       renderEditMode();
     };
-    body.appendChild(removeBtn);
+    el.appendChild(removeBtn);
 
     // ---- Health sub-section ----
     const healthSection = document.createElement("div");
@@ -352,14 +531,13 @@
       <label style="font-size:11px;display:flex;gap:6px;align-items:center">
         <input type="checkbox" class="fe-health-enabled" ${healthEnabled ? "checked" : ""}> enabled
       </label>
-      <div class="fe-health-fields"></div>`;
+      <div class="fe-health-fields ed-fields"></div>`;
     const fieldsDiv = healthSection.querySelector(".fe-health-fields");
     function renderHealthFields() {
       fieldsDiv.innerHTML = "";
       if (!st.health) return;
       const h = st.health;
       const hMaxField = document.createElement("label");
-      hMaxField.className = "fe-field";
       hMaxField.innerHTML = `h_max <input type="number" class="fe-h-hmax" value="${esc(h.h_max != null ? h.h_max : 1)}">`;
       hMaxField.querySelector("input").oninput = (e) => {
         const parsed = parseInt(e.target.value, 10);
@@ -369,14 +547,12 @@
       fieldsDiv.appendChild(hMaxField);
 
       const pDegField = document.createElement("label");
-      pDegField.className = "fe-field";
       pDegField.innerHTML = `p_degrade <input type="number" step="any" class="fe-h-pdeg"
         value="${esc(h.p_degrade != null ? h.p_degrade : 0.001)}">`;
       pDegField.querySelector("input").oninput = (e) => { h.p_degrade = parseFloat(e.target.value) || 0; scheduleValidate(); };
       fieldsDiv.appendChild(pDegField);
 
       const cbmField = document.createElement("label");
-      cbmField.className = "fe-field";
       cbmField.innerHTML = `cbm_threshold <input type="number" class="fe-h-cbm"
         value="${esc(h.cbm_threshold != null ? h.cbm_threshold : (h.h_max || 1))}">`;
       cbmField.querySelector("input").oninput = (e) => {
@@ -387,7 +563,6 @@
       fieldsDiv.appendChild(cbmField);
 
       const mttrField = document.createElement("div");
-      mttrField.className = "fe-field";
       mttrField.innerHTML = `<span>mttr</span>`;
       const mttrPicker = document.createElement("div");
       mttrField.appendChild(mttrPicker);
@@ -405,118 +580,55 @@
       }
       renderEditMode();
     };
-    body.appendChild(healthSection);
+    el.appendChild(healthSection);
 
     const pvContainer = document.createElement("div");
-    body.appendChild(pvContainer);
+    el.appendChild(pvContainer);
     renderProcessValues(pvContainer, st, renderEditMode);
 
     const fmContainer = document.createElement("div");
-    body.appendChild(fmContainer);
+    el.appendChild(fmContainer);
     renderFailureModes(fmContainer, st, renderEditMode);
 
     const csContainer = document.createElement("div");
-    body.appendChild(csContainer);
+    el.appendChild(csContainer);
     renderCycleStops(csContainer, st, renderEditMode);
   }
 
-  // ---- Flow-line editor: stations, buffers, health ----
-  // Keyed by station object identity (not array index) so removing a station
-  // doesn't shift the expand/collapse state of stations after it — station
-  // objects persist through array splices, only their position changes.
-  const expandedStations = new Set();
+  function renderBufferDetail(el, b) {
+    el.innerHTML = "";
+    const h = document.createElement("h3");
+    h.textContent = b.name;
+    el.appendChild(h);
 
-  function blankStation(name) {
-    return { name: name, cycle_time: 10.0 };
-  }
-  function blankBuffer(name) {
-    return { name: name, capacity: 10 };
-  }
-  function nextName(prefix, existing) {
-    let i = 1;
-    while (existing.includes(prefix + i)) i++;
-    return prefix + i;
-  }
+    const fields = document.createElement("div");
+    fields.className = "ed-fields";
+    el.appendChild(fields);
 
-  function stationSummary(st) {
-    const pv = (st.process_values || []).length;
-    const fm = (st.failure_modes || []).length;
-    const cs = (st.cycle_stops || []).length;
-    return `${pv} PV · ${fm} FM · ${cs} CS`;
-  }
+    const nameField = document.createElement("label");
+    nameField.innerHTML = `name <input type="text" class="fe-buf-name" value="${esc(b.name)}">`;
+    nameField.querySelector("input").oninput = (e) => { b.name = e.target.value; scheduleValidate(); };
+    fields.appendChild(nameField);
 
-  function renderFlowEditor(container, draft) {
-    const stations = draft.stations;
-    const buffers = draft.buffers;
-    container.innerHTML = "";
-    const wrap = document.createElement("div");
-    wrap.className = "flow-editor";
-
-    stations.forEach((st, i) => {
-      const card = document.createElement("div");
-      card.className = "fe-station";
-      card.dataset.stationIndex = i;
-      const expanded = expandedStations.has(st);
-
-      const head = document.createElement("div");
-      head.className = "fe-head";
-      head.innerHTML = `<div><div class="fe-name">${esc(st.name)}</div>
-        <div class="fe-summary">${st.cycle_time != null ? esc(st.cycle_time) + "s" : (esc(st.target_ppm) + " ppm")}
-          · ${esc(stationSummary(st))}</div></div>`;
-      head.onclick = () => {
-        if (expanded) expandedStations.delete(st); else expandedStations.add(st);
-        renderEditMode();
-      };
-      card.appendChild(head);
-
-      const body = document.createElement("div");
-      body.className = "fe-body" + (expanded ? "" : " collapsed");
-      if (expanded) buildStationBody(body, st, i, draft);
-      card.appendChild(body);
-
-      wrap.appendChild(card);
-
-      if (i < buffers.length) {
-        const b = buffers[i];
-        const bw = document.createElement("div");
-        bw.className = "fe-buffer";
-        bw.innerHTML = `<label class="fe-field" style="font-size:10px">name
-          <input type="text" value="${esc(b.name)}" class="fe-buf-name"></label>
-          <input type="number" value="${esc(b.capacity)}" class="fe-buf-cap">`;
-        bw.querySelector(".fe-buf-name").oninput = (e) => { b.name = e.target.value; scheduleValidate(); };
-        bw.querySelector(".fe-buf-cap").oninput = (e) => {
-          const parsed = parseInt(e.target.value, 10);
-          b.capacity = Number.isNaN(parsed) ? 1 : parsed;
-          scheduleValidate();
-        };
-        wrap.appendChild(bw);
-      }
-    });
-
-    const addBtn = document.createElement("button");
-    addBtn.className = "quiet fe-add-station";
-    addBtn.textContent = "+ Add Station";
-    addBtn.onclick = () => {
-      const names = stations.map(s => s.name);
-      const newStation = blankStation(nextName("S", names));
-      if (stations.length > 0) {
-        buffers.push(blankBuffer(nextName("B", buffers.map(b => b.name))));
-      }
-      stations.push(newStation);
-      expandedStations.add(newStation);
-      renderEditMode();
+    const capField = document.createElement("label");
+    capField.innerHTML = `capacity <input type="number" class="fe-buf-cap" value="${esc(b.capacity)}">`;
+    capField.querySelector("input").oninput = (e) => {
+      const parsed = parseInt(e.target.value, 10);
+      b.capacity = Number.isNaN(parsed) ? 1 : parsed;
+      scheduleValidate();
     };
-    wrap.appendChild(addBtn);
-
-    container.appendChild(wrap);
+    fields.appendChild(capField);
   }
 
   window.entityForms = window.entityForms || {};
   window.entityForms.renderProcessValues = renderProcessValues;
   window.entityForms.renderFailureModes = renderFailureModes;
   window.entityForms.renderCycleStops = renderCycleStops;
-  window.entityForms.renderFlowEditor = renderFlowEditor;
+  window.entityForms.renderPipelineRow = renderPipelineRow;
+  window.entityForms.renderDetailPanel = renderDetailPanel;
+  window.entityForms.selectStation = selectStation;
+  window.entityForms.clearSelection = clearSelection;
+  window.entityForms.addStation = addStation;
   window.entityForms.blankStation = blankStation;
   window.entityForms.blankBuffer = blankBuffer;
-  window.entityForms.expandedStations = expandedStations;
 })();
