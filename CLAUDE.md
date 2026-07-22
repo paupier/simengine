@@ -73,7 +73,7 @@ Everything consumes one frozen representation: `LineEngine.snapshot()` builds a 
 
 ### Config schema (§3, exhaustive for v1)
 
-`config/scenarios.yaml`: `stations` (min 2; `cycle_time` or `target_ppm` — ppm wins), `buffers` (exactly n−1, implicit serial routing), per-station `health {h_max, p_degrade, cbm_threshold, mttr}`, `failure_modes`, `cycle_stops {reason, mtbe, duration}`, `process_values` (profiles: `cycle_peak`, `first_order_lag`, `cycle_ramp`, `constant_noise` — formulas in `engine/process_values.py`, PV alarms clear with 1%-of-limit hysteresis), `spc.enabled`, scenario-level `comms` and `historians` (plugin name list; backends configured via env vars). Don't invent config keys; unknown keys are tolerated on read.
+`config/scenarios.yaml`: `stations` (min 2; `cycle_time` or `target_ppm` — ppm wins), `buffers` (exactly n−1, implicit serial routing), per-station `health {h_max, p_degrade, mttr}`, `failure_modes`, `cycle_stops {reason, mtbe, duration}`, `process_values` (profiles: `cycle_peak`, `first_order_lag`, `cycle_ramp`, `constant_noise` — formulas in `engine/process_values.py`, PV alarms clear with 1%-of-limit hysteresis), `spc.enabled`, scenario-level `comms` and `historians` (plugin name list; backends configured via env vars). Don't invent config keys; unknown keys are tolerated on read.
 
 ### Publishers
 
