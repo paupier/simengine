@@ -133,8 +133,8 @@ demo_line:
     - {name: B1, capacity: 10}
   comms:
     opcua: {enabled: true, port: 4840}
-    opcua_mqtt: {enabled: false, broker: "mqtt://localhost:1883"}
-    sparkplugb: {enabled: false, broker: "mqtt://localhost:1883", group_id: "Area01", edge_node_id: "Line1"}
+    opcua_mqtt: {enabled: true, broker: "mqtt://mosquitto:1883"}
+    sparkplugb: {enabled: false, broker: "mqtt://mosquitto:1883", group_id: "Area01", edge_node_id: "Line1"}
 ```
 
 ### Recipes

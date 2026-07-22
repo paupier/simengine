@@ -254,9 +254,9 @@ demo_line:
   shifts: {}                  # optional, parent schema
   comms:                      # ★ per clone_target_architecture §3
     opcua: {enabled: true, port: 4840}
-    opcua_mqtt: {enabled: false, broker: "mqtt://localhost:1883",
+    opcua_mqtt: {enabled: true, broker: "mqtt://mosquitto:1883",
                  publisher_id: "simengine-line1", flat_topics: true, publish_interval: 1}
-    sparkplugb: {enabled: false, broker: "mqtt://localhost:1883",
+    sparkplugb: {enabled: false, broker: "mqtt://mosquitto:1883",
                  group_id: "Area01", edge_node_id: "Line1"}
   historians: []              # ★ plugin names, e.g. ["csv"]; empty default
 ```
