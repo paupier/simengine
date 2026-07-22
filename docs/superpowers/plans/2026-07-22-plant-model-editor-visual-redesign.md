@@ -31,21 +31,29 @@
 **Interfaces:**
 - No new exported functions. `renderKGGraph`'s signature is unchanged in this task (the `flowOnly` option is added in Task 3).
 
-Before touching code, a geometry fact this task must fix as a prerequisite: the current flow row has a real, pre-existing 24px overlap bug. `LANE_W=170`, `STATION_W=140`, buffer starts at `x+STATION_W+4=x+144` and (at `BUF_W=50`) ends at `x+194`, but the next station starts at `laneX(i+1)=x+170` — the buffer box's rightmost 24px overlaps the next station box (hidden today only because the next station, painted later in document order, opaquely covers it). This was never visible as a bug because no line was ever drawn to reveal the geometry — this task adds that line, so the overlap must be fixed first or the new connector line will visibly draw backwards. Fix: widen `LANE_W` to `200` (confirmed via live-rendered `demo_line` geometry: station 0 at `translate(60,70)` width 140 ends at x=200; with `LANE_W=200`, buffer starts at x=204 ends at x=254, next station starts at `laneX(1)=260` — a clean 6px gap, no overlap).
+Before touching code, a geometry fact this task must fix as a prerequisite: the current flow row has a real, pre-existing 24px overlap bug. `LANE_W=170`, `STATION_W=140` (defined as `const STATION_W = LANE_W - 30;` — **derived from `LANE_W`, not independent**), buffer starts at `x+STATION_W+4=x+144` and (at `BUF_W=50`) ends at `x+194`, but the next station starts at `laneX(i+1)=x+170` — the buffer box's rightmost 24px overlaps the next station box (hidden today only because the next station, painted later in document order, opaquely covers it). This was never visible as a bug because no line was ever drawn to reveal the geometry — this task adds that line, so the overlap must be fixed first or the new connector line will visibly draw backwards.
 
-- [ ] **Step 1: Fix `LANE_W` and add flow-row connector lines**
+**The fix requires two changes, not one.** Because `STATION_W` is derived as `LANE_W - 30`, widening `LANE_W` alone widens `STATION_W` by the exact same amount and the 24px overlap is a mathematical invariant of that formula — verified algebraically: gap `= LANE_W - (STATION_W + 4 + BUF_W) = LANE_W - (LANE_W - 30) - 54 = -24`, independent of `LANE_W`'s actual value. `STATION_W` must be decoupled into its own independent constant (kept at its current numeric value, `140`, to preserve the text-fitting behavior already verified not to break at 8 stations) **and** `LANE_W` widened to `200` to make room for it plus the buffer plus a trailing gap (confirmed via live-rendered `demo_line` geometry: station 0 at `translate(60,70)` width 140 ends at x=200; with `STATION_W=140` fixed and `LANE_W=200`, buffer starts at x=204 ends at x=254, next station starts at `laneX(1)=260` — a clean 6px gap, no overlap).
+
+- [ ] **Step 1: Fix `LANE_W`/`STATION_W` and add flow-row connector lines**
 
 In `src/simengine/api/ui/static/kg-graph.js`, change:
 
 ```javascript
   const LANE_W = 170;
+  const STATION_H = 60;
+  const STATION_W = LANE_W - 30;
 ```
 
 to:
 
 ```javascript
   const LANE_W = 200;
+  const STATION_H = 60;
+  const STATION_W = 140;
 ```
+
+(`STATION_W` changes from a value *derived from* `LANE_W` to an *independent* constant, kept at its current numeric value. This is the actual fix — see the explanation above; changing `LANE_W` alone does not close the overlap, because the old `LANE_W - 30` derivation would have scaled `STATION_W` right along with it.)
 
 Then find the `stations.forEach` block that draws station and buffer boxes (currently the block starting `stations.forEach(function (st, i) {` right after the `svg.appendChild(svgEl("text", { x: 10, y: flowY + STATION_H / 2, class: "kg-endpoint" }, "Source ∞"));` line). Replace the whole block:
 
