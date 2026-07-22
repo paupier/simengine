@@ -227,11 +227,11 @@
     createDistributionPicker(mttrPicker, fm.mttr, (cfg) => { fm.mttr = cfg; scheduleValidate(); });
     container.appendChild(mttrField);
 
-    const removeBtn = document.createElement("button");
-    removeBtn.className = "quiet fe-remove-btn";
-    removeBtn.textContent = "Remove";
-    removeBtn.onclick = () => { station.failure_modes.splice(index, 1); rerender(); };
-    container.appendChild(removeBtn);
+  }
+
+  function fmSummaryCells(fm) {
+    return [fm.name, fm.type, "mttf " + (fm.mttf ? fm.mttf.distribution : "—"),
+      "mttr " + (fm.mttr ? fm.mttr.distribution : "—")];
   }
 
   function renderFailureModes(container, station, rerender) {
@@ -241,12 +241,47 @@
     section.className = "fe-sub-section";
     section.innerHTML = "<h4>Failure Modes</h4>";
 
+    const table = document.createElement("table");
+    table.className = "ed-table";
+    table.innerHTML = "<thead><tr><th>name</th><th>type</th><th>mttf</th><th>mttr</th><th></th></tr></thead>";
+    const tbody = document.createElement("tbody");
+    table.appendChild(tbody);
+
     list.forEach((fm, i) => {
-      const row = document.createElement("div");
-      row.className = "fe-sub-row";
-      section.appendChild(row);
-      renderFailureModeForm(row, fm, station, i, rerender);
+      const summaryRow = document.createElement("tr");
+      summaryRow.className = "ed-table-row";
+      summaryRow.innerHTML = fmSummaryCells(fm).map(c => `<td>${esc(c)}</td>`).join("") + "<td></td>";
+      const removeBtn = document.createElement("button");
+      removeBtn.className = "quiet fe-remove-btn";
+      removeBtn.textContent = "×";
+      removeBtn.onclick = (e) => {
+        e.stopPropagation();
+        station.failure_modes.splice(i, 1);
+        rerender();
+      };
+      summaryRow.lastElementChild.appendChild(removeBtn);
+
+      const expandRow = document.createElement("tr");
+      expandRow.className = "ed-table-expand";
+      expandRow.hidden = true;
+      const expandCell = document.createElement("td");
+      expandCell.colSpan = 5;
+      expandRow.appendChild(expandCell);
+
+      summaryRow.onclick = () => {
+        const wasHidden = expandRow.hidden;
+        tbody.querySelectorAll(".ed-table-expand").forEach(r => { r.hidden = true; });
+        if (wasHidden) {
+          renderFailureModeForm(expandCell, fm, station, i, rerender);
+          expandRow.hidden = false;
+        }
+      };
+
+      tbody.appendChild(summaryRow);
+      tbody.appendChild(expandRow);
     });
+
+    section.appendChild(table);
 
     const addBtn = document.createElement("button");
     addBtn.className = "quiet fe-add-btn";
@@ -289,11 +324,11 @@
     createDistributionPicker(durPicker, cs.duration, (cfg) => { cs.duration = cfg; scheduleValidate(); });
     container.appendChild(durField);
 
-    const removeBtn = document.createElement("button");
-    removeBtn.className = "quiet fe-remove-btn";
-    removeBtn.textContent = "Remove";
-    removeBtn.onclick = () => { station.cycle_stops.splice(index, 1); rerender(); };
-    container.appendChild(removeBtn);
+  }
+
+  function csSummaryCells(cs) {
+    return [cs.reason, "mtbe " + (cs.mtbe ? cs.mtbe.distribution : "—"),
+      "duration " + (cs.duration ? cs.duration.distribution : "—")];
   }
 
   function renderCycleStops(container, station, rerender) {
@@ -303,12 +338,47 @@
     section.className = "fe-sub-section";
     section.innerHTML = "<h4>Cycle Stops</h4>";
 
+    const table = document.createElement("table");
+    table.className = "ed-table";
+    table.innerHTML = "<thead><tr><th>reason</th><th>mtbe</th><th>duration</th><th></th></tr></thead>";
+    const tbody = document.createElement("tbody");
+    table.appendChild(tbody);
+
     list.forEach((cs, i) => {
-      const row = document.createElement("div");
-      row.className = "fe-sub-row";
-      section.appendChild(row);
-      renderCycleStopForm(row, cs, station, i, rerender);
+      const summaryRow = document.createElement("tr");
+      summaryRow.className = "ed-table-row";
+      summaryRow.innerHTML = csSummaryCells(cs).map(c => `<td>${esc(c)}</td>`).join("") + "<td></td>";
+      const removeBtn = document.createElement("button");
+      removeBtn.className = "quiet fe-remove-btn";
+      removeBtn.textContent = "×";
+      removeBtn.onclick = (e) => {
+        e.stopPropagation();
+        station.cycle_stops.splice(i, 1);
+        rerender();
+      };
+      summaryRow.lastElementChild.appendChild(removeBtn);
+
+      const expandRow = document.createElement("tr");
+      expandRow.className = "ed-table-expand";
+      expandRow.hidden = true;
+      const expandCell = document.createElement("td");
+      expandCell.colSpan = 4;
+      expandRow.appendChild(expandCell);
+
+      summaryRow.onclick = () => {
+        const wasHidden = expandRow.hidden;
+        tbody.querySelectorAll(".ed-table-expand").forEach(r => { r.hidden = true; });
+        if (wasHidden) {
+          renderCycleStopForm(expandCell, cs, station, i, rerender);
+          expandRow.hidden = false;
+        }
+      };
+
+      tbody.appendChild(summaryRow);
+      tbody.appendChild(expandRow);
     });
+
+    section.appendChild(table);
 
     const addBtn = document.createElement("button");
     addBtn.className = "quiet fe-add-btn";
@@ -515,6 +585,14 @@
     const pvContainer = document.createElement("div");
     el.appendChild(pvContainer);
     renderProcessValues(pvContainer, st, renderEditMode);
+
+    const fmContainer = document.createElement("div");
+    el.appendChild(fmContainer);
+    renderFailureModes(fmContainer, st, renderEditMode);
+
+    const csContainer = document.createElement("div");
+    el.appendChild(csContainer);
+    renderCycleStops(csContainer, st, renderEditMode);
   }
 
   function renderBufferDetail(el, b) {
