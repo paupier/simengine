@@ -97,8 +97,11 @@
     let maxSubRows = 1;
     laneSubs.forEach(function (l) { if (l.length > maxSubRows) maxSubRows = l.length; });
 
+    const flowOnly = !!opts.flowOnly;
     const width = Math.max(container.clientWidth || 800, stations.length * LANE_W + 160);
-    const height = subY + maxSubRows * (SUBROW_H + 8) + (alarmCodes.length ? 90 : 20);
+    const height = flowOnly
+      ? flowY + STATION_H + 20
+      : subY + maxSubRows * (SUBROW_H + 8) + (alarmCodes.length ? 90 : 20);
 
     container.innerHTML = "";
     const svg = svgEl("svg", {
@@ -157,30 +160,32 @@
     }, "Sink ∞"));
 
     const alarmPos = {};
-    stations.forEach(function (st, i) {
-      const x = laneX(i);
-      laneSubs[i].forEach(function (sub, r) {
-        const sy = subY + r * (SUBROW_H + 8);
-        svg.appendChild(svgEl("line", {
-          x1: x + 10, y1: sy + SUBROW_H / 2, x2: x + 10, y2: flowY + STATION_H,
-          class: "kg-edge kg-edge-" + sub.type.toLowerCase(),
-        }));
-        const g = svgEl("g", {
-          class: "kg-node kg-node-sub kg-node-" + sub.type.toLowerCase(), "data-id": sub.id,
-          transform: "translate(" + x + "," + sy + ")",
+    if (!flowOnly) {
+      stations.forEach(function (st, i) {
+        const x = laneX(i);
+        laneSubs[i].forEach(function (sub, r) {
+          const sy = subY + r * (SUBROW_H + 8);
+          svg.appendChild(svgEl("line", {
+            x1: x + 10, y1: sy + SUBROW_H / 2, x2: x + 10, y2: flowY + STATION_H,
+            class: "kg-edge kg-edge-" + sub.type.toLowerCase(),
+          }));
+          const g = svgEl("g", {
+            class: "kg-node kg-node-sub kg-node-" + sub.type.toLowerCase(), "data-id": sub.id,
+            transform: "translate(" + x + "," + sy + ")",
+          });
+          g.appendChild(svgEl("rect", {
+            width: SUB_W, height: SUBROW_H, class: "kg-rect kg-rect-sub kg-rect-" + sub.type.toLowerCase(),
+          }));
+          const lbl = subEntityLabel(sub);
+          g.appendChild(svgEl("text", { x: 6, y: 14, class: "kg-label kg-label-type" }, lbl.type));
+          g.appendChild(svgEl("text", { x: 6, y: 30, class: "kg-label" }, lbl.main));
+          g.addEventListener("click", function () { onNodeClick(sub); });
+          svg.appendChild(g);
         });
-        g.appendChild(svgEl("rect", {
-          width: SUB_W, height: SUBROW_H, class: "kg-rect kg-rect-sub kg-rect-" + sub.type.toLowerCase(),
-        }));
-        const lbl = subEntityLabel(sub);
-        g.appendChild(svgEl("text", { x: 6, y: 14, class: "kg-label kg-label-type" }, lbl.type));
-        g.appendChild(svgEl("text", { x: 6, y: 30, class: "kg-label" }, lbl.main));
-        g.addEventListener("click", function () { onNodeClick(sub); });
-        svg.appendChild(g);
       });
-    });
+    }
 
-    if (alarmCodes.length) {
+    if (!flowOnly && alarmCodes.length) {
       const bandY = height - 70;
       alarmCodes.forEach(function (code, i) {
         const ax = 60 + i * 130;
