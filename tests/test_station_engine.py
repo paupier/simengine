@@ -1,4 +1,4 @@
-"""Gate P2 — engine core: determinism, states, health, CBM, quality, cycle stops, OEE."""
+"""Gate P2 — engine core: determinism, states, health, quality, cycle stops, OEE."""
 import json
 from dataclasses import asdict
 
@@ -38,7 +38,6 @@ def stochastic_config():
                 "health": {
                     "h_max": 3,
                     "p_degrade": 0.05,
-                    "cbm_threshold": 3,
                     "mttr": {"distribution": "lognormal", "mean": 8, "std": 2},
                 },
                 "failure_modes": [
@@ -160,8 +159,11 @@ class TestRunToFailure:
         assert tis.get(UNDER_REPAIR, 0) == 5.0
 
 
-class TestCBM:
-    def test_never_reaches_failed(self):
+class TestCbmRemoved:
+    def test_former_cbm_config_now_reaches_failed(self):
+        """Same station config TestCBM used to assert never failed — with
+        cbm_threshold no longer read by anything, this must now behave as
+        plain run-to-failure and actually reach FAILED/UNDER_REPAIR."""
         cfg = {
             "stations": [
                 {
@@ -170,7 +172,6 @@ class TestCBM:
                     "health": {
                         "h_max": 3,
                         "p_degrade": 1.0,
-                        "cbm_threshold": 2,
                         "mttr": {"distribution": "constant", "value": 4},
                     },
                 },
@@ -178,14 +179,15 @@ class TestCBM:
             ],
             "buffers": [{"name": "B1", "capacity": 5}],
         }
-        eng = LineEngine(cfg, "test", seed=7, run_id="cbm")
+        eng = LineEngine(cfg, "test", seed=7, run_id="cbm-removed")
+        saw_failed_or_repair = False
         for _ in range(200):
             eng.step()
-            st = eng.stations[0]
-            assert st.state not in (FAILED, UNDER_REPAIR)
-            assert st.health < st.h_max
-        # health cycles back to 0 after each CBM repair
-        assert eng.stations[0].time_in_state.get(FAILED, 0) == 0
+            if eng.stations[0].state in (FAILED, UNDER_REPAIR):
+                saw_failed_or_repair = True
+                break
+        assert saw_failed_or_repair
+        assert eng.stations[0].time_in_state.get(FAILED, 0) > 0
 
 
 class TestQualityConservation:
@@ -310,7 +312,6 @@ class TestOEE:
                     "health": {
                         "h_max": 2,
                         "p_degrade": 0.2,
-                        "cbm_threshold": 2,
                         "mttr": {"distribution": "constant", "value": 10},
                     },
                 },

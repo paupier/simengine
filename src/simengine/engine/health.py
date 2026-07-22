@@ -6,12 +6,10 @@ MTTR distribution of the failure mode that "caused" the failure (competing
 risks via the carried FailureModeManager) or, failing that, the station-level
 health.mttr.
 
-CBM (cbm_threshold < h_max): maintenance starts as soon as health reaches the
-threshold; health is pinned for the repair duration and the station keeps
-processing (parent-validated semantics — CBM never enters the FAILED path and
-adds no downtime). The repair countdown is therefore keyed on
-repair_remaining > 0, not on the reported UNDER_REPAIR state, which only
-exists for health >= h_max.
+Run-to-failure only: every station degrades to h_max, fails, and repairs for
+an MTTR-sampled duration before resetting to 0. The repair countdown is keyed
+on repair_remaining > 0, not on the reported UNDER_REPAIR state, so the two
+stay in sync even across the step where health first reaches h_max.
 """
 from typing import Optional
 
@@ -30,7 +28,6 @@ class HealthModel:
         health_cfg = health_cfg or {}
         self.h_max: int = health_cfg.get("h_max", 1)
         self.p_degrade: float = float(health_cfg.get("p_degrade", 0.0))
-        self.cbm_threshold: int = health_cfg.get("cbm_threshold", self.h_max)
         self.mttr_dist = (
             DistributionFactory.create(health_cfg["mttr"]) if "mttr" in health_cfg else None
         )
@@ -98,10 +95,6 @@ class HealthModel:
         elif self.health >= self.h_max:
             # Just failed: attribute and sample repair once
             self.active_failure_mode = self.pending_failure_mode
-            self.repair_remaining = self._sample_repair(np_rng, sim_step)
-        elif self.cbm_threshold < self.h_max and self.health >= self.cbm_threshold:
-            # CBM: immediate maintenance, no failure path; health pinned for
-            # the repair duration (no active_failure_mode -> station mttr).
             self.repair_remaining = self._sample_repair(np_rng, sim_step)
         else:
             if rng.random() < self.p_degrade:
