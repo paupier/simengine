@@ -415,6 +415,65 @@
       renderEditMode();
     };
     el.appendChild(removeBtn);
+
+    // ---- Health sub-section ----
+    const healthSection = document.createElement("div");
+    healthSection.className = "fe-sub-section";
+    const healthEnabled = !!st.health;
+    healthSection.innerHTML = `<h4>Health</h4>
+      <label style="font-size:11px;display:flex;gap:6px;align-items:center">
+        <input type="checkbox" class="fe-health-enabled" ${healthEnabled ? "checked" : ""}> enabled
+      </label>
+      <div class="fe-health-fields ed-fields"></div>`;
+    const fieldsDiv = healthSection.querySelector(".fe-health-fields");
+    function renderHealthFields() {
+      fieldsDiv.innerHTML = "";
+      if (!st.health) return;
+      const h = st.health;
+      const hMaxField = document.createElement("label");
+      hMaxField.innerHTML = `h_max <input type="number" class="fe-h-hmax" value="${esc(h.h_max != null ? h.h_max : 1)}">`;
+      hMaxField.querySelector("input").oninput = (e) => {
+        const parsed = parseInt(e.target.value, 10);
+        h.h_max = Number.isNaN(parsed) ? 1 : parsed;
+        scheduleValidate();
+      };
+      fieldsDiv.appendChild(hMaxField);
+
+      const pDegField = document.createElement("label");
+      pDegField.innerHTML = `p_degrade <input type="number" step="any" class="fe-h-pdeg"
+        value="${esc(h.p_degrade != null ? h.p_degrade : 0.001)}">`;
+      pDegField.querySelector("input").oninput = (e) => { h.p_degrade = parseFloat(e.target.value) || 0; scheduleValidate(); };
+      fieldsDiv.appendChild(pDegField);
+
+      const cbmField = document.createElement("label");
+      cbmField.innerHTML = `cbm_threshold <input type="number" class="fe-h-cbm"
+        value="${esc(h.cbm_threshold != null ? h.cbm_threshold : (h.h_max || 1))}">`;
+      cbmField.querySelector("input").oninput = (e) => {
+        const parsed = parseInt(e.target.value, 10);
+        h.cbm_threshold = Number.isNaN(parsed) ? 1 : parsed;
+        scheduleValidate();
+      };
+      fieldsDiv.appendChild(cbmField);
+
+      const mttrField = document.createElement("div");
+      mttrField.innerHTML = `<span>mttr</span>`;
+      const mttrPicker = document.createElement("div");
+      mttrField.appendChild(mttrPicker);
+      createDistributionPicker(mttrPicker, h.mttr, (cfg) => { h.mttr = cfg; scheduleValidate(); });
+      fieldsDiv.appendChild(mttrField);
+    }
+    renderHealthFields();
+
+    healthSection.querySelector(".fe-health-enabled").onchange = (e) => {
+      if (e.target.checked) {
+        st.health = { h_max: 3, p_degrade: 0.001, cbm_threshold: 3,
+          mttr: { distribution: "lognormal", mean: 120, std: 30 } };
+      } else {
+        delete st.health;
+      }
+      renderEditMode();
+    };
+    el.appendChild(healthSection);
   }
 
   function renderBufferDetail(el, b) {
