@@ -147,8 +147,10 @@ class TestValidateHealth:
 
     def test_stray_cbm_threshold_key_tolerated(self):
         """Unknown-key tolerance (CLAUDE.md): an old config with a leftover
-        cbm_threshold key must still validate — it's simply never read."""
-        validate_health(self.base(cbm_threshold=1))
+        cbm_threshold key must still validate — it's simply never read. Probe value
+        (6) is deliberately set to violate the old bounds check (0 < cbm <= h_max=5)
+        to ensure regression detection."""
+        validate_health(self.base(cbm_threshold=6))
 
     def test_missing_mttr(self):
         cfg = self.base()
