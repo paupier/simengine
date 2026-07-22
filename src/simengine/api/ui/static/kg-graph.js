@@ -10,9 +10,9 @@
 //   4. Shared alarm-code band at the bottom; every station's CAN_RAISE edges
 //      curve down into it.
 (function () {
-  const LANE_W = 170;
+  const LANE_W = 200;
   const STATION_H = 60;
-  const STATION_W = LANE_W - 30;
+  const STATION_W = 140;
   const BUF_W = 50;
   const SUBROW_H = 46;
   const SUB_W = 150;
@@ -53,6 +53,13 @@
       return { type: "metric", main: node.name };
     }
     return { type: node.type.toLowerCase(), main: node.name };
+  }
+
+  function alarmEdgeClass(codeName) {
+    if (codeName.indexOf("FM_") === 0) return "kg-edge-failuremode";
+    if (codeName.indexOf("PV_") === 0) return "kg-edge-processvalue";
+    if (codeName.indexOf("CS_") === 0) return "kg-edge-cyclestopreason";
+    return "kg-edge-alarm";
   }
 
   function renderKGGraph(container, nodeLink, opts) {
@@ -107,6 +114,18 @@
 
     stations.forEach(function (st, i) {
       const x = laneX(i);
+      const midY = flowY + STATION_H / 2;
+
+      if (i < buffers.length) {
+        const bx = x + STATION_W + 4;
+        svg.appendChild(svgEl("line", {
+          x1: x + STATION_W, y1: midY, x2: bx, y2: midY, class: "kg-edge kg-edge-flow",
+        }));
+        svg.appendChild(svgEl("line", {
+          x1: bx + BUF_W, y1: midY, x2: laneX(i + 1), y2: midY, class: "kg-edge kg-edge-flow",
+        }));
+      }
+
       const g = svgEl("g", {
         class: "kg-node kg-node-station", "data-id": st.id,
         transform: "translate(" + x + "," + flowY + ")",
@@ -143,7 +162,8 @@
       laneSubs[i].forEach(function (sub, r) {
         const sy = subY + r * (SUBROW_H + 8);
         svg.appendChild(svgEl("line", {
-          x1: x + 10, y1: sy + SUBROW_H / 2, x2: x + 10, y2: flowY + STATION_H, class: "kg-edge",
+          x1: x + 10, y1: sy + SUBROW_H / 2, x2: x + 10, y2: flowY + STATION_H,
+          class: "kg-edge kg-edge-" + sub.type.toLowerCase(),
         }));
         const g = svgEl("g", {
           class: "kg-node kg-node-sub kg-node-" + sub.type.toLowerCase(), "data-id": sub.id,
@@ -184,10 +204,11 @@
         if (idx < 0) return;
         const sx = laneX(idx) + STATION_W / 2;
         const sy2 = flowY + STATION_H;
+        const codeNode = byId[e.target];
         const path = svgEl("path", {
           d: "M" + sx + "," + sy2 + " C" + sx + "," + (target.y - 20) +
              " " + target.x + "," + (sy2 + 20) + " " + target.x + "," + target.y,
-          class: "kg-edge kg-edge-alarm",
+          class: "kg-edge " + alarmEdgeClass(codeNode.name),
         });
         svg.insertBefore(path, svg.firstChild);
       });
