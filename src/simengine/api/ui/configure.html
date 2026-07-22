@@ -69,32 +69,25 @@
   .settings-panel table.shifts td { padding: 3px 6px; }
   .settings-panel table.shifts input { width: 90px; }
 
-  .flow-editor { display: flex; align-items: flex-start; gap: 0; overflow-x: auto;
-    border: 1px solid var(--hairline); background: var(--panel); padding: 16px; min-width: max-content; }
-  .fe-station { border: 1px solid var(--ink); background: #fff; min-width: 170px;
-    max-width: 170px; }
-  .fe-station .fe-head { padding: 8px 10px; cursor: pointer; display: flex;
-    justify-content: space-between; align-items: center; }
-  .fe-station .fe-name { font-family: var(--mono); font-weight: 700; font-size: 13px; }
-  .fe-station .fe-summary { font-size: 10.5px; color: var(--ink-2); margin-top: 4px; }
-  .fe-station .fe-body { padding: 0 10px 10px; border-top: 1px solid var(--hairline); }
-  .fe-station .fe-body.collapsed { display: none; }
   .fe-field { display: flex; flex-direction: column; gap: 2px; margin: 8px 0; font-size: 11px;
     color: var(--ink-2); }
   .fe-field input, .fe-field select { font-family: var(--mono); font-size: 12.5px;
     padding: 4px 5px; border: 1px solid var(--hairline); }
-  .fe-buffer { display: flex; flex-direction: column; align-items: center; padding: 0 6px;
-    min-width: 90px; align-self: center; }
-  .fe-buffer input { width: 60px; font-family: var(--mono); font-size: 11px;
-    padding: 3px; border: 1px solid var(--hairline); text-align: center; margin-top: 3px; }
   .fe-sub-section { margin-top: 10px; border-top: 1px dashed var(--hairline); padding-top: 8px; }
   .fe-sub-section h4 { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
     color: var(--ink-2); margin-bottom: 6px; }
-  .fe-sub-row { border: 1px solid var(--hairline); background: var(--paper); padding: 6px 8px;
-    margin-bottom: 6px; font-size: 11.5px; }
-  .fe-sub-row .fe-sub-row-head { display: flex; justify-content: space-between; align-items: center; }
   .fe-remove-btn, .fe-add-btn { font-size: 10px; padding: 3px 7px; }
-  .fe-add-station { min-width: 90px; align-self: center; margin: 0 10px; }
+
+  .edit-detail-panel { border: 1px solid var(--hairline); background: var(--panel);
+    padding: 14px 16px; margin-top: 12px; font-size: 12.5px;
+    min-height: 120px; height: 260px; resize: both; overflow: auto; }
+  .edit-detail-panel h3 { font-family: var(--mono); font-size: 15px; margin-bottom: 8px; }
+  .edit-detail-panel .ed-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 8px; margin-bottom: 10px; }
+  .edit-detail-panel .ed-fields label { display: flex; flex-direction: column; gap: 2px;
+    font-size: 11px; color: var(--ink-2); }
+  .edit-detail-panel .ed-fields input, .edit-detail-panel .ed-fields select {
+    font-family: var(--mono); font-size: 12.5px; padding: 4px 5px; border: 1px solid var(--hairline); }
 
   #edit-validation { margin: 10px 0; }
   #edit-validation.ok { color: var(--st-processing); }
@@ -137,13 +130,19 @@
       <ul class="picklist" id="edit-scenario-list" style="width:220px;max-height:120px"></ul>
       <button id="edit-new" class="quiet">+ New Scenario</button>
       <button id="edit-save" class="quiet">Save scenario</button>
+      <button id="pipeline-add-station" class="quiet">+ Add Station</button>
       <span class="msg" id="edit-msg" hidden></span>
     </div>
     <details class="settings-panel" id="settings-panel" open>
       <summary class="eyebrow" style="cursor:pointer">Scenario settings</summary>
       <div id="settings-body"></div>
     </details>
-    <div id="flow-editor"></div>
+    <div class="kg-wrap" id="pipeline-row-wrap"><div id="pipeline-row">
+      <span class="muted mono">Select a scenario to edit its plant model.</span>
+    </div></div>
+    <div id="edit-detail" class="edit-detail-panel">
+      <span class="kg-detail-empty">Click a station or buffer to edit it.</span>
+    </div>
     <div class="msg" id="edit-validation" hidden></div>
   </div>
 
@@ -276,7 +275,7 @@
     }
     const stationName = node.type === "Station" ? node.name : node.station;
     const idx = EDIT_DRAFT.stations.findIndex(s => s.name === stationName);
-    if (idx >= 0) entityForms.expandedStations.add(EDIT_DRAFT.stations[idx]);
+    if (idx >= 0) entityForms.selectStation(EDIT_DRAFT.stations[idx]);
     renderEditMode();
   }
 
@@ -444,7 +443,8 @@
   function renderEditMode() {
     if (!EDIT_DRAFT) return;
     renderSettingsPanel();
-    entityForms.renderFlowEditor($("flow-editor"), EDIT_DRAFT);
+    entityForms.renderPipelineRow($("pipeline-row"), EDIT_DRAFT);
+    entityForms.renderDetailPanel($("edit-detail"));
     scheduleValidate();
   }
   window.renderEditMode = renderEditMode;
@@ -534,8 +534,14 @@
     currentEditScenario = name;
     EDIT_DRAFT = config;
     window.EDIT_DRAFT = EDIT_DRAFT;
-    entityForms.expandedStations.clear();
+    entityForms.clearSelection();
     note("edit-msg", `New scenario '${name}' — unsaved. Click "Save scenario" to persist.`);
+    renderEditMode();
+  };
+
+  $("pipeline-add-station").onclick = () => {
+    if (!EDIT_DRAFT) return;
+    entityForms.addStation(EDIT_DRAFT);
     renderEditMode();
   };
 
