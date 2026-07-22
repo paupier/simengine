@@ -124,14 +124,16 @@
     container.appendChild(numField("alarm_high", pv, "alarm_high", null));
     container.appendChild(numField("alarm_low", pv, "alarm_low", null));
 
-    const removeBtn = document.createElement("button");
-    removeBtn.className = "quiet fe-remove-btn";
-    removeBtn.textContent = "Remove";
-    removeBtn.onclick = () => {
-      station.process_values.splice(index, 1);
-      rerender();
-    };
-    container.appendChild(removeBtn);
+  }
+
+  function pvSummaryCells(pv) {
+    const keyVal = pv.profile === "cycle_peak" ? "baseline " + (pv.baseline != null ? pv.baseline : 0)
+      : pv.profile === "first_order_lag" ? "setpoint " + (pv.setpoint != null ? pv.setpoint : 0)
+      : pv.profile === "cycle_ramp" ? "range " + JSON.stringify(pv.range || [0, 1])
+      : "mean " + (pv.mean != null ? pv.mean : 0);
+    const alarms = [pv.alarm_high != null ? "≤" + pv.alarm_high : null,
+      pv.alarm_low != null ? "≥" + pv.alarm_low : null].filter(Boolean).join(" ") || "—";
+    return [pv.name, pv.unit, pv.profile, keyVal, alarms];
   }
 
   function renderProcessValues(container, station, rerender) {
@@ -141,12 +143,47 @@
     section.className = "fe-sub-section";
     section.innerHTML = "<h4>Process Values</h4>";
 
+    const table = document.createElement("table");
+    table.className = "ed-table";
+    table.innerHTML = "<thead><tr><th>name</th><th>unit</th><th>profile</th><th>key value</th><th>alarms</th><th></th></tr></thead>";
+    const tbody = document.createElement("tbody");
+    table.appendChild(tbody);
+
     list.forEach((pv, i) => {
-      const row = document.createElement("div");
-      row.className = "fe-sub-row";
-      section.appendChild(row);
-      renderPVForm(row, pv, station, i, rerender);
+      const summaryRow = document.createElement("tr");
+      summaryRow.className = "ed-table-row";
+      summaryRow.innerHTML = pvSummaryCells(pv).map(c => `<td>${esc(c)}</td>`).join("") + "<td></td>";
+      const removeBtn = document.createElement("button");
+      removeBtn.className = "quiet fe-remove-btn";
+      removeBtn.textContent = "×";
+      removeBtn.onclick = (e) => {
+        e.stopPropagation();
+        station.process_values.splice(i, 1);
+        rerender();
+      };
+      summaryRow.lastElementChild.appendChild(removeBtn);
+
+      const expandRow = document.createElement("tr");
+      expandRow.className = "ed-table-expand";
+      expandRow.hidden = true;
+      const expandCell = document.createElement("td");
+      expandCell.colSpan = 6;
+      expandRow.appendChild(expandCell);
+
+      summaryRow.onclick = () => {
+        const wasHidden = expandRow.hidden;
+        tbody.querySelectorAll(".ed-table-expand").forEach(r => { r.hidden = true; });
+        if (wasHidden) {
+          renderPVForm(expandCell, pv, station, i, rerender);
+          expandRow.hidden = false;
+        }
+      };
+
+      tbody.appendChild(summaryRow);
+      tbody.appendChild(expandRow);
     });
+
+    section.appendChild(table);
 
     const addBtn = document.createElement("button");
     addBtn.className = "quiet fe-add-btn";
@@ -474,6 +511,10 @@
       renderEditMode();
     };
     el.appendChild(healthSection);
+
+    const pvContainer = document.createElement("div");
+    el.appendChild(pvContainer);
+    renderProcessValues(pvContainer, st, renderEditMode);
   }
 
   function renderBufferDetail(el, b) {
