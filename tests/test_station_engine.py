@@ -125,7 +125,6 @@ class TestRunToFailure:
                     "health": {
                         "h_max": 3,
                         "p_degrade": 1.0,
-                        "cbm_threshold": 3,
                         "mttr": {"distribution": "constant", "value": mttr},
                     },
                 },

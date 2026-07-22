@@ -12,7 +12,7 @@ def demo_config():
         "stations": [
             {
                 "name": "Press01", "cycle_time": 3.0, "defect_rate": 0.05,
-                "health": {"h_max": 3, "p_degrade": 0.01, "cbm_threshold": 3,
+                "health": {"h_max": 3, "p_degrade": 0.01,
                            "mttr": {"distribution": "constant", "value": 10}},
                 "process_values": [
                     {"name": "OilTemp", "unit": "degC", "profile": "first_order_lag",

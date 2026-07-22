@@ -25,7 +25,6 @@ full_feature_line:
       health:
         h_max: 3
         p_degrade: 0.01
-        cbm_threshold: 3
         mttr: {distribution: lognormal, mean: 20, std: 5}
       failure_modes:
         - name: mechanical
@@ -65,7 +64,6 @@ advanced_failure_line:
       health:
         h_max: 2
         p_degrade: 0.02
-        cbm_threshold: 2
         mttr: {distribution: lognormal, mean: 15, std: 4}
       failure_modes:
         - name: mechanical
