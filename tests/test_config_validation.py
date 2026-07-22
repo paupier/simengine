@@ -125,7 +125,7 @@ class TestResolveCycleTime:
 class TestValidateHealth:
     def base(self, **health):
         cfg = {"name": "S1", "cycle_time": 1.0, "health": {
-            "h_max": 5, "p_degrade": 0.01, "cbm_threshold": 5,
+            "h_max": 5, "p_degrade": 0.01,
             "mttr": {"distribution": "constant", "value": 60},
         }}
         cfg["health"].update(health)
@@ -145,13 +145,10 @@ class TestValidateHealth:
         with pytest.raises(ValueError, match="p_degrade"):
             validate_health(self.base(p_degrade=1.5))
 
-    def test_cbm_above_h_max(self):
-        with pytest.raises(ValueError, match="cbm_threshold"):
-            validate_health(self.base(cbm_threshold=6))
-
-    def test_cbm_zero(self):
-        with pytest.raises(ValueError, match="cbm_threshold"):
-            validate_health(self.base(cbm_threshold=0))
+    def test_stray_cbm_threshold_key_tolerated(self):
+        """Unknown-key tolerance (CLAUDE.md): an old config with a leftover
+        cbm_threshold key must still validate — it's simply never read."""
+        validate_health(self.base(cbm_threshold=1))
 
     def test_missing_mttr(self):
         cfg = self.base()
