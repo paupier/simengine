@@ -210,10 +210,9 @@ demo_line:
     - name: Press01
       cycle_time: 12.0        # OR target_ppm (60/ppm precedence, as parent)
       defect_rate: 0.02
-      health:                 # ★ replaces parent health_states, same semantics
+      health:                 # ★ replaces parent health_states, run-to-failure only
         h_max: 5
         p_degrade: 0.001      # per-step degrade probability
-        cbm_threshold: 5      # == h_max means run-to-failure
         mttr: {distribution: lognormal, mean: 120, std: 30}
       failure_modes:          # unchanged parent schema (name/type/mttf/mttr)
         - name: bearing_wear
@@ -261,7 +260,7 @@ demo_line:
   historians: []              # ★ plugin names, e.g. ["csv"]; empty default
 ```
 
-Validation additions to `config/loader.py` (same composable style as parent): `validate_process_values` (profile in {cycle_peak, first_order_lag, cycle_ramp, constant_noise}; required keys per profile per §5; alarm_high > alarm_low when both), `validate_cycle_stops` (mtbe/duration are valid distributions), `validate_comms` (broker URI shape, port int), `validate_health` (0 < cbm_threshold <= h_max).
+Validation additions to `config/loader.py` (same composable style as parent): `validate_process_values` (profile in {cycle_peak, first_order_lag, cycle_ramp, constant_noise}; required keys per profile per §5; alarm_high > alarm_low when both), `validate_cycle_stops` (mtbe/duration are valid distributions), `validate_comms` (broker URI shape, port int), `validate_health` (h_max positive int, p_degrade in [0,1], mttr required).
 
 Ship three starter scenarios: `demo_line` (above), `two_station_minimal`, `press_line_8` (8 stations, all features on).
 
@@ -281,9 +280,6 @@ elif health >= h_max:                      # just failed this step or earlier
     if repair_remaining <= 0:              # sample once
         mttr_dist = active_failure_mode.mttr if active_failure_mode else station.health.mttr
         repair_remaining = max(sim_step, mttr_dist.sample())
-elif cbm_threshold < h_max and health >= cbm_threshold:
-    # CBM: immediate maintenance, no failure path; pin health for the repair duration
-    repair_remaining = max(sim_step, station.health.mttr.sample())
 else:
     if rng.random() < p_degrade: health += 1
 ```
@@ -362,8 +358,7 @@ On cycle completion: `p_defect = min(1.0, defect_rate * (health_multiplier ** he
 `tests/test_station_engine.py` (new, comprehensive):
 - 2-station line, seed 42, 1000 steps: deterministic snapshot hash equals itself on re-run.
 - Starvation/blocking: cycle_time asymmetry produces STARVED downstream / BLOCKED upstream states.
-- Run-to-failure: station with p_degrade=1, h_max=3 fails on step 3, is UNDER_REPAIR for ceil(mttr) steps, recovers to health 0.
-- CBM: cbm_threshold=2 < h_max=3 → station never reaches FAILED.
+- Run-to-failure: station with p_degrade=1, h_max=3 fails on step 3, is UNDER_REPAIR for ceil(mttr) steps, recovers to health 0. (CBM, an early no-downtime repair path, was evaluated and removed post-launch — see docs/superpowers/specs/2026-07-22-remove-cbm-design.md.)
 - Quality conservation: `good + scrap + defective_not_reworked == parts_made` after any run.
 - Cycle stop fires, halts progress, clears, refires.
 - OEE: hand-computed fixture for a 100-step scripted scenario matches to 1e-9.

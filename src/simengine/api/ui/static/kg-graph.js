@@ -27,8 +27,7 @@
 
   function healthLabel(node) {
     if (node.health_h_max == null) return null;
-    const cbm = node.health_cbm_threshold != null && node.health_cbm_threshold < node.health_h_max;
-    return "h " + node.health_h_max + " · " + (cbm ? "CBM" : "RTF");
+    return "h " + node.health_h_max;
   }
 
   function stationLine2(node) {

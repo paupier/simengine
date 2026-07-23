@@ -266,7 +266,7 @@ class TestSnapshotEventCollector:
         return LineEngine({
             "stations": [
                 {"name": "S1", "cycle_time": 2.0,
-                 "health": {"h_max": 2, "p_degrade": 1.0, "cbm_threshold": 2,
+                 "health": {"h_max": 2, "p_degrade": 1.0,
                             "mttr": {"distribution": "constant", "value": 3}}},
                 {"name": "S2", "cycle_time": 2.0},
             ],

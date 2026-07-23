@@ -20,7 +20,6 @@ demo_line:
       health:
         h_max: 5
         p_degrade: 0.001
-        cbm_threshold: 5
         mttr: {distribution: lognormal, mean: 120, std: 30}
       failure_modes:
         - name: bearing_wear
@@ -61,7 +60,6 @@ demo_line:
       health:
         h_max: 4
         p_degrade: 0.0008
-        cbm_threshold: 3
         mttr: {distribution: lognormal, mean: 90, std: 20}
       process_values:
         - name: TipTemp
@@ -119,7 +117,6 @@ press_line_8:
       health:
         h_max: 5
         p_degrade: 0.0012
-        cbm_threshold: 5
         mttr: {distribution: lognormal, mean: 120, std: 30}
       failure_modes:
         - name: feed_fault
@@ -146,7 +143,6 @@ press_line_8:
       health:
         h_max: 5
         p_degrade: 0.001
-        cbm_threshold: 4
         mttr: {distribution: lognormal, mean: 150, std: 40}
       failure_modes:
         - name: bearing_wear
@@ -182,7 +178,6 @@ press_line_8:
       health:
         h_max: 4
         p_degrade: 0.0009
-        cbm_threshold: 4
         mttr: {distribution: lognormal, mean: 100, std: 25}
       process_values:
         - name: BladeTemp
@@ -213,7 +208,6 @@ press_line_8:
       health:
         h_max: 5
         p_degrade: 0.0011
-        cbm_threshold: 5
         mttr: {distribution: lognormal, mean: 130, std: 35}
       failure_modes:
         - name: hydraulic_leak
@@ -234,7 +228,6 @@ press_line_8:
       health:
         h_max: 4
         p_degrade: 0.001
-        cbm_threshold: 3
         mttr: {distribution: lognormal, mean: 90, std: 20}
       process_values:
         - name: TipTemp

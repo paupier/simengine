@@ -170,7 +170,6 @@ def build_knowledge_graph(config: dict, scenario_name: str,
             target_ppm=st_cfg.get("target_ppm"),
             defect_rate=st_cfg.get("defect_rate", 0.0),
             health_h_max=health_cfg.get("h_max"),
-            health_cbm_threshold=health_cfg.get("cbm_threshold"),
             opcua_node_id=opcua_nid(
                 f"{opcua_prefix}.Resources.{st_name}_Equipment"),
         )

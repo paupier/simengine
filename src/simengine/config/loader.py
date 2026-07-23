@@ -168,8 +168,7 @@ _PV_DIST_KEYS = ("peak", "noise")
 
 def validate_health(station_cfg: dict) -> None:
     """
-    Validate the per-station health block (§3): h_max, p_degrade,
-    cbm_threshold, mttr.
+    Validate the per-station health block (§3): h_max, p_degrade, mttr.
 
     Raises:
         ValueError: If the health configuration is invalid.
@@ -189,12 +188,6 @@ def validate_health(station_cfg: dict) -> None:
     p_degrade = health.get("p_degrade")
     if p_degrade is None or not isinstance(p_degrade, (int, float)) or not (0.0 <= p_degrade <= 1.0):
         raise ValueError(f"Station '{name}': health.p_degrade must be in [0, 1]")
-
-    cbm = health.get("cbm_threshold", h_max)
-    if not isinstance(cbm, int) or not (0 < cbm <= h_max):
-        raise ValueError(
-            f"Station '{name}': health.cbm_threshold must satisfy 0 < cbm_threshold <= h_max"
-        )
 
     if "mttr" not in health:
         raise ValueError(f"Station '{name}': health block requires 'mttr' distribution")

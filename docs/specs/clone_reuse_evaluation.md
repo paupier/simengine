@@ -75,7 +75,7 @@ Replace Simantha's DES with a **fixed-timestep station state-machine engine** (`
 
 - **Station state machine:** IDLE → PROCESSING → (cycle complete) with BLOCKED/STARVED derived from downstream/upstream buffer levels, and DEGRADED/FAILED/UNDER_REPAIR from the health model. The 7-state taxonomy and its detection order (CLAUDE.md "State detection order") carry over verbatim as the specification.
 - **Buffers:** plain bounded integer counters. Without Simantha part objects there is no reservation protocol (`reserved_vacancy`) to maintain.
-- **Health/degradation:** the existing `health_states` model (`h_max`, `p_degrade`, `cbm_threshold`, CBM vs run-to-failure semantics) re-implemented natively (~50 LOC). Today it is already driven from the main loop via monkey-patches — the clone makes it a first-class engine feature instead of a workaround.
+- **Health/degradation:** the existing `health_states` model (`h_max`, `p_degrade`, run-to-failure semantics) re-implemented natively (~50 LOC). Today it is already driven from the main loop via monkey-patches — the clone makes it a first-class engine feature instead of a workaround. (The parent's CBM early-repair path was carried over at launch and later removed — see docs/superpowers/specs/2026-07-22-remove-cbm-design.md.)
 - **Repair:** the `machine_repair_remaining` countdown pattern carries over directly, minus the monkey-patch delivery mechanism.
 - **Determinism:** keep per-step seeding `(seed + step_count) % 2^31`. With no engine re-initialization to fight, reproducibility becomes trivial rather than hard-won.
 

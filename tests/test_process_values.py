@@ -42,8 +42,8 @@ class TestFirstOrderLag:
     def test_drift_shifts_target(self):
         cfg = dict(self.CFG)
         cfg["health_drift"] = 0.1
-        # pin health at 2 via a health model that degrades instantly, CBM repair
-        extra = {"health": {"h_max": 10, "p_degrade": 1.0, "cbm_threshold": 10,
+        # pin health at 2 via a health model that degrades instantly, then repair
+        extra = {"health": {"h_max": 10, "p_degrade": 1.0,
                             "mttr": {"distribution": "constant", "value": 1}}}
         eng = engine_with_pv(cfg, station_extra=extra, steps=3)
         # after 3 steps health == 3 -> drift target 55 * 1.3; value moving up
@@ -128,7 +128,7 @@ class TestConstantNoise:
             "name": "FeedSpeed", "unit": "mm_s", "profile": "constant_noise",
             "mean": 100.0, "health_drift": 0.05,
         }
-        extra = {"health": {"h_max": 10, "p_degrade": 1.0, "cbm_threshold": 10,
+        extra = {"health": {"h_max": 10, "p_degrade": 1.0,
                             "mttr": {"distribution": "constant", "value": 1}}}
         eng = engine_with_pv(cfg, station_extra=extra, steps=4)
         # health after 4 steps = 4 -> value = 100 * 1.2 exactly (no noise dist)
@@ -205,7 +205,7 @@ class TestHealthDriftShiftsValues:
             "peak": {"distribution": "constant", "value": 100.0},
             "health_drift": 0.10,
         }
-        extra = {"health": {"h_max": 10, "p_degrade": 1.0, "cbm_threshold": 10,
+        extra = {"health": {"h_max": 10, "p_degrade": 1.0,
                             "mttr": {"distribution": "constant", "value": 1}}}
         healthy = engine_with_pv(dict(cfg), steps=2)
         degraded = engine_with_pv(dict(cfg), station_extra=extra, steps=2)

@@ -552,16 +552,6 @@
       pDegField.querySelector("input").oninput = (e) => { h.p_degrade = parseFloat(e.target.value) || 0; scheduleValidate(); };
       fieldsDiv.appendChild(pDegField);
 
-      const cbmField = document.createElement("label");
-      cbmField.innerHTML = `cbm_threshold <input type="number" class="fe-h-cbm"
-        value="${esc(h.cbm_threshold != null ? h.cbm_threshold : (h.h_max || 1))}">`;
-      cbmField.querySelector("input").oninput = (e) => {
-        const parsed = parseInt(e.target.value, 10);
-        h.cbm_threshold = Number.isNaN(parsed) ? 1 : parsed;
-        scheduleValidate();
-      };
-      fieldsDiv.appendChild(cbmField);
-
       const mttrField = document.createElement("div");
       mttrField.innerHTML = `<span>mttr</span>`;
       const mttrPicker = document.createElement("div");
@@ -573,7 +563,7 @@
 
     healthSection.querySelector(".fe-health-enabled").onchange = (e) => {
       if (e.target.checked) {
-        st.health = { h_max: 3, p_degrade: 0.001, cbm_threshold: 3,
+        st.health = { h_max: 3, p_degrade: 0.001,
           mttr: { distribution: "lognormal", mean: 120, std: 30 } };
       } else {
         delete st.health;
