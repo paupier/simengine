@@ -41,7 +41,7 @@
       <h3><input type="checkbox" id="p-mqtt"> OPC UA PubSub over MQTT</h3>
       <div class="fields">
         <div><label for="mqtt-broker">Broker</label>
-          <input type="text" id="mqtt-broker" value="mqtt://localhost:1883"></div>
+          <input type="text" id="mqtt-broker" value="mqtt://mosquitto:1883"></div>
         <div><label for="mqtt-pubid">Publisher ID</label>
           <input type="text" id="mqtt-pubid" value="simengine-line1"></div>
         <div><label><input type="checkbox" id="mqtt-flat" checked> Flat topics</label></div>
@@ -52,7 +52,7 @@
       <h3><input type="checkbox" id="p-spb"> SparkplugB</h3>
       <div class="fields">
         <div><label for="spb-broker">Broker</label>
-          <input type="text" id="spb-broker" value="mqtt://localhost:1883"></div>
+          <input type="text" id="spb-broker" value="mqtt://mosquitto:1883"></div>
         <div><label for="spb-group">Group ID</label>
           <input type="text" id="spb-group" value="Area01"></div>
         <div><label for="spb-edge">Edge node ID</label>
@@ -94,11 +94,11 @@
       $("p-opcua").checked = o.enabled !== false;
       $("opcua-port").value = o.port || 4840;
       $("p-mqtt").checked = !!m.enabled;
-      $("mqtt-broker").value = m.broker || "mqtt://localhost:1883";
+      $("mqtt-broker").value = m.broker || "mqtt://mosquitto:1883";
       $("mqtt-pubid").value = m.publisher_id || "simengine-line1";
       $("mqtt-flat").checked = m.flat_topics !== false;
       $("p-spb").checked = !!s.enabled;
-      $("spb-broker").value = s.broker || "mqtt://localhost:1883";
+      $("spb-broker").value = s.broker || "mqtt://mosquitto:1883";
       $("spb-group").value = s.group_id || "Area01";
       $("spb-edge").value = s.edge_node_id || "Line1";
       updateRoots();
