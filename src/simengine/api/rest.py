@@ -363,4 +363,8 @@ def create_app(run_manager: RunManager) -> Flask:
     def assistant():
         return render_template("chat.html")
 
+    @app.get("/diagnostics")
+    def diagnostics_page():
+        return render_template("diagnostics.html")
+
     return app

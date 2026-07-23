@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}simengine — diagnostics{% endblock %}
+{% block styles %}
+<style>
+  .diag-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    gap: 16px; }
+  .diag { padding: 14px 16px; }
+  .diag h3 { font-size: 13px; margin-bottom: 10px; }
+  .diag .fields { display: grid; gap: 8px; }
+  .diag .fields label { font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--ink-2); display: block; }
+  .diag .fields input[type=text] {
+    width: 100%; font-family: var(--mono); font-size: 13px; padding: 5px 8px;
+    border: 1px solid var(--hairline); background: #fff; }
+  .diag-echo { font-family: var(--mono); font-size: 11.5px; color: var(--ink-2);
+    margin-top: 10px; border-top: 1px dashed var(--hairline); padding-top: 8px;
+    word-break: break-all; }
+  .diag button { margin-top: 10px; margin-right: 8px; }
+</style>
+{% endblock %}
+{% block content %}
+  <h2 class="eyebrow">Diagnostics</h2>
+  <p class="muted">Protocol-level connectivity checks, independent of the OPC UA
+    data model or any running scenario. Nothing here is a metric.</p>
+  <div class="diag-grid" style="margin-top:12px">
+    <div class="card diag">
+      <h3>MQTT one-shot publish</h3>
+      <div class="fields">
+        <div><label for="diag-mqtt-broker">Broker</label>
+          <input type="text" id="diag-mqtt-broker" value="mqtt://mosquitto:1883"></div>
+        <div><label for="diag-mqtt-topic">Topic</label>
+          <input type="text" id="diag-mqtt-topic" value="simengine/diagnostics/value"></div>
+        <div><label for="diag-mqtt-value">Value</label>
+          <input type="text" id="diag-mqtt-value" placeholder="raw value, published as-is"></div>
+      </div>
+      <button id="diag-mqtt-publish">Publish</button>
+      <div class="diag-echo">Topic: <span id="diag-mqtt-topic-echo">simengine/diagnostics/value</span></div>
+      <div class="msg" id="diag-mqtt-msg" hidden></div>
+    </div>
+    <div class="card diag">
+      <h3>REST scratch value</h3>
+      <div class="fields">
+        <div><label for="diag-rest-value">Value</label>
+          <input type="text" id="diag-rest-value" placeholder="value to PUT"></div>
+      </div>
+      <button id="diag-rest-set">Set</button>
+      <button id="diag-rest-refresh" class="quiet">Refresh</button>
+      <div class="diag-echo">
+        GET /api/v1/diagnostics/value<br>
+        PUT /api/v1/diagnostics/value<br>
+        Last GET result: <span id="diag-rest-echo">—</span>
+      </div>
+      <div class="msg" id="diag-rest-msg" hidden></div>
+    </div>
+  </div>
+{% endblock %}
+{% block scripts %}
+<script>
+  function currentDiagScenario() { return $("hdr-scenario").value; }
+
+  async function prefillMqttBroker() {
+    const scenario = currentDiagScenario();
+    if (!scenario) return;
+    try {
+      const c = await jget("/api/v1/comms?scenario=" + scenario);
+      const m = c.opcua_mqtt || {};
+      $("diag-mqtt-broker").value = m.broker || "mqtt://mosquitto:1883";
+    } catch (e) { /* scenario without comms block — keep default */ }
+  }
+
+  async function refreshRestValue() {
+    const r = await jget("/api/v1/diagnostics/value");
+    $("diag-rest-echo").textContent = r.value === null ? "(null)" : r.value;
+  }
+
+  $("diag-mqtt-topic").addEventListener("input", () => {
+    $("diag-mqtt-topic-echo").textContent = $("diag-mqtt-topic").value;
+  });
+
+  $("diag-mqtt-publish").onclick = async () => {
+    const el = $("diag-mqtt-msg");
+    try {
+      await jsend("/api/v1/diagnostics/mqtt-publish", "POST", {
+        broker: $("diag-mqtt-broker").value,
+        topic: $("diag-mqtt-topic").value,
+        value: $("diag-mqtt-value").value,
+      });
+      el.hidden = false; el.className = "msg"; el.textContent = "Published.";
+    } catch (e) {
+      el.hidden = false; el.className = "msg err"; el.textContent = e.message;
+    }
+  };
+
+  $("diag-rest-set").onclick = async () => {
+    const el = $("diag-rest-msg");
+    try {
+      await jsend("/api/v1/diagnostics/value", "PUT", {value: $("diag-rest-value").value});
+      el.hidden = false; el.className = "msg"; el.textContent = "Set.";
+    } catch (e) {
+      el.hidden = false; el.className = "msg err"; el.textContent = e.message;
+    }
+  };
+
+  $("diag-rest-refresh").onclick = async () => {
+    const el = $("diag-rest-msg");
+    try {
+      await refreshRestValue();
+      el.hidden = true;
+    } catch (e) {
+      el.hidden = false; el.className = "msg err"; el.textContent = e.message;
+    }
+  };
+
+  $("hdr-scenario").addEventListener("change", prefillMqttBroker);
+  setTimeout(prefillMqttBroker, 300);  // after the header picker populates
+  refreshRestValue().catch(() => {});
+</script>
+{% endblock %}
