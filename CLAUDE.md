@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**simengine** is a real-time station simulation engine for production lines — a PLC-replacement data source for SCADA/MES tools (FactoryTalk Optix, Ignition, UaExpert). A fixed-timestep native engine (no Simantha/DES dependency) simulates serial lines of stations with health degradation, cycle stops, quality rolls, and continuous process values, publishing over **OPC UA TCP**, **OPC UA PubSub over MQTT (Part 14 JSON)**, and **SparkplugB**, controlled through an embedded **REST API** with a 3-page HMI UI, an **MCP server**, and an optional BYO-key **Anthropic chat**.
+**simengine** is a real-time station simulation engine for production lines — a PLC-replacement data source for SCADA/MES tools (FactoryTalk Optix, Ignition, UaExpert). A fixed-timestep native engine (no Simantha/DES dependency) simulates serial lines of stations with health degradation, cycle stops, quality rolls, and continuous process values, publishing over **OPC UA TCP**, **OPC UA PubSub over MQTT (Part 14 JSON)**, and **SparkplugB**, controlled through an embedded **REST API** with a 5-page HMI UI (Dashboard, Configure, Comms, Assistant, Diagnostics), an **MCP server**, and an optional BYO-key **Anthropic chat**.
 
 Governing specs live in `docs/specs/` (`clone_build_plan.md` is execution-grade and overrides the others where they conflict). This repo was bootstrapped from the simantha-opcua parent with history preserved; parent-only code is recoverable from git history.
 
@@ -52,7 +52,8 @@ src/simengine/
   events/       __init__.py (SimEvent + EventHistorian ABC + CompositeHistorian),
                 collect.py (snapshot-diff edge detection)
   api/          rest.py (+create_app), tools.py (16-tool registry), mcp_server.py,
-                chat.py, config_files.py, ui/ (Jinja templates)
+                chat.py, config_files.py, diagnostics.py (MQTT/REST connectivity
+                probe, no engine coupling), ui/ (Jinja templates)
   plugins.py    historian registry with install-hint errors
 src/simengine_historian_{csv,influx,neo4j}/   optional backends (register() hook)
 config/scenarios.yaml   §3 schema; config/recipes/*.yaml
