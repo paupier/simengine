@@ -10,6 +10,7 @@ from dataclasses import asdict
 
 from flask import Blueprint, Flask, jsonify, render_template, request
 
+from simengine.api import diagnostics
 from simengine.api.config_files import (
     dump_recipe_file,
     recipe_path,
@@ -246,6 +247,41 @@ def create_api_blueprint(run_manager: RunManager) -> Blueprint:
         data[scenario]["comms"] = comms
         _dump_scenarios_file(data, path)
         return jsonify({"updated": scenario, "applies": "next_run"})
+
+    # ----- diagnostics -----
+
+    @api.get("/api/v1/diagnostics/value")
+    def get_diagnostics_value():
+        return jsonify({"value": diagnostics.get_value()})
+
+    @api.put("/api/v1/diagnostics/value")
+    def put_diagnostics_value():
+        body = request.get_json(force=True, silent=True) or {}
+        value = body.get("value")
+        if not isinstance(value, str):
+            return jsonify({"error": "body must be {value: <string>}"}), 400
+        diagnostics.set_value(value)
+        return jsonify({"value": value})
+
+    @api.post("/api/v1/diagnostics/mqtt-publish")
+    def diagnostics_mqtt_publish():
+        body = request.get_json(force=True, silent=True) or {}
+        broker = body.get("broker")
+        topic = body.get("topic")
+        value = body.get("value")
+        if not isinstance(broker, str) or not broker \
+                or not isinstance(topic, str) or not topic \
+                or not isinstance(value, str):
+            return jsonify({"error":
+                             "body must be {broker, topic, value} "
+                             "(broker/topic non-empty strings)"}), 400
+        try:
+            diagnostics.mqtt_publish_once(broker, topic, value)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except OSError as exc:
+            return jsonify({"error": f"broker unreachable: {exc}"}), 502
+        return jsonify({"ok": True})
 
     # ----- knowledge graph -----
 
