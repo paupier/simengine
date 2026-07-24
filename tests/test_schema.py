@@ -123,3 +123,58 @@ class TestBuildMqttSchema:
         assert set(entry["payload"].keys()) == {"value", "sim_time", "run_id"}
         assert entry["payload"]["sim_time"] == "Float"
         assert entry["payload"]["run_id"] == "String"
+
+
+from simengine.api.schema import build_sparkplugb_schema
+from simengine.publishers.sparkplugb import SparkplugBPublisher
+
+
+SPB_CFG = {"broker": "mqtt://localhost:1883", "group_id": "Area01", "edge_node_id": "Line1"}
+
+
+class TestBuildSparkplugbSchema:
+    def test_topics(self):
+        result = build_sparkplugb_schema(demo_config(), SPB_CFG)
+        assert result["nbirth_topic"] == "spBv1.0/Area01/NBIRTH/Line1"
+        assert result["ndata_topic"] == "spBv1.0/Area01/NDATA/Line1"
+        assert result["ndeath_topic"] == "spBv1.0/Area01/NDEATH/Line1"
+        assert result["ncmd_topic"] == "spBv1.0/Area01/NCMD/Line1"
+
+    def test_group_id_edge_node_id_default_to_area_and_line(self):
+        result = build_sparkplugb_schema(demo_config(), {})
+        assert result["nbirth_topic"] == "spBv1.0/Area01/NBIRTH/Line1"
+
+    def test_device_topics(self):
+        result = build_sparkplugb_schema(demo_config(), SPB_CFG)
+        press = [d for d in result["devices"] if d["station"] == "Press01"][0]
+        assert press["dbirth_topic"] == "spBv1.0/Area01/DBIRTH/Line1/Press01"
+        assert press["ddata_topic"] == "spBv1.0/Area01/DDATA/Line1/Press01"
+        assert press["ddeath_topic"] == "spBv1.0/Area01/DDEATH/Line1/Press01"
+
+    def test_node_metrics_include_unaliased_bdseq_and_rebirth(self):
+        result = build_sparkplugb_schema(demo_config(), SPB_CFG)
+        by_name = {m["name"]: m for m in result["node_metrics"]}
+        assert by_name["bdSeq"]["alias"] is None
+        assert by_name["bdSeq"]["datatype"] == "UInt64"
+        assert by_name["Node Control/Rebirth"]["alias"] is None
+
+    def test_aliases_match_real_publisher_registration_order(self):
+        """No-drift check: alias numbers must match what
+        SparkplugBPublisher._publish_births() actually assigns for this
+        config."""
+        engine = LineEngine(demo_config(), "demo", seed=1, run_id="spb_test")
+        pub = SparkplugBPublisher(demo_config(), SPB_CFG)
+        pub._client = MagicMock()
+        pub._connected = True
+        pub._publish_births(engine.snapshot())
+
+        schema_result = build_sparkplugb_schema(demo_config(), SPB_CFG)
+        schema_node_aliases = {
+            m["name"]: m["alias"] for m in schema_result["node_metrics"]
+            if m["alias"] is not None
+        }
+        assert schema_node_aliases == pub._aliases[None]
+
+        for device in schema_result["devices"]:
+            schema_device_aliases = {m["name"]: m["alias"] for m in device["metrics"]}
+            assert schema_device_aliases == pub._aliases[device["station"]]

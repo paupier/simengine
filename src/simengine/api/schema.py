@@ -106,3 +106,58 @@ def build_mqtt_schema(config: dict, mqtt_cfg: dict) -> dict:
         },
         "flat_topics": flat_topics,
     }
+
+
+def build_sparkplugb_schema(config: dict, spb_cfg: dict) -> dict:
+    """SparkplugB NBIRTH/DBIRTH topic + metric/alias/datatype schema for
+    `config`. Replicates SparkplugBPublisher._publish_births()'s exact
+    registration order — node metrics (line-level) first, then per station
+    in config order — so alias numbers match what a real run assigns,
+    without touching protobuf or a broker connection.
+    """
+    area = config.get("area", "Area")
+    line = config.get("line_name", "Line1")
+    group_id = spb_cfg.get("group_id", area)
+    edge_node_id = spb_cfg.get("edge_node_id", line)
+    stations = config.get("stations", [])
+    buffers = config.get("buffers", [])
+
+    def topic(msg_type, device=None):
+        base = f"spBv1.0/{group_id}/{msg_type}/{edge_node_id}"
+        return f"{base}/{device}" if device else base
+
+    next_alias = 1
+    node_metrics = [
+        {"name": "bdSeq", "alias": None, "datatype": "UInt64"},
+        {"name": "Node Control/Rebirth", "alias": None, "datatype": "Boolean"},
+    ]
+    for name, dtype in line_metric_schema([b["name"] for b in buffers]):
+        node_metrics.append({"name": name, "alias": next_alias, "datatype": dtype})
+        next_alias += 1
+
+    devices = []
+    for st_cfg in stations:
+        st_name = st_cfg["name"]
+        pv_names = [pv["name"] for pv in st_cfg.get("process_values", [])]
+        metrics = []
+        for name, dtype in station_metric_schema(pv_names):
+            metrics.append({"name": name, "alias": next_alias, "datatype": dtype})
+            next_alias += 1
+        devices.append({
+            "station": st_name,
+            "dbirth_topic": topic("DBIRTH", st_name),
+            "ddata_topic": topic("DDATA", st_name),
+            "ddeath_topic": topic("DDEATH", st_name),
+            "metrics": metrics,
+        })
+
+    return {
+        "group_id": group_id,
+        "edge_node_id": edge_node_id,
+        "nbirth_topic": topic("NBIRTH"),
+        "ndata_topic": topic("NDATA"),
+        "ndeath_topic": topic("NDEATH"),
+        "ncmd_topic": topic("NCMD"),
+        "node_metrics": node_metrics,
+        "devices": devices,
+    }
