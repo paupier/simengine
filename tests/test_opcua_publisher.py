@@ -45,6 +45,65 @@ def get_by_path(server, path):
     return server.get_node(ua.NodeId(path, 2))
 
 
+class TestBuildAddressSpaceStandalone:
+    """build_address_space() must be usable with no snapshot at all — the
+    schema exporter (api/schema.py) calls it this way."""
+
+    def test_builds_without_snapshot(self):
+        from simengine.publishers.opcua_server import build_address_space
+        server, v, idx = build_address_space(demo_config(), port=48998)
+        assert idx == 2
+        node = get_by_path(server, "Acme.Plant1.Area01.Line1_Equipment.Identification.RunID")
+        assert node.get_value() == ""  # default when no run_id passed
+
+    def test_placeholder_run_id_and_speed_ratio_used_when_given(self):
+        from simengine.publishers.opcua_server import build_address_space
+        server, v, idx = build_address_space(
+            demo_config(), port=48998, run_id="preview", speed_ratio=2.5)
+        run_id_node = get_by_path(
+            server, "Acme.Plant1.Area01.Line1_Equipment.Identification.RunID")
+        assert run_id_node.get_value() == "preview"
+        speed_node = get_by_path(
+            server,
+            "Acme.Plant1.Area01.Line1_Equipment.OperationsState.Controls.SimSpeedRatio")
+        assert speed_node.get_value() == 2.5
+
+    def test_matches_publisher_build_output(self):
+        """Same config through _build() (via the publisher) and through
+        build_address_space() directly must create the same node IDs."""
+        from simengine.publishers.opcua_server import build_address_space
+
+        config = demo_config()
+        engine = LineEngine(config, "demo", seed=1, run_id="demo_1")
+        pub = OPCUAServerPublisher(config, port=48997)
+        pub._build(engine.snapshot())
+        pub_node_ids = {str(n.nodeid) for n in _all_variable_nodes(pub.server)}
+
+        server2, _, _ = build_address_space(config, port=48996, run_id="demo_1")
+        standalone_node_ids = {str(n.nodeid) for n in _all_variable_nodes(server2)}
+
+        assert pub_node_ids == standalone_node_ids
+
+
+def _all_variable_nodes(server):
+    """Recursively collect every Variable node under Objects (skips the
+    standard OPC UA 'Server' diagnostics object, namespace 0)."""
+    from opcua import ua
+    idx = server.get_namespace_index("http://simengine.local/")
+
+    def walk(node):
+        if node.get_node_class() == ua.NodeClass.Variable:
+            yield node
+        for c in node.get_children():
+            yield from walk(c)
+
+    out = []
+    for top in server.get_objects_node().get_children():
+        if top.nodeid.NamespaceIndex == idx:
+            out.extend(walk(top))
+    return out
+
+
 class TestAddressSpace:
     def test_isa95_hierarchy_paths(self, publisher):
         pub, _ = publisher

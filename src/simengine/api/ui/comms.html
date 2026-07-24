@@ -22,6 +22,13 @@
   .pill { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em;
     padding: 1px 8px; border: 1px solid var(--hairline); color: var(--ink-2); }
   .pill.ok { border-color: var(--st-processing); color: var(--st-processing); }
+  .schema-panel { margin-top: 10px; }
+  .schema-panel summary { cursor: pointer; font-size: 12px; text-transform: uppercase;
+    letter-spacing: 0.07em; color: var(--ink-2); padding: 6px 0; }
+  .schema-panel pre { font-family: var(--mono); font-size: 12px; max-height: 400px;
+    overflow: auto; background: #fafafa; border: 1px solid var(--hairline);
+    padding: 10px; margin: 6px 0 0 0; }
+  .schema-panel .copy-btn { font-size: 11px; margin-top: 4px; }
 </style>
 {% endblock %}
 {% block content %}
@@ -68,6 +75,15 @@
 
   <h2 class="eyebrow">Optional packages</h2>
   <ul class="plugin-list card" id="plugin-list"></ul>
+
+  <h2 class="eyebrow" style="margin-top:20px">Wire schema</h2>
+  <p class="muted">The exact OPC UA address space / MQTT / SparkplugB
+    structure this scenario will publish — no run required.</p>
+  <div style="margin-top:10px; display:flex; gap:10px; align-items:center;">
+    <button id="schema-view">View schema</button>
+    <button id="schema-download" hidden>Download JSON</button>
+  </div>
+  <div id="schema-panels" style="margin-top:14px"></div>
 {% endblock %}
 {% block scripts %}
 <script>
@@ -138,5 +154,51 @@
   $("hdr-scenario").addEventListener("change", loadComms);
   setTimeout(loadComms, 300);  // after the header picker populates
   loadPlugins();
+
+  let lastSchema = null;
+
+  function schemaPanel(id, title, data) {
+    const json = JSON.stringify(data, null, 2);
+    return `
+      <details class="schema-panel card" open>
+        <summary>${title}</summary>
+        <pre id="schema-pre-${id}">${json.replace(/</g, "&lt;")}</pre>
+        <button class="copy-btn" data-copy="${id}">Copy</button>
+      </details>`;
+  }
+
+  async function viewSchema() {
+    const scenario = currentCommsScenario();
+    if (!scenario) return;
+    try {
+      lastSchema = await jget("/api/v1/schema?scenario=" + scenario);
+      $("schema-panels").innerHTML =
+        schemaPanel("opcua", "OPC UA", lastSchema.opcua) +
+        schemaPanel("mqtt", "MQTT (Part 14 + flat topics)", lastSchema.mqtt) +
+        schemaPanel("spb", "SparkplugB", lastSchema.sparkplugb);
+      $("schema-download").hidden = false;
+      $("schema-panels").querySelectorAll("[data-copy]").forEach(btn => {
+        btn.addEventListener("click", () => {
+          navigator.clipboard.writeText(
+            $(`schema-pre-${btn.dataset.copy}`).textContent);
+        });
+      });
+    } catch (e) {
+      $("schema-panels").innerHTML = `<div class="msg err">${e.body?.error || e.message || e}</div>`;
+      $("schema-download").hidden = true;
+    }
+  }
+
+  $("schema-view").onclick = viewSchema;
+  $("schema-download").onclick = () => {
+    if (!lastSchema) return;
+    const blob = new Blob([JSON.stringify(lastSchema, null, 2)],
+                          {type: "application/json"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `${lastSchema.scenario || "schema"}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
 </script>
 {% endblock %}
