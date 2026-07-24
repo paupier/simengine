@@ -184,7 +184,8 @@
         });
       });
     } catch (e) {
-      $("schema-panels").innerHTML = `<div class="msg err">${e.message}</div>`;
+      $("schema-panels").innerHTML = `<div class="msg err">${e.body?.error || e.message || e}</div>`;
+      $("schema-download").hidden = true;
     }
   }
 

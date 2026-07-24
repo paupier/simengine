@@ -124,6 +124,16 @@ class TestBuildMqttSchema:
         assert entry["payload"]["sim_time"] == "Float"
         assert entry["payload"]["run_id"] == "String"
 
+    def test_flat_topics_empty_when_disabled(self):
+        from simengine.api.schema import build_mqtt_schema
+        result = build_mqtt_schema(demo_config(), {**MQTT_CFG, "flat_topics": False})
+        assert result["flat_topics"] == []
+
+    def test_flat_topics_present_by_default(self):
+        from simengine.api.schema import build_mqtt_schema
+        result = build_mqtt_schema(demo_config(), MQTT_CFG)
+        assert len(result["flat_topics"]) > 0
+
 
 from simengine.api.schema import build_sparkplugb_schema
 from simengine.publishers.sparkplugb import SparkplugBPublisher

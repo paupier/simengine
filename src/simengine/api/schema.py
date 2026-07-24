@@ -77,6 +77,7 @@ def build_mqtt_schema(config: dict, mqtt_cfg: dict) -> dict:
     for name, dtype in line_metric_schema([b["name"] for b in buffers]):
         payload[f"Line.{name.replace('/', '.')}"] = dtype
 
+    flat_topics_enabled = mqtt_cfg.get("flat_topics", True)
     flat_topics = []
     for st_cfg in stations:
         st_name = st_cfg["name"]
@@ -84,11 +85,12 @@ def build_mqtt_schema(config: dict, mqtt_cfg: dict) -> dict:
         schema = station_metric_schema(pv_names)
         for name, dtype in schema:
             payload[f"{st_name}.{name.replace('/', '.')}"] = dtype
-        for name, dtype in schema:
-            flat_topics.append({
-                "topic": flat_topic(line, st_name, name),
-                "payload": {"value": dtype, "sim_time": "Float", "run_id": "String"},
-            })
+        if flat_topics_enabled:
+            for name, dtype in schema:
+                flat_topics.append({
+                    "topic": flat_topic(line, st_name, name),
+                    "payload": {"value": dtype, "sim_time": "Float", "run_id": "String"},
+                })
 
     return {
         "part14": {
