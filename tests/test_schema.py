@@ -1,7 +1,11 @@
 """Wire-schema export (OPC UA / MQTT / SparkplugB) — buildable from a saved
 scenario config alone, no run required. See
 docs/superpowers/specs/2026-07-24-schema-export-design.md."""
+from unittest.mock import MagicMock
+
 from simengine.api.schema import build_opcua_schema
+from simengine.engine.line import LineEngine
+from simengine.publishers.opcua_mqtt import OPCUAMqttPublisher
 
 
 def demo_config():
@@ -69,3 +73,53 @@ class TestBuildOpcuaSchema:
         r1 = build_opcua_schema(demo_config())
         r2 = build_opcua_schema(demo_config())
         assert r1 == r2
+
+
+MQTT_CFG = {"broker": "mqtt://mosquitto:1883", "publisher_id": "simengine-line1"}
+
+
+class TestBuildMqttSchema:
+    def test_topics(self):
+        from simengine.api.schema import build_mqtt_schema
+        result = build_mqtt_schema(demo_config(), MQTT_CFG)
+        assert result["part14"]["data_topic"] == "opcua/simengine-line1/json"
+        assert result["part14"]["status_topic"] == "opcua/simengine-line1/status"
+
+    def test_publish_interval_defaults(self):
+        from simengine.api.schema import build_mqtt_schema
+        result = build_mqtt_schema(demo_config(), {})
+        assert result["part14"]["publish_interval"] == 1
+        assert result["part14"]["data_topic"] == "opcua/simengine-line1/json"
+
+    def test_envelope_payload_keys_match_real_publisher(self):
+        """No-drift check: the schema's Payload keys must match what
+        OPCUAMqttPublisher.publish() actually writes for this config."""
+        from simengine.api.schema import build_mqtt_schema
+        engine = LineEngine(demo_config(), "demo", seed=1, run_id="schema_test")
+        pub = OPCUAMqttPublisher(demo_config(), MQTT_CFG)
+        pub._client = MagicMock()
+        pub._connected = True
+        pub.publish(engine.snapshot())
+        envelope_call = [c for c in pub._client.publish.call_args_list
+                         if c.args[0] == pub.data_topic][0]
+        import json
+        real_payload_keys = set(json.loads(envelope_call.args[1])["Payload"].keys())
+
+        schema_result = build_mqtt_schema(demo_config(), MQTT_CFG)
+        assert set(schema_result["part14"]["envelope"]["Payload"].keys()) == real_payload_keys
+
+    def test_flat_topics_match_flat_topic_helper(self):
+        from simengine.api.schema import build_mqtt_schema
+        from simengine.publishers.opcua_mqtt import flat_topic
+        result = build_mqtt_schema(demo_config(), MQTT_CFG)
+        topics = {t["topic"] for t in result["flat_topics"]}
+        assert flat_topic("Line1", "Press01", "State") in topics
+        assert flat_topic("Line1", "Press01", "PV/OilTemp") in topics
+
+    def test_flat_topic_payload_shape(self):
+        from simengine.api.schema import build_mqtt_schema
+        result = build_mqtt_schema(demo_config(), MQTT_CFG)
+        entry = result["flat_topics"][0]
+        assert set(entry["payload"].keys()) == {"value", "sim_time", "run_id"}
+        assert entry["payload"]["sim_time"] == "Float"
+        assert entry["payload"]["run_id"] == "String"

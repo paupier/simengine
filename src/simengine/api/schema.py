@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from opcua import ua
 
+from simengine.publishers.metrics import line_metric_schema, station_metric_schema
+from simengine.publishers.opcua_mqtt import flat_topic
 from simengine.publishers.opcua_server import build_address_space
 
 _DATATYPE_NAMES = {
@@ -56,4 +58,51 @@ def build_opcua_schema(config: dict, port: int = 4840) -> dict:
             "node_class": "Object",
             "children": [_walk(c) for c in own_children],
         },
+    }
+
+
+def build_mqtt_schema(config: dict, mqtt_cfg: dict) -> dict:
+    """Part 14 JSON envelope shape + flat-topic list for `config` — derived
+    from the same metric name/datatype schema the real publisher uses
+    (metrics.py), so the Payload keys cannot drift from what
+    OPCUAMqttPublisher.publish() actually writes.
+    """
+    line = config.get("line_name", "Line1")
+    publisher_id = mqtt_cfg.get("publisher_id", "simengine-line1")
+    publish_interval = mqtt_cfg.get("publish_interval", 1)
+    stations = config.get("stations", [])
+    buffers = config.get("buffers", [])
+
+    payload: dict = {}
+    for name, dtype in line_metric_schema([b["name"] for b in buffers]):
+        payload[f"Line.{name.replace('/', '.')}"] = dtype
+
+    flat_topics = []
+    for st_cfg in stations:
+        st_name = st_cfg["name"]
+        pv_names = [pv["name"] for pv in st_cfg.get("process_values", [])]
+        schema = station_metric_schema(pv_names)
+        for name, dtype in schema:
+            payload[f"{st_name}.{name.replace('/', '.')}"] = dtype
+        for name, dtype in schema:
+            flat_topics.append({
+                "topic": flat_topic(line, st_name, name),
+                "payload": {"value": dtype, "sim_time": "Float", "run_id": "String"},
+            })
+
+    return {
+        "part14": {
+            "data_topic": f"opcua/{publisher_id}/json",
+            "status_topic": f"opcua/{publisher_id}/status",
+            "publish_interval": publish_interval,
+            "envelope": {
+                "MessageId": "String",
+                "MessageType": "String",
+                "PublisherId": "String",
+                "DataSetWriterId": "Int32",
+                "Timestamp": "String",
+                "Payload": payload,
+            },
+        },
+        "flat_topics": flat_topics,
     }
