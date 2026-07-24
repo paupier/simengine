@@ -73,10 +73,10 @@ def build_mqtt_schema(config: dict, mqtt_cfg: dict) -> dict:
     stations = config.get("stations", [])
     buffers = config.get("buffers", [])
 
+    # Payload key order mirrors OPCUAMqttPublisher.publish() exactly: all
+    # station metrics first (config order), then line metrics — so the schema
+    # is byte-order-identical to the live envelope, not merely set-equal.
     payload: dict = {}
-    for name, dtype in line_metric_schema([b["name"] for b in buffers]):
-        payload[f"Line.{name.replace('/', '.')}"] = dtype
-
     flat_topics_enabled = mqtt_cfg.get("flat_topics", True)
     flat_topics = []
     for st_cfg in stations:
@@ -91,6 +91,8 @@ def build_mqtt_schema(config: dict, mqtt_cfg: dict) -> dict:
                     "topic": flat_topic(line, st_name, name),
                     "payload": {"value": dtype, "sim_time": "Float", "run_id": "String"},
                 })
+    for name, dtype in line_metric_schema([b["name"] for b in buffers]):
+        payload[f"Line.{name.replace('/', '.')}"] = dtype
 
     return {
         "part14": {

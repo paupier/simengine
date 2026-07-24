@@ -153,7 +153,8 @@ def create_alarms_node(parent_node, idx: int, alarm_type: str = "machine",
 
 def create_process_values_node(parent_node, idx: int, pv_names_units: list,
                                node_prefix: str = ""):
-    """ProcessValues/ folder: one Float variable per configured PV."""
+    """ProcessValues/ folder: one Double variable per configured PV (python-opcua
+    infers VariantType.Double from the bare 0.0 float initializer)."""
     p = node_prefix
     pv_node = parent_node.add_object(_nid(p, idx), _qn("ProcessValues", idx))
     vars_dict = {}

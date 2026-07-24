@@ -103,10 +103,13 @@ class TestBuildMqttSchema:
         envelope_call = [c for c in pub._client.publish.call_args_list
                          if c.args[0] == pub.data_topic][0]
         import json
-        real_payload_keys = set(json.loads(envelope_call.args[1])["Payload"].keys())
+        real_payload_keys = list(json.loads(envelope_call.args[1])["Payload"].keys())
 
         schema_result = build_mqtt_schema(demo_config(), MQTT_CFG)
-        assert set(schema_result["part14"]["envelope"]["Payload"].keys()) == real_payload_keys
+        schema_keys = list(schema_result["part14"]["envelope"]["Payload"].keys())
+        # Order-identical, not merely set-equal, so the schema mirrors the exact
+        # live envelope key order (stations first, then line metrics).
+        assert schema_keys == real_payload_keys
 
     def test_flat_topics_match_flat_topic_helper(self):
         from simengine.api.schema import build_mqtt_schema
