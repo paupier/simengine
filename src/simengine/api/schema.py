@@ -170,12 +170,12 @@ def build_schema(config: dict) -> dict:
     before it's turned on) but carrying that flag for the UI/caller.
     """
     comms = config.get("comms", {}) or {}
-    opcua_cfg = comms.get("opcua", {}) or {}
+    opcua_cfg = comms.get("opcua", {"enabled": True}) or {"enabled": True}
     mqtt_cfg = comms.get("opcua_mqtt", {}) or {}
     spb_cfg = comms.get("sparkplugb", {}) or {}
 
     opcua_result = build_opcua_schema(config, port=opcua_cfg.get("port", 4840))
-    opcua_result["enabled"] = opcua_cfg.get("enabled", True)
+    opcua_result["enabled"] = opcua_cfg.get("enabled", False)
 
     mqtt_result = build_mqtt_schema(config, mqtt_cfg)
     mqtt_result["enabled"] = mqtt_cfg.get("enabled", False)

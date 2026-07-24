@@ -201,3 +201,13 @@ class TestBuildSchema:
         """Matches build_publishers()'s own default: comms.get("opcua", {"enabled": True})."""
         result = build_schema(demo_config())
         assert result["opcua"]["enabled"] is True
+
+    def test_opcua_enabled_false_when_block_present_without_enabled_key(self):
+        """Matches build_publishers()'s real default: the {"enabled": True}
+        fallback only applies when the whole comms.opcua key is absent —
+        if comms.opcua exists but has no "enabled" key inside it, that's
+        disabled, same as build_publishers() would treat it."""
+        config = demo_config()
+        config["comms"] = {"opcua": {"port": 4840}}
+        result = build_schema(config)
+        assert result["opcua"]["enabled"] is False
