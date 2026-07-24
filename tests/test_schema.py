@@ -178,3 +178,26 @@ class TestBuildSparkplugbSchema:
         for device in schema_result["devices"]:
             schema_device_aliases = {m["name"]: m["alias"] for m in device["metrics"]}
             assert schema_device_aliases == pub._aliases[device["station"]]
+
+
+from simengine.api.schema import build_schema
+
+
+class TestBuildSchema:
+    def test_combines_all_three_with_enabled_flags(self):
+        config = demo_config()
+        config["comms"] = {
+            "opcua": {"enabled": True, "port": 4840},
+            "opcua_mqtt": {"enabled": False},
+        }
+        result = build_schema(config)
+        assert result["opcua"]["enabled"] is True
+        assert "address_space" in result["opcua"]
+        assert result["mqtt"]["enabled"] is False
+        assert "part14" in result["mqtt"]
+        assert result["sparkplugb"]["enabled"] is False  # no comms.sparkplugb block
+
+    def test_opcua_defaults_enabled_true_when_no_comms_block(self):
+        """Matches build_publishers()'s own default: comms.get("opcua", {"enabled": True})."""
+        result = build_schema(demo_config())
+        assert result["opcua"]["enabled"] is True

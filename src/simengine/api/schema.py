@@ -161,3 +161,26 @@ def build_sparkplugb_schema(config: dict, spb_cfg: dict) -> dict:
         "node_metrics": node_metrics,
         "devices": devices,
     }
+
+
+def build_schema(config: dict) -> dict:
+    """Full schema export for one scenario config: OPC UA address space +
+    MQTT (Part 14 + flat) + SparkplugB, each computed regardless of that
+    protocol's `enabled` flag (so a protocol's shape can be previewed
+    before it's turned on) but carrying that flag for the UI/caller.
+    """
+    comms = config.get("comms", {}) or {}
+    opcua_cfg = comms.get("opcua", {}) or {}
+    mqtt_cfg = comms.get("opcua_mqtt", {}) or {}
+    spb_cfg = comms.get("sparkplugb", {}) or {}
+
+    opcua_result = build_opcua_schema(config, port=opcua_cfg.get("port", 4840))
+    opcua_result["enabled"] = opcua_cfg.get("enabled", True)
+
+    mqtt_result = build_mqtt_schema(config, mqtt_cfg)
+    mqtt_result["enabled"] = mqtt_cfg.get("enabled", False)
+
+    spb_result = build_sparkplugb_schema(config, spb_cfg)
+    spb_result["enabled"] = spb_cfg.get("enabled", False)
+
+    return {"opcua": opcua_result, "mqtt": mqtt_result, "sparkplugb": spb_result}

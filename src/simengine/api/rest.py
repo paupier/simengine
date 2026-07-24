@@ -24,6 +24,7 @@ from simengine.config.loader import (
     validate_comms,
     validate_serial_topology,
 )
+from simengine.api.schema import build_schema
 from simengine.engine.knowledge_graph import build_knowledge_graph
 from simengine.runtime.recipe_runner import parse_recipe, validate_recipe
 from simengine.runtime.run_manager import IDLE, RunConflictError, RunManager
@@ -308,6 +309,24 @@ def create_api_blueprint(run_manager: RunManager) -> Blueprint:
         except (KeyError, TypeError, AttributeError) as exc:
             return jsonify({"error": f"invalid config: {exc}"}), 400
         return jsonify(kg.to_node_link())
+
+    # ----- wire schema export -----
+
+    @api.get("/api/v1/schema")
+    def get_schema():
+        scenario = request.args.get("scenario")
+        if not scenario:
+            return jsonify({"error": "scenario query parameter required"}), 400
+        data, _ = _load_scenarios_file()
+        if scenario not in data:
+            return jsonify({"error": f"unknown scenario '{scenario}'"}), 404
+        config = _plain(data[scenario])
+        try:
+            result = build_schema(config)
+        except (KeyError, TypeError) as exc:
+            return jsonify({"error": f"invalid config: {exc}"}), 400
+        result["scenario"] = scenario
+        return jsonify(result)
 
     # ----- plugins helper (comms page) -----
 
