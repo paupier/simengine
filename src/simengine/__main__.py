@@ -3,7 +3,6 @@
 Usage:
     python -m simengine                          # API/UI only; start runs via REST
     python -m simengine --scenario demo_line --seed 42
-    python -m simengine --recipe monday_schedule --seed 42
     python -m simengine --scenario demo_line --speed-ratio 10 --port 8080
 """
 import argparse
@@ -14,7 +13,6 @@ import sys
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="simengine")
     parser.add_argument("--scenario", help="start this scenario immediately")
-    parser.add_argument("--recipe", help="start this recipe immediately")
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--speed-ratio", type=float, default=1.0,
                         help="sim seconds per wall second (1.0 = real time)")
@@ -36,16 +34,10 @@ def main(argv=None):
 
     run_manager = RunManager()
 
-    if args.scenario and args.recipe:
-        parser.error("--scenario and --recipe are mutually exclusive")
     if args.scenario:
         run_id = run_manager.start(args.scenario, seed=args.seed,
                                    speed_ratio=args.speed_ratio)
         print(f"run started: {run_id}")
-    elif args.recipe:
-        run_id = run_manager.start_recipe(args.recipe, seed=args.seed,
-                                          speed_ratio=args.speed_ratio)
-        print(f"recipe run started: {run_id}")
 
     if not args.no_mcp:
         from simengine.api.mcp_server import start_mcp_server_thread

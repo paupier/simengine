@@ -69,4 +69,3 @@ class LineSnapshot:
     stations: dict = field(default_factory=dict)   # name -> StationSnapshot
     buffers: dict = field(default_factory=dict)    # name -> BufferSnapshot
     shift: Optional[dict] = None                   # shift_manager passthrough or None
-    recipe: Optional[dict] = None                  # recipe state passthrough or None

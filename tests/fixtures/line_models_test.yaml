@@ -2,7 +2,7 @@
 # tests/conftest.py so tests are independent of config/scenarios.yaml.
 
 balanced_line:
-  description: "Two identical stations for recipe/validation tests"
+  description: "Two identical stations for validation tests"
   stations:
     - name: M1
       cycle_time: 1.0

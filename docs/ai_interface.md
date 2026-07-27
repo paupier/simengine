@@ -34,13 +34,12 @@ Claude Desktop / Claude Code (`mcpServers` in the host's config):
 }
 ```
 
-The server exposes 16 tools:
+The server exposes 12 tools:
 
 - **Read:** `get_line_state`, `get_station`, `get_run_status`,
   `query_knowledge_graph`, `resolve_metric`, `list_scenarios`,
-  `get_scenario`, `list_recipes`, `get_recipe`, `explain_alarm`
-- **Control (always on):** `start_run`, `start_recipe`, `stop_run`,
-  `update_scenario`, `update_recipe`, `set_comms`
+  `get_scenario`, `explain_alarm`
+- **Control (always on):** `start_run`, `stop_run`, `update_scenario`, `set_comms`
 
 Config writes go through the same validators as the REST API — invalid input
 returns a tool error and the file is untouched.
@@ -48,7 +47,7 @@ returns a tool error and the file is untouched.
 ## Assistant chat
 
 The `/assistant` UI page runs an Anthropic-only agent loop (SDK tool runner)
-over the same 16 tools, with the knowledge graph summary as a cached system
+over the same 12 tools, with the knowledge graph summary as a cached system
 prefix. Requires the optional extra:
 
 ```bash
@@ -64,8 +63,8 @@ any MCP-capable host and point it at `:8765/mcp` instead.
 ## Security note
 
 **Control tools are always on.** Anything that can reach port 8765 can start
-and stop runs and edit scenario/recipe files — exactly like anything that can
-reach the REST port 8080. Treat both as trusted-network interfaces:
+and stop runs and edit scenario files — exactly like anything that can reach
+the REST port 8080. Treat both as trusted-network interfaces:
 
 - do not expose 8080 or 8765 beyond the intended network;
 - for anything else, put a reverse proxy with authentication in front of both;

@@ -3,10 +3,8 @@
 Owns the engine thread. States: IDLE -> RUNNING -> STOPPING -> IDLE.
 Exactly one run at a time; a second start raises RunConflictError (REST maps
 it to 409). The loop is wall-clock locked at sim_step / speed_ratio seconds
-per step. Recipe mode drives the carried recipe_runner parse/override/
-changeover machinery over the same run_segment loop.
+per step.
 """
-import copy
 import logging
 import threading
 import time
@@ -14,17 +12,10 @@ from datetime import datetime
 from typing import Optional
 
 from simengine.config.loader import load_line_config
-from simengine.engine.line import CHANGEOVER, RUNNING, STOPPED, LineEngine
+from simengine.engine.line import RUNNING, STOPPED, LineEngine
 from simengine.events.collect import SnapshotEventCollector
 from simengine.plugins import build_historians
 from simengine.publishers import build_publishers
-from simengine.runtime.recipe_runner import (
-    apply_segment_overrides,
-    load_recipe_config,
-    parse_recipe,
-    sample_changeover,
-    validate_recipe,
-)
 from simengine.runtime.shift_manager import create_shift_manager_from_config
 
 logger = logging.getLogger(__name__)
@@ -42,7 +33,6 @@ class RunManager:
         self.state = IDLE
         self.run_id: Optional[str] = None
         self.scenario: Optional[str] = None
-        self.recipe_name: Optional[str] = None
         self.latest_snapshot = None
         self.engine: Optional[LineEngine] = None
         self.knowledge_graph = None  # built at run start, static per run
@@ -64,35 +54,10 @@ class RunManager:
             self.state = RUNNING
             self.run_id = run_id
             self.scenario = scenario
-            self.recipe_name = None
             self._stop_event.clear()
             self._thread = threading.Thread(
                 target=self._run_scenario,
                 args=(config, scenario, seed, speed_ratio, run_id),
-                daemon=True,
-            )
-            self._thread.start()
-            return run_id
-
-    def start_recipe(self, recipe_name: str, seed: Optional[int] = None,
-                     speed_ratio: float = 1.0) -> str:
-        """Start a multi-segment recipe run."""
-        with self._lock:
-            if self.state != IDLE:
-                raise RunConflictError("a run is already active")
-            raw = load_recipe_config(recipe_name)
-            recipe = parse_recipe(raw)
-            validate_recipe(recipe)
-            seed = self._resolve_seed(seed)
-            run_id = f"{recipe.base_scenario}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-            self.state = RUNNING
-            self.run_id = run_id
-            self.scenario = recipe.base_scenario
-            self.recipe_name = recipe_name
-            self._stop_event.clear()
-            self._thread = threading.Thread(
-                target=self._run_recipe,
-                args=(recipe, seed, speed_ratio, run_id),
                 daemon=True,
             )
             self._thread.start()
@@ -144,84 +109,9 @@ class RunManager:
             publishers.close()
             self._finish()
 
-    def _run_recipe(self, recipe, seed, speed_ratio, run_id):
-        base_config = load_line_config(recipe.base_scenario)
-        publishers = build_publishers(base_config)
-        from simengine.engine.knowledge_graph import build_knowledge_graph
-        self.knowledge_graph = build_knowledge_graph(
-            base_config, recipe.base_scenario, recipe_name=recipe.name)
-        historian = build_historians(base_config, recipe.base_scenario, run_id)
-        collector = SnapshotEventCollector() if historian else None
-        try:
-            total = len(recipe.segments)
-            recipe_state = {
-                "recipe_name": recipe.name,
-                "total_segments": total,
-                "changeover_state": False,
-                "last_changeover_planned": 0.0,
-                "last_changeover_actual": 0.0,
-            }
-            started = False
-            for i, seg in enumerate(recipe.segments):
-                if self._stop_event.is_set():
-                    break
-                effective = apply_segment_overrides(base_config, seg.overrides)
-                engine = LineEngine(effective, recipe.base_scenario,
-                                    seed=seed + i * 10000, run_id=run_id,
-                                    speed_ratio=speed_ratio)
-                self.engine = engine
-                shift_mgr = create_shift_manager_from_config(
-                    effective, [s.name for s in engine.stations])
-                if not started:
-                    publishers.on_run_start(engine.snapshot())
-                    started = True
-                recipe_state.update({
-                    "segment_name": seg.name,
-                    "segment_index": i,
-                    "segment_stop_mode": "quantity" if seg.quantity else "duration",
-                    "segment_quantity_target": seg.quantity or 0,
-                })
-                self.run_segment(
-                    engine, publishers, speed_ratio, shift_mgr=shift_mgr,
-                    max_sim_time=seg.duration or seg.max_duration,
-                    target_quantity=seg.quantity,
-                    recipe_state=recipe_state,
-                    historian=historian, collector=collector,
-                )
-                # Changeover between segments (not after the last)
-                if seg.changeover and i < total - 1 and not self._stop_event.is_set():
-                    actual = sample_changeover(seg.changeover, seed + i * 10000)
-                    recipe_state.update({
-                        "changeover_state": True,
-                        "last_changeover_planned": seg.changeover.target,
-                        "last_changeover_actual": actual,
-                    })
-                    engine.line_state = CHANGEOVER
-                    snap = engine.snapshot(recipe=dict(recipe_state))
-                    self.latest_snapshot = snap
-                    publishers.publish(snap)
-                    wall = actual / max(speed_ratio, 1e-9)
-                    deadline = time.time() + wall
-                    while time.time() < deadline and not self._stop_event.is_set():
-                        time.sleep(min(1.0, deadline - time.time()))
-                    engine.line_state = RUNNING
-                    recipe_state["changeover_state"] = False
-            publishers.on_run_end()
-        except Exception:
-            logger.exception("recipe run %s crashed", run_id)
-        finally:
-            if historian is not None:
-                end_event = collector.run_end_event(self.latest_snapshot)
-                if end_event is not None:
-                    historian.record_event(end_event)
-                historian.close()
-            publishers.close()
-            self._finish()
-
     def run_segment(self, engine: LineEngine, publishers, speed_ratio: float,
                     shift_mgr=None, max_sim_time: Optional[float] = None,
                     target_quantity: Optional[int] = None,
-                    recipe_state: Optional[dict] = None,
                     historian=None, collector=None):
         """Wall-clock-locked step loop with stop conditions.
 
@@ -245,13 +135,8 @@ class RunManager:
                 self._sync_shift(shift_mgr, engine)
 
             parts = engine.stations[-1].parts_out - segment_start_parts
-            if recipe_state is not None:
-                recipe_state["segment_quantity_produced"] = parts
 
-            snap = engine.snapshot(
-                shift=self._shift_dict(shift_mgr, engine),
-                recipe=dict(recipe_state) if recipe_state else None,
-            )
+            snap = engine.snapshot(shift=self._shift_dict(shift_mgr, engine))
             self.latest_snapshot = snap
             publishers.publish(snap)
 
@@ -320,7 +205,6 @@ class RunManager:
             "state": self.state,
             "run_id": self.run_id,
             "scenario": self.scenario,
-            "recipe": self.recipe_name,
             "sim_time": snap.sim_time if snap else 0.0,
             "step_count": snap.step_count if snap else 0,
         }

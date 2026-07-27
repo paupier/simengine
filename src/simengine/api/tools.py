@@ -15,12 +15,7 @@ from typing import Optional
 import yaml as pyyaml
 
 from simengine.api import config_files
-from simengine.config.loader import (
-    get_recipes_dir,
-    validate_comms,
-    validate_serial_topology,
-)
-from simengine.runtime.recipe_runner import parse_recipe, validate_recipe
+from simengine.config.loader import validate_comms, validate_serial_topology
 from simengine.runtime.run_manager import RunManager
 
 
@@ -91,17 +86,6 @@ class ToolRegistry:
             raise ValueError(f"unknown scenario '{name}'")
         return config_files.plain(data[name])
 
-    def list_recipes(self) -> list:
-        """List available recipe names."""
-        return sorted(p.stem for p in get_recipes_dir().glob("*.yaml"))
-
-    def get_recipe(self, name: str) -> dict:
-        """Full configuration of one recipe."""
-        path = config_files.recipe_path(name)
-        if not path.exists():
-            raise ValueError(f"unknown recipe '{name}'")
-        return config_files.plain(config_files.load_recipe_file(path))
-
     def explain_alarm(self, code: str) -> dict:
         """Alarm catalog entry + knowledge-graph context: which stations raise
         it and, for PV alarms, the configured thresholds."""
@@ -140,11 +124,6 @@ class ToolRegistry:
                                         speed_ratio=speed_ratio)
         return {"run_id": run_id}
 
-    def start_recipe(self, recipe: str, seed: Optional[int] = None) -> dict:
-        """Start a multi-segment recipe run. Errors if a run is already active."""
-        run_id = self.run_manager.start_recipe(recipe, seed=seed)
-        return {"run_id": run_id}
-
     def stop_run(self) -> dict:
         """Gracefully stop the active run."""
         if self.run_manager.state == "IDLE":
@@ -169,22 +148,6 @@ class ToolRegistry:
         config_files.dump_scenarios_file(data, path)
         return {"updated": name, "applies": "next_run"}
 
-    def update_recipe(self, name: str, yaml_text: str) -> dict:
-        """Replace a recipe's YAML config. Validators run before writing."""
-        try:
-            body = pyyaml.safe_load(yaml_text)
-        except pyyaml.YAMLError as exc:
-            raise ValueError(f"invalid YAML: {exc}")
-        if not isinstance(body, dict):
-            raise ValueError("recipe YAML must be a mapping")
-        recipe = parse_recipe(body)
-        validate_recipe(recipe)
-        path = config_files.recipe_path(name)
-        if not path.exists():
-            raise ValueError(f"unknown recipe '{name}'")
-        config_files.dump_recipe_file(body, path)
-        return {"updated": name}
-
     def set_comms(self, scenario: str, comms: dict) -> dict:
         """Update a scenario's comms block (opcua / opcua_mqtt / sparkplugb).
         Applies at the next run start."""
@@ -202,9 +165,8 @@ class ToolRegistry:
 
     READ_TOOLS = ("get_line_state", "get_station", "get_run_status",
                   "query_knowledge_graph", "resolve_metric", "list_scenarios",
-                  "get_scenario", "list_recipes", "get_recipe", "explain_alarm")
-    CONTROL_TOOLS = ("start_run", "start_recipe", "stop_run",
-                     "update_scenario", "update_recipe", "set_comms")
+                  "get_scenario", "explain_alarm")
+    CONTROL_TOOLS = ("start_run", "stop_run", "update_scenario", "set_comms")
 
     def all_tools(self):
         """[(name, bound callable)] for MCP registration / chat wiring."""

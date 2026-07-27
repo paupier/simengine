@@ -17,14 +17,6 @@ def get_config_path() -> Path:
     ))
 
 
-def get_recipes_dir() -> Path:
-    """Directory of recipe YAML files (SIMENGINE_RECIPE_PATH overrides)."""
-    return Path(os.environ.get(
-        "SIMENGINE_RECIPE_PATH",
-        str(Path(__file__).parents[3] / "config" / "recipes")
-    ))
-
-
 def load_line_config(scenario_name: str = "balanced_line") -> Dict[str, Any]:
     """
     Load line configuration from YAML file.

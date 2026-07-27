@@ -1,8 +1,0 @@
-name: "Single Product Run"
-description: "Simple single-segment recipe for validation and testing"
-base_scenario: demo_line
-
-segments:
-  - name: "Product A"
-    quantity: 200
-    max_duration: 3600

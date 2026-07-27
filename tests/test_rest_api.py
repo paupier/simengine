@@ -14,13 +14,10 @@ PROJECT_CONFIG = Path(__file__).parents[1] / "config"
 
 @pytest.fixture
 def api_env(tmp_path, monkeypatch):
-    """Isolated copies of the shipped scenario/recipe files + fresh app."""
+    """Isolated copy of the shipped scenario file + fresh app."""
     scenarios = tmp_path / "scenarios.yaml"
     shutil.copy(PROJECT_CONFIG / "scenarios.yaml", scenarios)
-    recipes_dir = tmp_path / "recipes"
-    shutil.copytree(PROJECT_CONFIG / "recipes", recipes_dir)
     monkeypatch.setenv("SIMENGINE_CONFIG_PATH", str(scenarios))
-    monkeypatch.setenv("SIMENGINE_RECIPE_PATH", str(recipes_dir))
 
     run_manager = RunManager()
     app = create_app(run_manager)
@@ -88,26 +85,6 @@ class TestScenarioCRUD:
         cfg = client.get("/api/v1/scenarios/two_station_minimal").get_json()
         r = client.post("/api/v1/scenarios", json={"name": "demo_line", "config": cfg})
         assert r.status_code == 409
-
-
-class TestRecipeCRUD:
-    def test_list(self, client):
-        names = client.get("/api/v1/recipes").get_json()
-        assert "quick_test" in names
-
-    def test_get(self, client):
-        cfg = client.get("/api/v1/recipes/quick_test").get_json()
-        assert cfg["base_scenario"] == "demo_line"
-
-    def test_put_invalid_400(self, client):
-        r = client.put("/api/v1/recipes/quick_test", json={"name": "X"})
-        assert r.status_code == 400
-
-    def test_post_create(self, client):
-        cfg = client.get("/api/v1/recipes/quick_test").get_json()
-        r = client.post("/api/v1/recipes", json={"name": "new_recipe", "config": cfg})
-        assert r.status_code == 201
-        assert "new_recipe" in client.get("/api/v1/recipes").get_json()
 
 
 class TestCommsEndpoint:

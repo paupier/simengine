@@ -1,10 +1,9 @@
 """Embedded REST API (build plan P6.4, endpoints per clone_target_architecture §4).
 
 A thin transport over logic that already exists: all mutating config endpoints
-reuse the config_loader / recipe_runner validators, and GET /api/v1/state
-returns the exact snapshot object the publishers consume (dataclasses.asdict).
-Scenario/recipe writes go through ruamel round-trip loading so YAML comments
-are preserved.
+reuse the config_loader validators, and GET /api/v1/state returns the exact
+snapshot object the publishers consume (dataclasses.asdict). Scenario writes
+go through ruamel round-trip loading so YAML comments are preserved.
 """
 from dataclasses import asdict
 
@@ -12,21 +11,13 @@ from flask import Blueprint, Flask, jsonify, render_template, request
 
 from simengine.api import diagnostics
 from simengine.api.config_files import (
-    dump_recipe_file,
-    recipe_path,
     dump_scenarios_file as _dump_scenarios_file,
-    load_recipe_file,
     load_scenarios_file as _load_scenarios_file,
     plain as _plain,
 )
-from simengine.config.loader import (
-    get_recipes_dir,
-    validate_comms,
-    validate_serial_topology,
-)
+from simengine.config.loader import validate_comms, validate_serial_topology
 from simengine.api.schema import build_nodeset2_xml, build_schema
 from simengine.engine.knowledge_graph import build_knowledge_graph
-from simengine.runtime.recipe_runner import parse_recipe, validate_recipe
 from simengine.runtime.run_manager import IDLE, RunConflictError, RunManager
 
 
@@ -73,25 +64,6 @@ def create_api_blueprint(run_manager: RunManager) -> Blueprint:
         except RunConflictError as exc:
             return jsonify({"error": str(exc)}), 409
         except (ValueError, FileNotFoundError) as exc:
-            return jsonify({"error": str(exc)}), 400
-        return jsonify({"run_id": run_id}), 201
-
-    @api.post("/api/v1/runs/recipe")
-    def start_recipe():
-        body = request.get_json(force=True, silent=True) or {}
-        recipe = body.get("recipe")
-        if not recipe:
-            return jsonify({"error": "recipe required"}), 400
-        try:
-            run_id = run_manager.start_recipe(
-                recipe, seed=body.get("seed"),
-                speed_ratio=float(body.get("speed_ratio", 1.0)),
-            )
-        except RunConflictError as exc:
-            return jsonify({"error": str(exc)}), 409
-        except FileNotFoundError as exc:
-            return jsonify({"error": str(exc)}), 404
-        except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
         return jsonify({"run_id": run_id}), 201
 
@@ -160,64 +132,6 @@ def create_api_blueprint(run_manager: RunManager) -> Blueprint:
         except ValueError as exc:
             return jsonify({"valid": False, "error": str(exc)}), 400
         return jsonify({"valid": True})
-
-    # ----- recipes -----
-
-    @api.get("/api/v1/recipes")
-    def list_recipes():
-        recipes_dir = get_recipes_dir()
-        names = sorted(p.stem for p in recipes_dir.glob("*.yaml"))
-        return jsonify(names)
-
-    @api.get("/api/v1/recipes/<name>")
-    def get_recipe(name):
-        try:
-            path = recipe_path(name)
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
-        if not path.exists():
-            return jsonify({"error": f"unknown recipe '{name}'"}), 404
-        return jsonify(_plain(load_recipe_file(path)))
-
-    @api.put("/api/v1/recipes/<name>")
-    def put_recipe(name):
-        body = request.get_json(force=True, silent=True)
-        if not isinstance(body, dict):
-            return jsonify({"error": "recipe body must be a JSON object"}), 400
-        try:
-            recipe = parse_recipe(body)
-            validate_recipe(recipe)
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
-        try:
-            path = recipe_path(name)
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
-        if not path.exists():
-            return jsonify({"error": f"unknown recipe '{name}'"}), 404
-        dump_recipe_file(body, path)
-        return jsonify({"updated": name})
-
-    @api.post("/api/v1/recipes")
-    def post_recipe():
-        body = request.get_json(force=True, silent=True) or {}
-        name = body.get("name")
-        config = body.get("config")
-        if not name or not isinstance(config, dict):
-            return jsonify({"error": "body must be {name, config}"}), 400
-        try:
-            recipe = parse_recipe(config)
-            validate_recipe(recipe)
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
-        try:
-            path = recipe_path(name)
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
-        if path.exists():
-            return jsonify({"error": f"recipe '{name}' already exists"}), 409
-        dump_recipe_file(config, path)
-        return jsonify({"created": name}), 201
 
     # ----- comms -----
 

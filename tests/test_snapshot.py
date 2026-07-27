@@ -30,7 +30,7 @@ def make_line_snapshot():
         sim_time=120.0, step_count=120, line_state="RUNNING", speed_ratio=1.0,
         throughput=0.083, total_wip=4, total_good=9, total_scrap=1, oee=0.8379,
         stations={"Press01": station}, buffers={"B1": buf},
-        shift=None, recipe=None,
+        shift=None,
     )
 
 
@@ -49,7 +49,7 @@ def test_asdict_round_trip():
     assert d["stations"]["Press01"]["process_values"][0]["value"] == 54.7
     assert d["stations"]["Press01"]["alarms"][0]["severity"] == "HIGH"
     assert d["buffers"]["B1"]["level"] == 3
-    assert d["shift"] is None and d["recipe"] is None
+    assert d["shift"] is None
 
 
 def test_json_serializable():

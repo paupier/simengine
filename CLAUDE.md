@@ -17,7 +17,6 @@ python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 
 # Run: REST/UI :8080, OPC UA :4840, MCP :8765/mcp
 python -m simengine --scenario demo_line --seed 42
-python -m simengine --recipe monday_schedule --seed 42
 python -m simengine --scenario demo_line --speed-ratio 10   # 10x faster than wall clock
 python -m simengine                                          # API only; start runs via REST
 
@@ -47,16 +46,15 @@ src/simengine/
                 opcua_server.py + opcua_nodes.py (ISA-95, batched writes),
                 opcua_mqtt.py (Part 14 JSON + flat topics), sparkplugb.py,
                 metrics.py (shared snapshot->metric map), _sparkplug_pb/ (vendored Tahu pb2)
-  runtime/      run_manager.py (thread lifecycle, run_id, recipes), recipe_runner.py,
-                shift_manager.py, spc.py
+  runtime/      run_manager.py (thread lifecycle, run_id), shift_manager.py, spc.py
   events/       __init__.py (SimEvent + EventHistorian ABC + CompositeHistorian),
                 collect.py (snapshot-diff edge detection)
-  api/          rest.py (+create_app), tools.py (16-tool registry), mcp_server.py,
+  api/          rest.py (+create_app), tools.py (12-tool registry), mcp_server.py,
                 chat.py, config_files.py, diagnostics.py (MQTT/REST connectivity
                 probe, no engine coupling), ui/ (Jinja templates)
   plugins.py    historian registry with install-hint errors
 src/simengine_historian_{csv,influx,neo4j}/   optional backends (register() hook)
-config/scenarios.yaml   §3 schema; config/recipes/*.yaml
+config/scenarios.yaml   §3 schema
 ```
 
 ### The snapshot contract
@@ -85,11 +83,11 @@ Two further consequences bite anything that touches the address space: `asyncua.
 
 ### Environment variables
 
-`SIMENGINE_CONFIG_PATH` (scenario file), `SIMENGINE_RECIPE_PATH` (recipes dir), `SIMENGINE_HISTORIAN_DIR` (csv), `INFLUXDB_URL/TOKEN/ORG/BUCKET`, `NEO4J_URI/USER/PASSWORD`, `SIMENGINE_OPCUA_SHELF` (optional dir; caches asyncua's standard address space — see below). Tests route the loader at `tests/fixtures/line_models_test.yaml` via an autouse conftest fixture — tests that must see the shipped `config/scenarios.yaml` call `monkeypatch.delenv("SIMENGINE_CONFIG_PATH")`.
+`SIMENGINE_CONFIG_PATH` (scenario file), `SIMENGINE_HISTORIAN_DIR` (csv), `INFLUXDB_URL/TOKEN/ORG/BUCKET`, `NEO4J_URI/USER/PASSWORD`, `SIMENGINE_OPCUA_SHELF` (optional dir; caches asyncua's standard address space — see below). Tests route the loader at `tests/fixtures/line_models_test.yaml` via an autouse conftest fixture — tests that must see the shipped `config/scenarios.yaml` call `monkeypatch.delenv("SIMENGINE_CONFIG_PATH")`.
 
 ### AI interface
 
-Knowledge graph (`engine/knowledge_graph.py`, stdlib-only, deterministic, built at run start, owned by run_manager) binds every metric to all four wire addresses. `api/tools.py` is the one 16-tool registry behind both the MCP server (FastMCP, `:8765/mcp`, streamable HTTP, control tools always on — treat the port like :8080) and the `/assistant` chat (Anthropic tool_runner, key in process memory only). See `docs/ai_interface.md`.
+Knowledge graph (`engine/knowledge_graph.py`, stdlib-only, deterministic, built at run start, owned by run_manager) binds every metric to all four wire addresses. `api/tools.py` is the one 12-tool registry behind both the MCP server (FastMCP, `:8765/mcp`, streamable HTTP, control tools always on — treat the port like :8080) and the `/assistant` chat (Anthropic tool_runner, key in process memory only). See `docs/ai_interface.md`.
 
 ## Known deferred items
 
