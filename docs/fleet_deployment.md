@@ -85,11 +85,12 @@ sequenceDiagram
     participant Orch as Fleet Orchestrator
     participant C as Container (Line N)
 
-    Orch->>C: PUT /api/v1/scenarios/<name>  (scenario config for this line)
+    Orch->>C: PUT /api/v1/scenarios/{name} (scenario config for this line)
     C-->>Orch: 200 {"updated": name}
     Orch->>C: POST /api/v1/runs {"scenario": name, "seed": ...}
     C-->>Orch: 201 {"run_id": ...}
-    Note over C: OPC UA server starts;<br/>MQTT publisher connects to shared broker (if enabled)
+    Note over C: OPC UA server starts
+    Note over C: MQTT publisher connects to shared broker (if enabled)
     C->>C: publishes every step to OPC UA / MQTT / historian
 ```
 
