@@ -48,7 +48,7 @@ src/simengine/
                 opcua_mqtt.py (Part 14 JSON + flat topics), sparkplugb.py,
                 metrics.py (shared snapshot->metric map), _sparkplug_pb/ (vendored Tahu pb2)
   runtime/      run_manager.py (thread lifecycle, run_id, recipes), recipe_runner.py,
-                shift_manager.py, spc.py, line_state.py, fault_injector.py
+                shift_manager.py, spc.py
   events/       __init__.py (SimEvent + EventHistorian ABC + CompositeHistorian),
                 collect.py (snapshot-diff edge detection)
   api/          rest.py (+create_app), tools.py (16-tool registry), mcp_server.py,
@@ -71,6 +71,7 @@ Everything consumes one frozen representation: `LineEngine.snapshot()` builds a 
 - **KPIs (P4.5):** Availability = 1 − down/total where down = FAILED+UNDER_REPAIR only; Performance = parts×cycle_time/(total−down) capped at 1.0 (minor stops land here); Quality = good/max(1,parts). Line OEE = bottleneck min per component. Shift rotation resets per-station KPI baselines, not counters.
 - **Stations step downstream-first** (reverse order) — one-step-per-hop material flow. Scrap is discarded at the station (never moves downstream); `good + scrap == parts_made`.
 - **Warm-up** (`warm_up_time`, counted in steps): mechanics run, counters and time accumulators don't.
+- **Shift performance factor:** `LineEngine.step(performance_factor=1.0)` is a plain deterministic input, same role as `speed_ratio` — the engine has no concept of "shifts" at all. `runtime.run_manager.run_segment` reads `shift_mgr.get_current_cycle_time_factor()` *before* calling `step()` each iteration (rotation is checked *after*, via `_sync_shift`, so the shift that owned the step already running is the one whose factor applies — a step that crosses a shift boundary is still governed by the shift it started in). In `station.py`, the factor scales `effective_cycle_time` (`cycle_time * factor`), used for the completion threshold and `cycle_phase`; the nameplate `cycle_time` itself is never touched and stays the Performance-KPI denominator — that's what makes a factor >1.0 show up as a measured Performance drop rather than silently redefining "on pace". Configured per shift as `shifts.schedule[].cycle_time_factor` (default 1.0 — omitted or absent-`shifts` scenarios are unaffected), applied line-wide (every station equally).
 
 ### Config schema (§3, exhaustive for v1)
 

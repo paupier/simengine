@@ -85,8 +85,15 @@ class LineEngine:
 
     # ----- stepping -----
 
-    def step(self) -> None:
-        """Advance the simulation by one sim_step."""
+    def step(self, performance_factor: float = 1.0) -> None:
+        """Advance the simulation by one sim_step.
+
+        performance_factor is a plain deterministic input, not sampled
+        randomness — same role as speed_ratio: the caller (run_manager, from
+        the active shift's cycle_time_factor) computes it before calling
+        step(), the engine has no concept of "shifts". >1.0 makes every
+        station's cycle take proportionally longer this step.
+        """
         step_seed = (self.seed + self.step_count) % 2 ** 31
         rng = random.Random(step_seed)
         np_rng = np.random.default_rng(step_seed)
@@ -99,6 +106,7 @@ class LineEngine:
             self.stations[i].step(
                 rng, np_rng, self.sim_step, upstream, downstream,
                 self.alarms, self.sim_time, counting,
+                performance_factor=performance_factor,
             )
 
         # Feed cycle-end PV readings into SPC monitors

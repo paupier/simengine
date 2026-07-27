@@ -15,6 +15,10 @@ class ShiftDefinition:
     name: str                    # e.g., "Day Shift", "Night Shift"
     duration: float              # Shift duration in simulation time units
     start_offset: float = 0.0    # Offset from day start (for scheduling)
+    cycle_time_factor: float = 1.0  # >1.0 = every station's cycle takes proportionally
+                                     # longer during this shift (e.g. 1.05 = 5% slower).
+                                     # Applied line-wide; lowers the measured Performance
+                                     # component of OEE, not the nameplate cycle_time.
 
 
 @dataclass
@@ -286,6 +290,12 @@ class ShiftManager:
             "oee": oee,
         }
 
+    def get_current_cycle_time_factor(self) -> float:
+        """The active shift's cycle_time_factor — read before engine.step()
+        so the factor applied to a step matches the shift that owns it
+        (rotation is only checked after the step, via check_shift_rotation)."""
+        return self.shift_definitions[self.current_shift_index].cycle_time_factor
+
     def get_shift_time_remaining(self, current_sim_time: float) -> float:
         """
         Calculate time remaining in current shift.
@@ -379,7 +389,8 @@ def create_shift_manager_from_config(config: Dict, machine_names: List[str]) -> 
         shift_def = ShiftDefinition(
             name=shift_cfg["name"],
             duration=shift_cfg["duration"],
-            start_offset=shift_cfg.get("start_offset", 0.0)
+            start_offset=shift_cfg.get("start_offset", 0.0),
+            cycle_time_factor=float(shift_cfg.get("cycle_time_factor", 1.0)),
         )
         shift_definitions.append(shift_def)
 
