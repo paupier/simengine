@@ -48,7 +48,7 @@ src/simengine/
                 opcua_mqtt.py (Part 14 JSON + flat topics), sparkplugb.py,
                 metrics.py (shared snapshot->metric map), _sparkplug_pb/ (vendored Tahu pb2)
   runtime/      run_manager.py (thread lifecycle, run_id, recipes), recipe_runner.py,
-                shift_manager.py, spc.py, line_state.py, fault_injector.py
+                shift_manager.py, spc.py
   events/       __init__.py (SimEvent + EventHistorian ABC + CompositeHistorian),
                 collect.py (snapshot-diff edge detection)
   api/          rest.py (+create_app), tools.py (16-tool registry), mcp_server.py,
