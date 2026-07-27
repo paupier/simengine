@@ -103,6 +103,7 @@ class StationModel:
         self.has_part = False
         self.part_ready = False       # completed part waiting for downstream space
         self.cycle_elapsed = 0.0
+        self._cycle_time_factor = 1.0  # last performance_factor passed to step()
         self.is_working = False       # advanced its cycle this step
         self.cycle_serial = 0         # increments on each new part (PV peak sampling)
         self.completed_this_step = False
@@ -143,17 +144,32 @@ class StationModel:
         return any(cs.active for cs in self.cycle_stops)
 
     @property
+    def effective_cycle_time(self) -> float:
+        """Nameplate cycle_time scaled by the last-applied performance_factor.
+
+        cycle_time itself stays the nameplate/rated value — used unscaled in
+        kpis()'s Performance denominator, so a factor that slows real cycle
+        completion shows up as a measured Performance drop rather than
+        redefining what "on pace" means.
+        """
+        return self.cycle_time * self._cycle_time_factor
+
+    @property
     def cycle_phase(self) -> float:
-        if self.is_working and self.cycle_time > 0:
-            return min(1.0, self.cycle_elapsed / self.cycle_time)
+        if self.is_working and self.effective_cycle_time > 0:
+            return min(1.0, self.cycle_elapsed / self.effective_cycle_time)
         return 0.0
 
     # ----- per-step logic -----
 
     def step(self, rng, np_rng, sim_step: float,
              upstream: Optional[Buffer], downstream: Optional[Buffer],
-             alarms: AlarmRegistry, sim_time: float, counting: bool) -> None:
+             alarms: AlarmRegistry, sim_time: float, counting: bool,
+             performance_factor: float = 1.0) -> None:
+        """performance_factor >1.0 makes cycles take proportionally longer
+        (e.g. a shift's cycle_time_factor); 1.0 is the nameplate rate."""
         self.completed_this_step = False
+        self._cycle_time_factor = performance_factor
         hm = self.health_model
         hm.update(rng, np_rng, sim_step)
         self._update_failure_alarms(alarms, sim_time)
@@ -184,7 +200,7 @@ class StationModel:
             if not self.cycle_stopped:
                 self.is_working = True
                 self.cycle_elapsed += sim_step
-                if self.cycle_elapsed >= self.cycle_time:
+                if self.cycle_elapsed >= self.effective_cycle_time:
                     self._complete_cycle(rng, counting)
 
         # Push a completed part when downstream has space (sink is infinite)

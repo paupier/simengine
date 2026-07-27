@@ -233,7 +233,13 @@ class RunManager:
         segment_start_parts = engine.stations[-1].parts_out
 
         while not self._stop_event.is_set():
-            engine.step()
+            # Read the factor for the shift about to run BEFORE stepping:
+            # _sync_shift's rotation check runs after the step and applies to
+            # the *next* one, so the shift active at step-start is the one
+            # whose cycle_time_factor governs this step.
+            factor = (shift_mgr.get_current_cycle_time_factor()
+                     if shift_mgr is not None else 1.0)
+            engine.step(performance_factor=factor)
 
             if shift_mgr is not None:
                 self._sync_shift(shift_mgr, engine)

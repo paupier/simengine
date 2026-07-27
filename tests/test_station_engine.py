@@ -326,6 +326,98 @@ class TestOEE:
         assert abs(k["availability"] - (1 - down / sum(tis.values()))) < 1e-9
 
 
+class TestPerformanceFactor:
+    """LineEngine.step(performance_factor=...) — the shift cycle_time_factor
+    mechanism. Plain deterministic input (like speed_ratio), not randomness;
+    the engine has no concept of "shifts", just a per-step multiplier.
+
+    Single station, infinite source/sink (buffers=[]), so completions are
+    exactly traceable: pulls at step 0 (cycle_elapsed=0), then cycle_elapsed
+    advances by sim_step each step until it reaches effective_cycle_time
+    (cycle_time * performance_factor), at which point _complete_cycle() fires
+    and — since downstream is None, always "has space" — the finished part is
+    pushed and a new one pulled within that same step.
+    """
+
+    def one_station_config(self):
+        return {
+            "stations": [{"name": "S1", "cycle_time": 5.0}],
+            "buffers": [],
+        }
+
+    def test_default_matches_nameplate_pace(self):
+        """factor=1.0 (the default): completions every cycle_time steps —
+        same 19-completions-in-100-steps arithmetic as the hand-computed OEE
+        test above, confirming the single-station harness matches it."""
+        eng = LineEngine(self.one_station_config(), "test", seed=1)
+        for _ in range(100):
+            eng.step()
+        s1 = eng.stations[0]
+        assert s1.parts_made == 19
+        assert abs(s1.kpis()["performance"] - 0.95) < 1e-9
+
+    def test_factor_slows_completion_and_drops_measured_performance(self):
+        """factor=2.0 doubles effective_cycle_time (5.0 -> 10.0): completions
+        every 10 steps instead of 5, so only 9 land in 100 steps (steps
+        10,20,...,90 — the 10th would land at step 100, past the run).
+
+        kpis()['performance'] must use the NAMEPLATE cycle_time (5.0) as the
+        denominator, not the slowed effective one — that's what makes the
+        factor's effect on real output visible as a measured Performance
+        drop (0.95 -> 0.45) rather than invisible (which is what would
+        happen if cycle_time itself were multiplied and used consistently
+        everywhere: measured pace would always equal 100% of "rated" pace,
+        by definition, no matter how slow "rated" was redefined to be).
+        """
+        eng = LineEngine(self.one_station_config(), "test", seed=1)
+        for _ in range(100):
+            eng.step(performance_factor=2.0)
+        s1 = eng.stations[0]
+        assert s1.parts_made == 9
+        assert s1.cycle_time == 5.0  # nameplate untouched
+        assert abs(s1.kpis()["performance"] - 0.45) < 1e-9
+
+    def test_factor_speeds_up_completion(self):
+        """factor<1.0 is symmetric: effective_cycle_time 5.0*0.5=2.5, so a
+        completion every 3 steps (ceil, since cycle_elapsed is checked after
+        each 1.0 increment: 2.5 is first reached/exceeded at elapsed=3.0)."""
+        eng = LineEngine(self.one_station_config(), "test", seed=1)
+        for _ in range(12):
+            eng.step(performance_factor=0.5)
+        # completions at step indices 3, 6, 9 (elapsed hits 3.0 >= 2.5 each
+        # cycle); the 4th would land at index 12, one past this 12-call run
+        assert eng.stations[0].parts_made == 3
+
+    def test_cycle_phase_reflects_effective_not_nameplate_cycle_time(self):
+        """Same physical progress (2 sim-seconds into a 5-second nameplate
+        cycle) must report a LOWER phase when a factor slows the effective
+        cycle — otherwise the HMI progress bar would claim a station is
+        further along than it actually is."""
+        baseline = LineEngine(self.one_station_config(), "test", seed=1)
+        slowed = LineEngine(self.one_station_config(), "test", seed=1)
+        for _ in range(3):  # steps 0,1,2 -> cycle_elapsed == 2.0 in both
+            baseline.step(performance_factor=1.0)
+            slowed.step(performance_factor=2.0)
+
+        assert baseline.stations[0].cycle_elapsed == 2.0
+        assert slowed.stations[0].cycle_elapsed == 2.0
+        assert abs(baseline.stations[0].cycle_phase - 0.4) < 1e-9   # 2.0/5.0
+        assert abs(slowed.stations[0].cycle_phase - 0.2) < 1e-9     # 2.0/10.0
+
+    def test_default_kwarg_identical_to_explicit_1_0(self):
+        """Backward compatibility: an omitted performance_factor must be
+        byte-identical to explicitly passing 1.0 — same RNG draws, same
+        state, since the factor only touches the completion threshold, never
+        the per-step RNG seeding (P4.4 determinism)."""
+        a = LineEngine(self.one_station_config(), "test", seed=7)
+        b = LineEngine(self.one_station_config(), "test", seed=7)
+        for _ in range(50):
+            a.step()
+            b.step(performance_factor=1.0)
+        assert a.stations[0].parts_made == b.stations[0].parts_made
+        assert a.stations[0].cycle_elapsed == b.stations[0].cycle_elapsed
+
+
 class TestWarmUp:
     def test_counters_gated_during_warm_up(self):
         cfg = two_station_config(warm_up_time=50)
