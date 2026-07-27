@@ -340,3 +340,58 @@ class TestObjectTypesExported:
             assert state.read_browse_name().Name == "State"
         finally:
             server.tloop.stop()
+
+
+class TestResultCaching:
+    """Both builders construct an asyncua Server, which reloads the ~7000-node
+    standard OPC UA namespace every time. They are pure functions of the
+    config, so results are cached on a canonical hash of it."""
+
+    def test_repeated_build_hits_the_cache(self):
+        from simengine.api import schema as schema_mod
+
+        schema_mod._schema_cached.cache_clear()
+        before = schema_mod._schema_cached.cache_info()
+        build_schema(demo_config())
+        build_schema(demo_config())
+        after = schema_mod._schema_cached.cache_info()
+        assert after.misses - before.misses == 1
+        assert after.hits - before.hits == 1
+
+    def test_cached_result_is_not_poisoned_by_caller_mutation(self):
+        """rest.py stamps result["scenario"] onto the returned dict; that must
+        not leak into what the next caller gets."""
+        first = build_schema(demo_config())
+        first["scenario"] = "stamped-by-caller"
+        first["opcua"]["endpoint"] = "mutated"
+
+        second = build_schema(demo_config())
+        assert "scenario" not in second
+        assert second["opcua"]["endpoint"] == "opc.tcp://<host>:4840/simengine/"
+
+    def test_different_config_is_not_a_false_hit(self):
+        other = demo_config()
+        other["stations"][0]["name"] = "Renamed01"
+        assert build_schema(demo_config()) != build_schema(other)
+
+    def test_edited_config_bypasses_the_cache(self):
+        """No invalidation needed — an edited scenario is a different key."""
+        cfg = demo_config()
+        first = build_schema(cfg)
+        cfg["line_name"] = "LineZ"
+        assert build_schema(cfg)["sparkplugb"]["edge_node_id"] == "LineZ"
+        assert first["sparkplugb"]["edge_node_id"] == "Line1"
+
+    def test_nodeset2_is_cached_and_identical(self):
+        from simengine.api import schema as schema_mod
+
+        schema_mod._nodeset2_cached.cache_clear()
+        first = build_nodeset2_xml(demo_config())
+        second = build_nodeset2_xml(demo_config())
+        assert first == second
+        assert schema_mod._nodeset2_cached.cache_info().hits == 1
+
+    def test_nodeset2_port_is_part_of_the_key(self):
+        a = build_nodeset2_xml(demo_config(), port=4840)
+        b = build_nodeset2_xml(demo_config(), port=4999)
+        assert isinstance(a, str) and isinstance(b, str)

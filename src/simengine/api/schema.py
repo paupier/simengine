@@ -10,8 +10,11 @@ actually serves — the no-drift assertions in tests/test_schema.py pin that.
 """
 from __future__ import annotations
 
+import copy
 import io
+import json
 from contextlib import contextmanager
+from functools import lru_cache
 
 from asyncua import ua
 from asyncua.common.xmlexporter import XmlExporter
@@ -31,6 +34,24 @@ _DATATYPE_NAMES = {
     ua.VariantType.Boolean: "Boolean",
     ua.VariantType.DateTime: "DateTime",
 }
+
+
+# ---------------------------------------------------------------------------
+# Result caching.
+#
+# Both public builders construct an asyncua Server, which loads the ~7000-node
+# standard OPC UA namespace every time (~1.3 s on CPython 3.10, far worse on
+# 3.12 — see publishers/opcua_server._new_server). Both are pure functions of
+# the scenario config, so the result is cached on a canonical hash of it: an
+# edited scenario simply produces a different key, so there is nothing to
+# invalidate. Bounded, per the repo's no-unbounded-growth rule.
+# ---------------------------------------------------------------------------
+_CACHE_SIZE = 16
+
+
+def _config_key(config: dict) -> str:
+    """Canonical, order-independent key for a scenario config."""
+    return json.dumps(config, sort_keys=True, default=str)
 
 
 @contextmanager
@@ -112,6 +133,40 @@ def build_opcua_schema(config: dict, port: int = 4840) -> dict:
 
 
 def build_nodeset2_xml(config: dict, port: int = 4840) -> str:
+    """Cached wrapper — see :func:`_build_nodeset2_xml`.
+
+    The result is an immutable str, so it is safe to hand the cached object
+    straight back to every caller.
+    """
+    return _nodeset2_cached(_config_key(config), port, _Frozen(config))
+
+
+class _Frozen:
+    """Carries the real config past lru_cache's hashing.
+
+    lru_cache needs hashable arguments and a dict is not, so the canonical
+    string is the cache key and this wrapper smuggles the config through
+    without participating in hashing or equality.
+    """
+
+    __slots__ = ("value",)
+
+    def __init__(self, value):
+        self.value = value
+
+    def __hash__(self):
+        return 0
+
+    def __eq__(self, other):
+        return isinstance(other, _Frozen)
+
+
+@lru_cache(maxsize=_CACHE_SIZE)
+def _nodeset2_cached(_key: str, port: int, frozen: _Frozen) -> str:
+    return _build_nodeset2_xml(frozen.value, port)
+
+
+def _build_nodeset2_xml(config: dict, port: int = 4840) -> str:
     """OPC UA NodeSet2 (``UANodeSet``) XML for `config` — the standard,
     tool-neutral information-model exchange format.
 
@@ -258,6 +313,21 @@ def build_sparkplugb_schema(config: dict, spb_cfg: dict) -> dict:
 
 
 def build_schema(config: dict) -> dict:
+    """Cached wrapper — see :func:`_build_schema`.
+
+    Returns a deep copy every time: the result is a mutable nested dict and
+    callers do mutate it (rest.py stamps ``result["scenario"]`` onto it), which
+    would otherwise poison the cache for every later request.
+    """
+    return copy.deepcopy(_schema_cached(_config_key(config), _Frozen(config)))
+
+
+@lru_cache(maxsize=_CACHE_SIZE)
+def _schema_cached(_key: str, frozen: _Frozen) -> dict:
+    return _build_schema(frozen.value)
+
+
+def _build_schema(config: dict) -> dict:
     """Full schema export for one scenario config: OPC UA address space +
     MQTT (Part 14 + flat) + SparkplugB, each computed regardless of that
     protocol's `enabled` flag (so a protocol's shape can be previewed
