@@ -85,14 +85,17 @@ class LineEngine:
 
     # ----- stepping -----
 
-    def step(self, performance_factor: float = 1.0) -> None:
+    def step(self, performance_factor: float = 1.0,
+             health_degrade_factor: float = 1.0) -> None:
         """Advance the simulation by one sim_step.
 
-        performance_factor is a plain deterministic input, not sampled
-        randomness — same role as speed_ratio: the caller (run_manager, from
-        the active shift's cycle_time_factor) computes it before calling
-        step(), the engine has no concept of "shifts". >1.0 makes every
-        station's cycle take proportionally longer this step.
+        performance_factor and health_degrade_factor are plain deterministic
+        inputs, not sampled randomness — same role as speed_ratio: the caller
+        (run_manager, from the active shift's cycle_time_factor /
+        health_degrade_factor) computes them before calling step(), the
+        engine has no concept of "shifts". >1.0 makes every station's cycle
+        take proportionally longer (performance_factor) or more likely to
+        slip a health step this tick (health_degrade_factor).
         """
         step_seed = (self.seed + self.step_count) % 2 ** 31
         rng = random.Random(step_seed)
@@ -107,6 +110,7 @@ class LineEngine:
                 rng, np_rng, self.sim_step, upstream, downstream,
                 self.alarms, self.sim_time, counting,
                 performance_factor=performance_factor,
+                health_degrade_factor=health_degrade_factor,
             )
 
         # Feed cycle-end PV readings into SPC monitors

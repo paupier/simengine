@@ -1,8 +1,9 @@
-"""Shift rotation, metrics, and the cycle_time_factor performance knob.
+"""Shift rotation, metrics, and the cycle_time_factor / health_degrade_factor
+performance knobs.
 
-ShiftManager itself is pure bookkeeping — no engine coupling. cycle_time_factor
-is the one field that a caller (run_manager) reads to influence the engine;
-ShiftManager never applies it itself.
+ShiftManager itself is pure bookkeeping — no engine coupling. Both factors are
+fields a caller (run_manager) reads to influence the engine; ShiftManager
+never applies either itself.
 """
 from simengine.runtime.shift_manager import (
     ShiftDefinition,
@@ -11,11 +12,16 @@ from simengine.runtime.shift_manager import (
 )
 
 
-def two_shift_config(night_factor=1.5, day_factor=None):
+def two_shift_config(night_factor=1.5, day_factor=None,
+                     night_health_factor=None, day_health_factor=None):
     night = {"name": "Night Shift", "duration": 2.0, "cycle_time_factor": night_factor}
     day = {"name": "Day Shift", "duration": 100.0}
     if day_factor is not None:
         day["cycle_time_factor"] = day_factor
+    if night_health_factor is not None:
+        night["health_degrade_factor"] = night_health_factor
+    if day_health_factor is not None:
+        day["health_degrade_factor"] = day_health_factor
     return {"shifts": {"schedule": [night, day]}}
 
 
@@ -50,6 +56,31 @@ class TestCreateShiftManagerFromConfig:
         mgr = create_shift_manager_from_config(cfg, ["S1"])
         assert mgr.shift_definitions[0].cycle_time_factor == 1.0
         assert isinstance(mgr.shift_definitions[0].cycle_time_factor, float)
+
+    def test_health_degrade_factor_defaults_to_1_0_when_absent(self):
+        mgr = create_shift_manager_from_config(two_shift_config(), ["S1"])
+        assert mgr.shift_definitions[0].health_degrade_factor == 1.0
+        assert mgr.shift_definitions[1].health_degrade_factor == 1.0
+
+    def test_health_degrade_factor_parsed_when_present(self):
+        mgr = create_shift_manager_from_config(
+            two_shift_config(night_health_factor=1.3), ["S1"])
+        assert mgr.shift_definitions[0].health_degrade_factor == 1.3
+
+    def test_health_degrade_factor_coerced_to_float(self):
+        cfg = {"shifts": {"schedule": [
+            {"name": "S", "duration": 10, "health_degrade_factor": 1}]}}
+        mgr = create_shift_manager_from_config(cfg, ["S1"])
+        assert mgr.shift_definitions[0].health_degrade_factor == 1.0
+        assert isinstance(mgr.shift_definitions[0].health_degrade_factor, float)
+
+    def test_cycle_time_factor_and_health_degrade_factor_are_independent(self):
+        """Setting one must not default-affect the other."""
+        cfg = {"shifts": {"schedule": [
+            {"name": "S", "duration": 10, "health_degrade_factor": 1.3}]}}
+        mgr = create_shift_manager_from_config(cfg, ["S1"])
+        assert mgr.shift_definitions[0].health_degrade_factor == 1.3
+        assert mgr.shift_definitions[0].cycle_time_factor == 1.0
 
 
 class TestGetCurrentCycleTimeFactor:
@@ -87,12 +118,55 @@ class TestGetCurrentCycleTimeFactor:
         assert mgr.get_current_cycle_time_factor() == 1.0
 
 
+class TestGetCurrentHealthDegradeFactor:
+    def test_returns_first_shift_factor_initially(self):
+        mgr = create_shift_manager_from_config(
+            two_shift_config(night_health_factor=1.3), ["S1"])
+        assert mgr.get_current_health_degrade_factor() == 1.3
+
+    def test_reflects_rotation(self):
+        mgr = create_shift_manager_from_config(
+            two_shift_config(night_health_factor=1.3, day_health_factor=0.8), ["S1"])
+        assert mgr.get_current_health_degrade_factor() == 1.3
+        rotated = mgr.check_shift_rotation(current_sim_time=2.0)
+        assert rotated is True
+        assert mgr.get_current_health_degrade_factor() == 0.8
+
+    def test_default_schedule_is_all_1_0_factor(self):
+        cfg = {"shifts": {"schedule": [
+            {"name": "Day", "duration": 50.0},
+            {"name": "Night", "duration": 50.0},
+        ]}}
+        mgr = create_shift_manager_from_config(cfg, ["S1"])
+        assert mgr.get_current_health_degrade_factor() == 1.0
+        mgr.check_shift_rotation(current_sim_time=50.0)
+        assert mgr.get_current_health_degrade_factor() == 1.0
+
+    def test_independent_from_cycle_time_factor_during_rotation(self):
+        """The two factors can move differently across a rotation — a shift
+        that's slower (cycle_time_factor) need not also be less reliable
+        (health_degrade_factor), or vice versa."""
+        cfg = {"shifts": {"schedule": [
+            {"name": "Night", "duration": 2.0, "cycle_time_factor": 1.5,
+             "health_degrade_factor": 0.7},
+            {"name": "Day", "duration": 100.0, "cycle_time_factor": 0.9,
+             "health_degrade_factor": 1.2},
+        ]}}
+        mgr = create_shift_manager_from_config(cfg, ["S1"])
+        assert (mgr.get_current_cycle_time_factor(),
+                mgr.get_current_health_degrade_factor()) == (1.5, 0.7)
+        mgr.check_shift_rotation(current_sim_time=2.0)
+        assert (mgr.get_current_cycle_time_factor(),
+                mgr.get_current_health_degrade_factor()) == (0.9, 1.2)
+
+
 class TestShiftDefinitionDefaults:
     def test_cycle_time_factor_defaults_to_1_0_for_direct_construction(self):
         """Anything that builds ShiftDefinition directly (not through YAML)
-        without knowing about the new field gets nameplate pace."""
+        without knowing about the new fields gets nameplate pace."""
         d = ShiftDefinition(name="X", duration=10.0)
         assert d.cycle_time_factor == 1.0
+        assert d.health_degrade_factor == 1.0
 
 
 class TestShiftManagerConstruction:
@@ -103,10 +177,14 @@ class TestShiftManagerConstruction:
         assert mgr.get_current_shift_info()["shift_name"] == "A"
 
     def test_rotation_wraps_around(self):
-        defs = [ShiftDefinition(name="A", duration=1.0, cycle_time_factor=1.1),
-                ShiftDefinition(name="B", duration=1.0, cycle_time_factor=0.9)]
+        defs = [ShiftDefinition(name="A", duration=1.0, cycle_time_factor=1.1,
+                                health_degrade_factor=1.4),
+                ShiftDefinition(name="B", duration=1.0, cycle_time_factor=0.9,
+                                health_degrade_factor=0.6)]
         mgr = ShiftManager(defs, ["S1"])
         mgr.check_shift_rotation(1.0)   # -> B
         assert mgr.get_current_cycle_time_factor() == 0.9
+        assert mgr.get_current_health_degrade_factor() == 0.6
         mgr.check_shift_rotation(2.0)   # -> A again
         assert mgr.get_current_cycle_time_factor() == 1.1
+        assert mgr.get_current_health_degrade_factor() == 1.4

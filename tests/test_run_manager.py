@@ -1,9 +1,10 @@
-"""RunManager.run_segment — shift cycle_time_factor wiring.
+"""RunManager.run_segment — shift cycle_time_factor / health_degrade_factor wiring.
 
-The mechanism itself (LineEngine.step(performance_factor=...) and
-ShiftManager.get_current_cycle_time_factor()) is covered independently in
+The mechanisms themselves (LineEngine.step(performance_factor=...,
+health_degrade_factor=...) and ShiftManager.get_current_cycle_time_factor()/
+get_current_health_degrade_factor()) are covered independently in
 test_station_engine.py and test_shift_manager.py. This file covers only the
-glue: run_segment must read the *current* shift's factor and pass it into
+glue: run_segment must read the *current* shift's factors and pass them into
 engine.step() for the step about to run, every step, with no engine-side
 knowledge of "shifts" at all.
 """
@@ -28,16 +29,18 @@ def two_station_config(shifts_schedule=None):
 
 
 def run_and_record_factors(config, max_sim_time, shift_mgr):
-    """Runs run_segment to completion, returning the performance_factor
-    engine.step() was actually called with on each iteration."""
+    """Runs run_segment to completion, returning a list of
+    (performance_factor, health_degrade_factor) engine.step() was actually
+    called with on each iteration."""
     engine = LineEngine(config, "test", seed=1, run_id="test")
     publishers = build_publishers(config)
     recorded = []
     real_step = engine.step
 
-    def spy_step(performance_factor=1.0):
-        recorded.append(performance_factor)
-        real_step(performance_factor=performance_factor)
+    def spy_step(performance_factor=1.0, health_degrade_factor=1.0):
+        recorded.append((performance_factor, health_degrade_factor))
+        real_step(performance_factor=performance_factor,
+                 health_degrade_factor=health_degrade_factor)
 
     engine.step = spy_step
 
@@ -52,38 +55,54 @@ class TestShiftFactorWiring:
     def test_no_shift_manager_uses_factor_1_0(self):
         config = two_station_config()
         recorded = run_and_record_factors(config, max_sim_time=3.0, shift_mgr=None)
-        assert recorded == [1.0, 1.0, 1.0]
+        assert recorded == [(1.0, 1.0)] * 3
 
     def test_single_shift_factor_applied_every_step(self):
         config = two_station_config([
-            {"name": "Night Shift", "duration": 100.0, "cycle_time_factor": 1.5},
+            {"name": "Night Shift", "duration": 100.0, "cycle_time_factor": 1.5,
+             "health_degrade_factor": 1.3},
         ])
         shift_mgr = create_shift_manager_from_config(config, ["S1", "S2"])
         recorded = run_and_record_factors(config, max_sim_time=3.0, shift_mgr=shift_mgr)
-        assert recorded == [1.5, 1.5, 1.5]
+        assert recorded == [(1.5, 1.3)] * 3
 
     def test_factor_switches_exactly_at_the_shift_boundary(self):
-        """sim_step=1.0, Night lasts 2.0s, Day is 0.9x. Rotation is checked
-        AFTER each step (RunManager._sync_shift), so the step that crosses
-        sim_time from 1.0 -> 2.0 (the boundary) is still governed by Night's
-        factor — the one that owned the interval [1.0, 2.0). Only the next
-        step, starting at sim_time 2.0, reads Day's factor.
+        """sim_step=1.0, Night lasts 2.0s (1.5x cycle time, 1.3x degrade),
+        Day is 0.9x/0.8x. Rotation is checked AFTER each step
+        (RunManager._sync_shift), so the step that crosses sim_time from
+        1.0 -> 2.0 (the boundary) is still governed by Night's factors — the
+        ones that owned the interval [1.0, 2.0). Only the next step, starting
+        at sim_time 2.0, reads Day's factors.
         """
         config = two_station_config([
-            {"name": "Night Shift", "duration": 2.0, "cycle_time_factor": 1.5},
-            {"name": "Day Shift", "duration": 100.0, "cycle_time_factor": 0.9},
+            {"name": "Night Shift", "duration": 2.0, "cycle_time_factor": 1.5,
+             "health_degrade_factor": 1.3},
+            {"name": "Day Shift", "duration": 100.0, "cycle_time_factor": 0.9,
+             "health_degrade_factor": 0.8},
         ])
         shift_mgr = create_shift_manager_from_config(config, ["S1", "S2"])
         recorded = run_and_record_factors(config, max_sim_time=4.0, shift_mgr=shift_mgr)
-        assert recorded == [1.5, 1.5, 0.9, 0.9]
+        assert recorded == [(1.5, 1.3), (1.5, 1.3), (0.9, 0.8), (0.9, 0.8)]
 
-    def test_shifts_without_cycle_time_factor_reproduce_1_0(self):
+    def test_shifts_without_factors_reproduce_1_0(self):
         """A shift schedule that predates this feature (no cycle_time_factor
-        anywhere) must not change simulation behavior at all."""
+        or health_degrade_factor anywhere) must not change simulation
+        behavior at all."""
         config = two_station_config([
             {"name": "Day", "duration": 50.0},
             {"name": "Night", "duration": 50.0},
         ])
         shift_mgr = create_shift_manager_from_config(config, ["S1", "S2"])
         recorded = run_and_record_factors(config, max_sim_time=5.0, shift_mgr=shift_mgr)
-        assert recorded == [1.0] * 5
+        assert recorded == [(1.0, 1.0)] * 5
+
+    def test_health_degrade_factor_independent_of_cycle_time_factor(self):
+        """The two factors are set independently per shift — a shift can
+        slow cycle time without touching degradation, or vice versa."""
+        config = two_station_config([
+            {"name": "Careful Shift", "duration": 100.0,
+             "health_degrade_factor": 0.5},  # cycle_time_factor omitted -> 1.0
+        ])
+        shift_mgr = create_shift_manager_from_config(config, ["S1", "S2"])
+        recorded = run_and_record_factors(config, max_sim_time=2.0, shift_mgr=shift_mgr)
+        assert recorded == [(1.0, 0.5)] * 2
