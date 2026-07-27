@@ -66,8 +66,12 @@
   .settings-panel input[type=text], .settings-panel input[type=number] {
     font-family: var(--mono); font-size: 13px; padding: 4px 6px; border: 1px solid var(--hairline); }
   .settings-panel table.shifts { border-collapse: collapse; margin-top: 6px; }
+  .settings-panel table.shifts th { padding: 3px 6px; font-size: 11px; font-weight: normal;
+    color: var(--ink-2); text-align: left; cursor: help; }
   .settings-panel table.shifts td { padding: 3px 6px; }
   .settings-panel table.shifts input { width: 90px; }
+  .settings-panel table.shifts input.sh-cycle-factor,
+  .settings-panel table.shifts input.sh-health-factor { width: 64px; }
 
   .fe-field { display: flex; flex-direction: column; gap: 2px; margin: 8px 0; font-size: 11px;
     color: var(--ink-2); }
@@ -312,7 +316,10 @@
   let currentEditScenario = null;
   let pluginStatus = {};
 
-  function blankShift() { return { name: "Day", duration: 28800, start_offset: 0 }; }
+  function blankShift() {
+    return { name: "Day", duration: 28800, start_offset: 0,
+            cycle_time_factor: 1.0, health_degrade_factor: 1.0 };
+  }
 
   function renderSettingsPanel() {
     const d = EDIT_DRAFT;
@@ -349,12 +356,23 @@
       </div>
       <div class="row" style="flex-direction:column;align-items:flex-start">
         <label>Shifts</label>
-        <table class="shifts" id="shifts-table"><tbody>
+        <table class="shifts" id="shifts-table">
+          <thead><tr>
+            <th>Name</th><th>Duration</th><th>Offset</th>
+            <th title="Multiplies every station's cycle time during this shift (Performance) — 1.0 = nameplate pace">Cycle-time ×</th>
+            <th title="Multiplies the per-step health-degrade probability during this shift (Availability) — 1.0 = nameplate reliability">Health-degrade ×</th>
+            <th></th>
+          </tr></thead>
+          <tbody>
           ${shifts.map((sh, i) => `
             <tr data-i="${i}">
               <td><input type="text" class="sh-name" value="${esc(sh.name)}"></td>
               <td><input type="number" class="sh-duration" value="${esc(sh.duration)}"> s</td>
-              <td><input type="number" class="sh-offset" value="${esc(sh.start_offset)}"> offset</td>
+              <td><input type="number" class="sh-offset" value="${esc(sh.start_offset)}"></td>
+              <td><input type="number" step="0.01" min="0" class="sh-cycle-factor"
+                    value="${esc(sh.cycle_time_factor ?? 1.0)}"></td>
+              <td><input type="number" step="0.01" min="0" class="sh-health-factor"
+                    value="${esc(sh.health_degrade_factor ?? 1.0)}"></td>
               <td><button class="quiet sh-remove">Remove</button></td>
             </tr>`).join("")}
         </tbody></table>
@@ -385,6 +403,8 @@
       tr.querySelector(".sh-name").oninput = (e) => { shifts[i].name = e.target.value; scheduleValidate(); };
       tr.querySelector(".sh-duration").oninput = (e) => { shifts[i].duration = parseFloat(e.target.value) || 0; scheduleValidate(); };
       tr.querySelector(".sh-offset").oninput = (e) => { shifts[i].start_offset = parseFloat(e.target.value) || 0; scheduleValidate(); };
+      tr.querySelector(".sh-cycle-factor").oninput = (e) => { shifts[i].cycle_time_factor = parseFloat(e.target.value) || 0; scheduleValidate(); };
+      tr.querySelector(".sh-health-factor").oninput = (e) => { shifts[i].health_degrade_factor = parseFloat(e.target.value) || 0; scheduleValidate(); };
       tr.querySelector(".sh-remove").onclick = () => { shifts.splice(i, 1); d.shifts.schedule = shifts; renderSettingsPanel(); scheduleValidate(); };
     });
     $("sh-add").onclick = () => {
