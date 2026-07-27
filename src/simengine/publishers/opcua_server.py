@@ -6,7 +6,10 @@ dirty-set, flushed as one batched write per publish under a single
 address-space lock acquisition (parent perf spec P2).
 """
 import logging
+import os
+from pathlib import Path
 
+from asyncua import __version__ as asyncua_version
 from asyncua import ua
 from asyncua.sync import Server
 
@@ -75,11 +78,37 @@ def _patched_suitable_reftype(self, ref1, ref2, subtypes):
 _ViewService._suitable_reftype = _patched_suitable_reftype
 
 
+def _new_server():
+    """A fresh asyncua Server, optionally using a cached standard address space.
+
+    Constructing a Server loads the ~7000-node standard OPC UA address space,
+    which costs about 1.3 s on CPython 3.10 and (measured on CI) roughly 24 s
+    on 3.12 — so anything that builds a throwaway address space per call, like
+    the schema exporter, pays that every time. asyncua can persist that
+    namespace to a shelf and reload it in ~0.01 s.
+
+    Opt in by setting ``SIMENGINE_OPCUA_SHELF`` to a directory. The shelf is
+    keyed by asyncua version, because it is a snapshot of that version's
+    standard namespace and would otherwise go stale across an upgrade. It is
+    roughly 26 MB, which is why this is off by default.
+    """
+    shelf_dir = os.environ.get("SIMENGINE_OPCUA_SHELF")
+    if not shelf_dir:
+        return Server()
+    path = Path(shelf_dir) / f"standard_aspace-asyncua{asyncua_version}"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return Server(shelf_file=path)
+    except Exception:  # pragma: no cover - cache is best-effort
+        logger.warning("OPC UA shelf cache unusable at %s; building the "
+                       "standard address space directly", path, exc_info=True)
+        return Server()
+
+
 def build_address_space(config: dict, port: int, run_id: str = "",
                         speed_ratio: float = 1.0):
     """Build the ISA-95 OPC UA address space in memory — no .start(), no
-    sockets (verified: opcua.Server() spawns no threads until .start()).
-    Reusable both by the live publisher and by the schema exporter
+    sockets. Reusable both by the live publisher and by the schema exporter
     (api/schema.py), which never starts a server.
 
     Returns (server, opcua_vars, namespace_idx).
@@ -93,7 +122,7 @@ def build_address_space(config: dict, port: int, run_id: str = "",
     area = config.get("area", "Area")
     line = config.get("line_name", "Line1")
 
-    server = Server()
+    server = _new_server()
     server.set_endpoint(f"opc.tcp://0.0.0.0:{port}/simengine/")
     server.set_server_name("simengine Station Simulation")
     idx = server.register_namespace("http://simengine.local/")
