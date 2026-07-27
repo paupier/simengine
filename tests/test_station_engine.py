@@ -418,6 +418,90 @@ class TestPerformanceFactor:
         assert a.stations[0].cycle_elapsed == b.stations[0].cycle_elapsed
 
 
+class TestHealthDegradeFactor:
+    """LineEngine.step(health_degrade_factor=...) — the shift
+    health_degrade_factor mechanism. Scales p_degrade only (clamped to
+    [0, 1]); repair sampling and failure-mode attribution are untouched.
+    Deterministic edge-case probabilities (0.0 and a clamped-to-1.0 case)
+    rather than statistical sampling, same style as TestRunToFailure.
+    """
+
+    def cfg(self, p_degrade, mttr=5):
+        return {
+            "stations": [
+                {
+                    "name": "S1",
+                    "cycle_time": 2.0,
+                    "health": {
+                        "h_max": 3,
+                        "p_degrade": p_degrade,
+                        "mttr": {"distribution": "constant", "value": mttr},
+                    },
+                },
+                {"name": "S2", "cycle_time": 2.0},
+            ],
+            "buffers": [{"name": "B1", "capacity": 5}],
+        }
+
+    def test_factor_clamped_to_1_0_reproduces_p_degrade_1_0_trajectory(self):
+        """p_degrade=0.5, factor=2.0 -> effective p=1.0 (clamped), so this
+        must reproduce TestRunToFailure's p_degrade=1.0 trajectory exactly:
+        health 1,2,3 -> FAILED on the 3rd step, 5 steps UNDER_REPAIR."""
+        eng = LineEngine(self.cfg(p_degrade=0.5, mttr=5), "test", seed=7, run_id="hdf")
+        states, healths = [], []
+        for _ in range(12):
+            eng.step(health_degrade_factor=2.0)
+            states.append(eng.stations[0].state)
+            healths.append(eng.stations[0].health)
+        assert healths[:3] == [1, 2, 3]
+        assert states[2] == FAILED
+        assert states[3:8] == [UNDER_REPAIR] * 5
+        assert healths[8] == 0
+
+    def test_factor_0_never_degrades(self):
+        """p_degrade=1.0 would normally fail on step 1; factor=0.0 must
+        suppress degradation entirely, indefinitely."""
+        eng = LineEngine(self.cfg(p_degrade=1.0), "test", seed=7, run_id="hdf0")
+        for _ in range(30):
+            eng.step(health_degrade_factor=0.0)
+        assert eng.stations[0].health == 0
+        assert eng.stations[0].state != FAILED
+
+    def test_default_factor_matches_nameplate_p_degrade(self):
+        """Omitting health_degrade_factor must reproduce
+        TestRunToFailure's own p_degrade=1.0 trajectory unchanged."""
+        eng = LineEngine(self.cfg(p_degrade=1.0, mttr=5), "test", seed=7, run_id="hdf_def")
+        states, healths = [], []
+        for _ in range(12):
+            eng.step()
+            states.append(eng.stations[0].state)
+            healths.append(eng.stations[0].health)
+        assert healths[:3] == [1, 2, 3]
+        assert states[2] == FAILED
+        assert states[3:8] == [UNDER_REPAIR] * 5
+        assert healths[8] == 0
+
+    def test_factor_does_not_affect_repair_or_attribution(self):
+        """Once failed, the repair countdown and recovery must be unaffected
+        by whatever health_degrade_factor is passed on later steps — the
+        factor is only consulted while health < h_max and not repairing.
+        Pre-failure steps use a constant factor=1.0 (the well-established
+        p_degrade=1.0 trajectory: health 1,2,3 -> FAILED at step index 2);
+        only the post-failure steps vary the factor wildly."""
+        eng = LineEngine(self.cfg(p_degrade=1.0, mttr=5), "test", seed=7, run_id="hdf_rep")
+        states = []
+        varying_factors = [0.0, 5.0, 1.0, 0.0, 5.0, 1.0, 0.0, 5.0, 1.0]
+        for i in range(12):
+            factor = 1.0 if i < 3 else varying_factors[(i - 3) % len(varying_factors)]
+            eng.step(health_degrade_factor=factor)
+            states.append(eng.stations[0].state)
+        assert states[2] == FAILED
+        assert states[3:8] == [UNDER_REPAIR] * 5
+        # health resets to 0 exactly when repair completes at step index 7,
+        # regardless of the chaotic post-failure factor sequence above
+        assert states[8] not in (FAILED, UNDER_REPAIR)
+
+
 class TestWarmUp:
     def test_counters_gated_during_warm_up(self):
         cfg = two_station_config(warm_up_time=50)

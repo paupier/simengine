@@ -19,6 +19,11 @@ class ShiftDefinition:
                                      # longer during this shift (e.g. 1.05 = 5% slower).
                                      # Applied line-wide; lowers the measured Performance
                                      # component of OEE, not the nameplate cycle_time.
+    health_degrade_factor: float = 1.0  # >1.0 = every station is proportionally more
+                                         # likely to slip a health step each tick during
+                                         # this shift (scales p_degrade only — not mttr,
+                                         # not failure-mode attribution). More breakdowns
+                                         # -> more repair time -> lower Availability.
 
 
 @dataclass
@@ -296,6 +301,11 @@ class ShiftManager:
         (rotation is only checked after the step, via check_shift_rotation)."""
         return self.shift_definitions[self.current_shift_index].cycle_time_factor
 
+    def get_current_health_degrade_factor(self) -> float:
+        """The active shift's health_degrade_factor — same read-before-step
+        timing as get_current_cycle_time_factor()."""
+        return self.shift_definitions[self.current_shift_index].health_degrade_factor
+
     def get_shift_time_remaining(self, current_sim_time: float) -> float:
         """
         Calculate time remaining in current shift.
@@ -391,6 +401,7 @@ def create_shift_manager_from_config(config: Dict, machine_names: List[str]) -> 
             duration=shift_cfg["duration"],
             start_offset=shift_cfg.get("start_offset", 0.0),
             cycle_time_factor=float(shift_cfg.get("cycle_time_factor", 1.0)),
+            health_degrade_factor=float(shift_cfg.get("health_degrade_factor", 1.0)),
         )
         shift_definitions.append(shift_def)
 

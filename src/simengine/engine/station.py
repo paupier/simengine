@@ -165,13 +165,16 @@ class StationModel:
     def step(self, rng, np_rng, sim_step: float,
              upstream: Optional[Buffer], downstream: Optional[Buffer],
              alarms: AlarmRegistry, sim_time: float, counting: bool,
-             performance_factor: float = 1.0) -> None:
+             performance_factor: float = 1.0,
+             health_degrade_factor: float = 1.0) -> None:
         """performance_factor >1.0 makes cycles take proportionally longer
-        (e.g. a shift's cycle_time_factor); 1.0 is the nameplate rate."""
+        (e.g. a shift's cycle_time_factor); 1.0 is the nameplate rate.
+        health_degrade_factor >1.0 makes the station more likely to slip a
+        health step this tick (e.g. a shift's health_degrade_factor)."""
         self.completed_this_step = False
         self._cycle_time_factor = performance_factor
         hm = self.health_model
-        hm.update(rng, np_rng, sim_step)
+        hm.update(rng, np_rng, sim_step, degrade_factor=health_degrade_factor)
         self._update_failure_alarms(alarms, sim_time)
 
         # Active cycle stops count down regardless of anything else

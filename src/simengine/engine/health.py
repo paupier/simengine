@@ -83,8 +83,16 @@ class HealthModel:
             sample = sim_step
         return max(sim_step, float(sample))
 
-    def update(self, rng, np_rng, sim_step: float) -> None:
-        """Advance the health model one step (P4.1 order)."""
+    def update(self, rng, np_rng, sim_step: float, degrade_factor: float = 1.0) -> None:
+        """Advance the health model one step (P4.1 order).
+
+        degrade_factor scales p_degrade only — a plain deterministic input
+        (shift.health_degrade_factor, read by run_manager before the step),
+        not part of the model's own randomness. Repair sampling, MTTF
+        competing-risks attribution, and mttr are untouched: a higher factor
+        means the station slips a health step more often, not that failures
+        take longer to fix or get attributed differently.
+        """
         if self.repair_remaining > 0:
             self.repair_remaining -= sim_step
             if self.repair_remaining <= 0:
@@ -97,7 +105,8 @@ class HealthModel:
             self.active_failure_mode = self.pending_failure_mode
             self.repair_remaining = self._sample_repair(np_rng, sim_step)
         else:
-            if rng.random() < self.p_degrade:
+            p = min(1.0, max(0.0, self.p_degrade * degrade_factor))
+            if rng.random() < p:
                 self.health += 1
 
     @property

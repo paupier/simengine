@@ -271,8 +271,10 @@ press_line_8:
   shifts:
     schedule:
       - {name: "Day Shift", duration: 28800, start_offset: 0}
-      - {name: "Evening Shift", duration: 28800, start_offset: 28800, cycle_time_factor: 1.02}
-      - {name: "Night Shift", duration: 28800, start_offset: 57600, cycle_time_factor: 1.05}
+      - {name: "Evening Shift", duration: 28800, start_offset: 28800,
+         cycle_time_factor: 1.02, health_degrade_factor: 1.1}
+      - {name: "Night Shift", duration: 28800, start_offset: 57600,
+         cycle_time_factor: 1.05, health_degrade_factor: 1.25}
   comms:
     opcua: {enabled: true, port: 4840}
     opcua_mqtt: {enabled: true, broker: "mqtt://mosquitto:1883",
