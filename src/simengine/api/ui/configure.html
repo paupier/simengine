@@ -398,7 +398,7 @@
       };
     });
 
-    document.querySelectorAll("#shifts-table tr").forEach(tr => {
+    document.querySelectorAll("#shifts-table tbody tr").forEach(tr => {
       const i = parseInt(tr.dataset.i, 10);
       tr.querySelector(".sh-name").oninput = (e) => { shifts[i].name = e.target.value; scheduleValidate(); };
       tr.querySelector(".sh-duration").oninput = (e) => { shifts[i].duration = parseFloat(e.target.value) || 0; scheduleValidate(); };
