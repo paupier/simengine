@@ -44,3 +44,11 @@ simengine = ["api/ui/*.html", "api/ui/static/*.js"]
 pythonpath = ["src", "tests"]
 testpaths = ["tests"]
 markers = ["slow: long-running statistical tests"]
+filterwarnings = [
+  # asyncua's XmlExporter.indent() does `if elem:` on an ElementTree element
+  # (upstream, still present in 2.0.1 — the pretty-printer copied from
+  # effbot.org). The NodeSet2 export tests trip it ~16k times, which buries
+  # every warning we'd actually want to see. Scoped to that one module so our
+  # own DeprecationWarnings still surface. Drop when upstream fixes it.
+  "ignore:Testing an element's truth value:DeprecationWarning:asyncua.common.xmlexporter",
+]
