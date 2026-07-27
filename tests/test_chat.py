@@ -21,8 +21,6 @@ def chat_client(tmp_path, monkeypatch):
     shutil.copy(PROJECT_CONFIG / "scenarios.yaml", scenarios)
     (tmp_path / "results").mkdir()
     monkeypatch.setenv("SIMENGINE_CONFIG_PATH", str(scenarios))
-    monkeypatch.setenv("SIMENGINE_RECIPE_PATH",
-                       str(PROJECT_CONFIG / "recipes"))
 
     run_manager = RunManager()
     # give the registry a live-ish KG for the system prompt
@@ -99,7 +97,7 @@ class TestChatTurn:
         assert kwargs["system"][0]["cache_control"] == {"type": "ephemeral"}
         assert kwargs["model"] == "claude-opus-4-8"
         assert kwargs["thinking"] == {"type": "adaptive"}
-        assert len(kwargs["tools"]) == 16
+        assert len(kwargs["tools"]) == 12
 
     def test_multi_turn_history_kept(self, chat_client):
         client, _ = chat_client

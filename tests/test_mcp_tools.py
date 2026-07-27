@@ -1,4 +1,4 @@
-"""Gate P7.2 — tool registry + MCP server: every tool, error paths, 16 tools."""
+"""Gate P7.2 — tool registry + MCP server: every tool, error paths, 12 tools."""
 import shutil
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -23,10 +23,7 @@ def registry(tmp_path, monkeypatch):
     """ToolRegistry over a mocked run_manager with a live-ish snapshot + KG."""
     scenarios = tmp_path / "scenarios.yaml"
     shutil.copy(PROJECT_CONFIG / "scenarios.yaml", scenarios)
-    recipes = tmp_path / "recipes"
-    shutil.copytree(PROJECT_CONFIG / "recipes", recipes)
     monkeypatch.setenv("SIMENGINE_CONFIG_PATH", str(scenarios))
-    monkeypatch.setenv("SIMENGINE_RECIPE_PATH", str(recipes))
 
     config = demo_config()
     engine = LineEngine(config, "demo_line", seed=1, run_id="mcp_test")
@@ -38,10 +35,9 @@ def registry(tmp_path, monkeypatch):
     rm.knowledge_graph = build_knowledge_graph(config, "demo_line")
     rm.state = "RUNNING"
     rm.status.return_value = {"state": "RUNNING", "run_id": "mcp_test",
-                              "scenario": "demo_line", "recipe": None,
+                              "scenario": "demo_line",
                               "sim_time": 30.0, "step_count": 30}
     rm.start.return_value = "demo_line_20260719_000000"
-    rm.start_recipe.return_value = "demo_line_20260719_000001"
     return ToolRegistry(rm), rm
 
 
@@ -81,12 +77,10 @@ class TestReadTools:
         with pytest.raises(ValueError, match="nothing in the knowledge graph"):
             reg.resolve_metric("zzzz qqqq")
 
-    def test_scenarios_and_recipes(self, registry):
+    def test_scenarios(self, registry):
         reg, _ = registry
         assert "demo_line" in reg.list_scenarios()
         assert reg.get_scenario("demo_line")["stations"][0]["name"] == "Press01"
-        assert "quick_test" in reg.list_recipes()
-        assert reg.get_recipe("quick_test")["base_scenario"] == "demo_line"
         with pytest.raises(ValueError):
             reg.get_scenario("nope")
 
@@ -144,13 +138,6 @@ class TestControlTools:
                                 "stations:\n  - {name: only, cycle_time: 1}\nbuffers: []\n")
         assert reg.get_scenario("two_station_minimal") == before
 
-    def test_update_recipe_invalid_leaves_file(self, registry):
-        reg, _ = registry
-        before = reg.get_recipe("quick_test")
-        with pytest.raises(ValueError):
-            reg.update_recipe("quick_test", "name: X\n")  # missing base/segments
-        assert reg.get_recipe("quick_test") == before
-
     def test_set_comms(self, registry):
         reg, _ = registry
         out = reg.set_comms("demo_line", {"opcua": {"enabled": True, "port": 4841}})
@@ -172,58 +159,12 @@ class TestNoRunErrors:
 
 
 class TestMcpServer:
-    def test_sixteen_tools_registered(self, registry):
+    def test_twelve_tools_registered(self, registry):
         reg, _ = registry
         from simengine.api.mcp_server import create_mcp_server
         import asyncio
         mcp = create_mcp_server(reg, port=8766)
         listed = asyncio.new_event_loop().run_until_complete(mcp.list_tools())
         names = {t.name for t in listed}
-        assert len(names) == 16
+        assert len(names) == 12
         assert names == set(reg.READ_TOOLS) | set(reg.CONTROL_TOOLS)
-
-
-class TestPathTraversal:
-    """Recipe names are user/LLM-supplied — must not escape the recipes dir."""
-
-    BAD_NAMES = ["../scenarios", "../../etc/passwd", "..", "a/../../b",
-                 "/etc/passwd", ".hidden", ""]
-
-    def test_get_recipe_rejects_traversal(self, registry):
-        reg, _ = registry
-        for bad in self.BAD_NAMES:
-            with pytest.raises(ValueError, match="invalid recipe name"):
-                reg.get_recipe(bad)
-
-    def test_update_recipe_rejects_traversal(self, registry, tmp_path):
-        reg, _ = registry
-        outside = tmp_path / "scenarios.yaml"
-        before = outside.read_text()
-        valid = ("name: X\nbase_scenario: demo_line\n"
-                 "segments:\n  - {name: S, quantity: 1}\n")
-        with pytest.raises(ValueError, match="invalid recipe name"):
-            reg.update_recipe("../scenarios", valid)
-        assert outside.read_text() == before  # file untouched
-
-    def test_start_recipe_rejects_traversal(self, registry):
-        from simengine.runtime.recipe_runner import load_recipe_config
-        with pytest.raises(ValueError, match="invalid recipe name"):
-            load_recipe_config("../scenarios")
-
-    def test_rest_recipe_traversal_rejected(self, registry, tmp_path, monkeypatch):
-        from simengine.api.rest import create_app
-        from simengine.runtime.run_manager import RunManager
-        app = create_app(RunManager())
-        app.config["TESTING"] = True
-        client = app.test_client()
-        # Flask blocks '/' in <name>; dotfile/.. stems must 400 too
-        r = client.put("/api/v1/recipes/..%2F..%2Fscenarios",
-                       json={"name": "X", "base_scenario": "demo_line",
-                             "segments": [{"name": "S", "quantity": 1}]})
-        assert r.status_code in (400, 404)
-        r2 = client.post("/api/v1/recipes",
-                         json={"name": "../evil",
-                               "config": {"name": "X", "base_scenario": "demo_line",
-                                          "segments": [{"name": "S", "quantity": 1}]}})
-        assert r2.status_code == 400
-        assert "invalid recipe name" in r2.get_json()["error"]

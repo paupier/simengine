@@ -171,28 +171,13 @@
     </div>
   </div>
 
-  <h2 class="eyebrow">Recipes</h2>
-  <div class="cols">
-    <ul class="picklist" id="recipe-list"></ul>
-    <div>
-      <textarea class="editor" id="recipe-editor" style="min-height:280px"
-        placeholder="Select a recipe to edit (JSON)."></textarea>
-      <div class="editor-actions">
-        <button id="recipe-save" disabled>Save recipe</button>
-        <input id="recipe-new-name" placeholder="new_recipe_name">
-        <button id="recipe-create" class="quiet">Create from editor</button>
-        <button id="recipe-start" class="quiet">Start recipe run</button>
-      </div>
-      <div class="msg" id="recipe-msg" hidden></div>
-    </div>
-  </div>
 {% endblock %}
 {% block scripts %}
 <script src="/static/kg-graph.js"></script>
 <script src="/static/distribution-picker.js"></script>
 <script src="/static/entity-forms.js"></script>
 <script>
-  let currentScenario = null, currentRecipe = null;
+  let currentScenario = null;
   let currentViewScenario = null;
 
   function note(id, text, isErr) {
@@ -297,16 +282,6 @@
       $("scenario-msg").hidden = true;
     });
   }
-  async function loadRecipeList() {
-    bindList("recipe-list", await jget("/api/v1/recipes"), async (name) => {
-      currentRecipe = name;
-      const cfg = await jget("/api/v1/recipes/" + name);
-      $("recipe-editor").value = JSON.stringify(cfg, null, 2);
-      $("recipe-save").disabled = false;
-      $("recipe-msg").hidden = true;
-    });
-  }
-
   function parsed(editorId, msgId) {
     try { return JSON.parse($(editorId).value); }
     catch (e) { note(msgId, "Not valid JSON: " + e.message, true); return null; }
@@ -330,34 +305,6 @@
       note("scenario-msg", `Created '${name}'.`);
       loadScenarioList(); loadScenarioPicker(); loadViewScenarioList();
     } catch (e) { note("scenario-msg", e.message, true); }
-  };
-
-  $("recipe-save").onclick = async () => {
-    const body = parsed("recipe-editor", "recipe-msg");
-    if (!body || !currentRecipe) return;
-    try {
-      await jsend("/api/v1/recipes/" + currentRecipe, "PUT", body);
-      note("recipe-msg", `Saved '${currentRecipe}'.`);
-    } catch (e) { note("recipe-msg", e.message, true); }
-  };
-  $("recipe-create").onclick = async () => {
-    const body = parsed("recipe-editor", "recipe-msg");
-    const name = $("recipe-new-name").value.trim();
-    if (!body) return;
-    if (!name) return note("recipe-msg", "Enter a name for the new recipe.", true);
-    try {
-      await jsend("/api/v1/recipes", "POST", {name, config: body});
-      note("recipe-msg", `Created '${name}'.`);
-      loadRecipeList();
-    } catch (e) { note("recipe-msg", e.message, true); }
-  };
-  $("recipe-start").onclick = async () => {
-    if (!currentRecipe) return note("recipe-msg", "Select a recipe first.", true);
-    try {
-      const r = await jsend("/api/v1/runs/recipe", "POST", {recipe: currentRecipe});
-      note("recipe-msg", `Recipe run started: ${r.run_id}`);
-      refreshHeader();
-    } catch (e) { note("recipe-msg", e.message, true); }
   };
 
   // ---- Edit mode: draft state + scenario settings panel ----
@@ -557,6 +504,5 @@
 
   loadViewScenarioList();
   loadScenarioList();
-  loadRecipeList();
 </script>
 {% endblock %}

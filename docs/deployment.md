@@ -64,5 +64,5 @@ To pin instead of tracking `latest`, change the stack's image tag to a specific 
 ## Notes
 
 - The image bakes in all optional extras (`historian-influx`, `historian-neo4j`, `sparkplug`, `chat`), so every comms protocol, both historians, and the assistant page work without a rebuild — the assistant still needs your own Anthropic key, entered in the browser.
-- `simengine-config` and `simengine-results` are named volumes. On first run they seed from the image (default scenarios + recipes); after that, scenario/recipe edits made through the UI and any CSV historian output persist across redeploys. To reset to the shipped defaults, remove those volumes.
+- `simengine-config` and `simengine-results` are named volumes. On first run they seed from the image (default scenarios); after that, scenario edits made through the UI and any CSV historian output persist across redeploys. To reset to the shipped defaults, remove those volumes.
 - The build defaults to `linux/amd64`. For an arm64 host (e.g. a Pi), add `platforms: linux/amd64,linux/arm64` to the `build-and-push` step in the workflow (needs a QEMU setup step; slower builds).

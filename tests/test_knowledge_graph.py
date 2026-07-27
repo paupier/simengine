@@ -153,9 +153,3 @@ class TestQueries:
         press = kg.to_node_link(station="Press01")
         assert all(n.get("station") == "Press01" or n.get("name") == "Press01"
                    for n in press["nodes"])
-
-    def test_recipe_node_when_recipe_run(self, monkeypatch):
-        monkeypatch.delenv("SIMENGINE_CONFIG_PATH", raising=False)
-        config = load_line_config("demo_line")
-        kg = build_knowledge_graph(config, "demo_line", recipe_name="quick_test")
-        assert kg.find_nodes("Recipe")[0]["name"] == "quick_test"

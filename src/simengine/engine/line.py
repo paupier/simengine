@@ -125,8 +125,7 @@ class LineEngine:
 
     # ----- snapshot -----
 
-    def snapshot(self, shift: Optional[dict] = None,
-                 recipe: Optional[dict] = None) -> LineSnapshot:
+    def snapshot(self, shift: Optional[dict] = None) -> LineSnapshot:
         stations = {}
         kpis_list = []
         for st in self.stations:
@@ -186,5 +185,4 @@ class LineEngine:
             stations=stations,
             buffers=buffers,
             shift=shift,
-            recipe=recipe,
         )

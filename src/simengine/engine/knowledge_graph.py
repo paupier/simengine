@@ -23,7 +23,7 @@ from simengine.publishers.opcua_nodes import (
 
 NODE_TYPES = (
     "Enterprise", "Site", "Area", "Line", "Station", "Buffer", "ProcessValue",
-    "FailureMode", "AlarmCode", "CycleStopReason", "Scenario", "Recipe", "Metric",
+    "FailureMode", "AlarmCode", "CycleStopReason", "Scenario", "Metric",
 )
 
 EDGE_TYPES = ("CONTAINS", "FEEDS", "HAS_PV", "HAS_FAILURE_MODE", "CAN_RAISE",
@@ -108,8 +108,7 @@ class KnowledgeGraph:
         return [n for _, _, n in scored]
 
 
-def build_knowledge_graph(config: dict, scenario_name: str,
-                          recipe_name: Optional[str] = None) -> KnowledgeGraph:
+def build_knowledge_graph(config: dict, scenario_name: str) -> KnowledgeGraph:
     """Deterministic build from a validated scenario config."""
     kg = KnowledgeGraph()
 
@@ -157,10 +156,6 @@ def build_knowledge_graph(config: dict, scenario_name: str,
     kg.add_node(scenario_id, "Scenario", name=scenario_name,
                 description=config.get("description", ""))
     kg.add_edge(line_id, scenario_id, "RUNS")
-    if recipe_name:
-        recipe_id = f"recipe:{recipe_name}"
-        kg.add_node(recipe_id, "Recipe", name=recipe_name)
-        kg.add_edge(line_id, recipe_id, "RUNS")
 
     # ----- stations, buffers, material flow -----
     stations = config["stations"]
