@@ -7,40 +7,61 @@ address-space lock acquisition (parent perf spec P2).
 """
 import logging
 
-from opcua import Server, ua
+from asyncua import ua
+from asyncua.sync import Server
 
+from simengine.engine.process_values import pv_display_range
 from simengine.publishers import StatePublisher
 from simengine.publishers.opcua_nodes import (
+    NID_AREA,
+    NID_ENTERPRISE,
+    NID_LINE,
+    NID_LINE_ASSET,
+    NID_SITE,
     _nid,
     _qn,
+    buffer_nid,
     create_shift_management_node,
     create_station_asset_node,
     create_station_node,
     create_storage_unit_node,
+    declare_object_types,
+    station_asset_nid,
+    station_nid,
     wrap_opcua_vars_with_cache,
 )
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# python-opcua compatibility patches carried from the parent (FactoryTalk
+# OPC UA stack compatibility patches carried from the parent (FactoryTalk
 # Optix refuses abstract reference types / blocked HasSubtype browsing).
+#
+# Both still apply under asyncua, but the first one's target moved: asyncua's
+# ua types are dataclasses and the live ReferenceTypeAttributes lives in
+# ua.uaprotocol_hand, NOT ua.uaprotocol_auto (which still holds a *different*
+# same-named class). Patching the auto module — the python-opcua target —
+# silently does nothing here, so patch ua.ReferenceTypeAttributes directly.
+# Verified defaults under asyncua 2.0: IsAbstract=True, Symmetric=True.
 # ---------------------------------------------------------------------------
-_original_reftype_init = ua.uaprotocol_auto.ReferenceTypeAttributes.__init__
+_original_reftype_init = ua.ReferenceTypeAttributes.__init__
 
 
-def _patched_reftype_init(self):
-    _original_reftype_init(self)
+def _patched_reftype_init(self, *args, **kwargs):
+    _original_reftype_init(self, *args, **kwargs)
     self.IsAbstract = False
     self.Symmetric = False
 
 
-ua.uaprotocol_auto.ReferenceTypeAttributes.__init__ = _patched_reftype_init
+ua.ReferenceTypeAttributes.__init__ = _patched_reftype_init
 
-from opcua.server.address_space import ViewService as _ViewService  # noqa: E402
+from asyncua.server.address_space import ViewService as _ViewService  # noqa: E402
 
 
 def _patched_suitable_reftype(self, ref1, ref2, subtypes):
+    """Looser than asyncua's own: matches on Identifier alone, ignoring the
+    namespace, which is what keeps Optix's browse of our reference types
+    working."""
     if ref1 == ua.NodeId(ua.ObjectIds.Null):
         return True
     if ref1.Identifier == ref2.Identifier:
@@ -62,6 +83,10 @@ def build_address_space(config: dict, port: int, run_id: str = "",
     (api/schema.py), which never starts a server.
 
     Returns (server, opcua_vars, namespace_idx).
+
+    NOTE: unlike python-opcua, ``asyncua.sync.Server()`` starts a background
+    ThreadLoop on construction. A caller that builds a throwaway address space
+    (the schema exporter) must release it — see ``close_unstarted()``.
     """
     enterprise = config.get("enterprise", "Enterprise")
     site = config.get("site", "Site")
@@ -73,13 +98,13 @@ def build_address_space(config: dict, port: int, run_id: str = "",
     server.set_server_name("simengine Station Simulation")
     idx = server.register_namespace("http://simengine.local/")
 
-    objects = server.get_objects_node()
-    ent_node = objects.add_object(_nid(enterprise, idx), _qn(enterprise, idx))
-    site_node = ent_node.add_object(_nid(f"{enterprise}.{site}", idx), _qn(site, idx))
-    area_node = site_node.add_object(
-        _nid(f"{enterprise}.{site}.{area}", idx), _qn(area, idx))
+    # BrowseNames carry the ISA-95 names; NodeIds are rename-invariant roots.
+    objects = server.nodes.objects
+    ent_node = objects.add_object(_nid(NID_ENTERPRISE, idx), _qn(enterprise, idx))
+    site_node = ent_node.add_object(_nid(NID_SITE, idx), _qn(site, idx))
+    area_node = site_node.add_object(_nid(NID_AREA, idx), _qn(area, idx))
 
-    prefix = f"{enterprise}.{site}.{area}.{line}_Equipment"
+    prefix = NID_LINE
     line_node = area_node.add_object(_nid(prefix, idx), _qn(f"{line}_Equipment", idx))
 
     v = {}
@@ -122,28 +147,34 @@ def build_address_space(config: dict, port: int, run_id: str = "",
         "line_good_parts": oee_node.add_variable(_nid(f"{oee_p}.GoodPartCount", idx), _qn("GoodPartCount", idx), 0),
     }
 
+    # ObjectTypes: declared once so clients can template one screen per type.
+    types = declare_object_types(server, idx)
+
     # Resources: stations + buffers
     res_p = f"{prefix}.Resources"
     res_node = line_node.add_object(_nid(res_p, idx), _qn("Resources", idx))
     v["stations"] = {}
     for st_cfg in config["stations"]:
         name = st_cfg["name"]
-        pv_units = [(pv["name"], pv["unit"]) for pv in st_cfg.get("process_values", [])]
+        pv_units = [(pv["name"], pv["unit"], pv_display_range(pv))
+                    for pv in st_cfg.get("process_values", [])]
         v["stations"][name] = create_station_node(
-            res_node, idx, name,
+            server, res_node, idx, name,
             enable_health="health" in st_cfg,
             pv_names_units=pv_units,
-            node_prefix=f"{res_p}.{name}_Equipment",
+            node_prefix=station_nid(name),
+            station_type=types["station"],
         )
         create_station_asset_node(res_node, idx, name,
-                                  node_prefix=f"{res_p}.{name}_Asset")
+                                  node_prefix=station_asset_nid(name))
 
     v["buffers"] = {}
     for b_cfg in config["buffers"]:
         bname = b_cfg["name"]
         v["buffers"][bname] = create_storage_unit_node(
-            res_node, idx, f"{bname}_StorageUnit", b_cfg["capacity"],
-            node_prefix=f"{res_p}.{bname}_StorageUnit",
+            server, res_node, idx, f"{bname}_StorageUnit", b_cfg["capacity"],
+            node_prefix=buffer_nid(bname),
+            buffer_type=types["buffer"],
         )
 
     # SupportFunctions (shift nodes only when shifts configured)
@@ -154,7 +185,7 @@ def build_address_space(config: dict, port: int, run_id: str = "",
             sf_node, idx, node_prefix=f"{sf_p}.ShiftManagement")
 
     # Line asset node
-    asset_p = f"{enterprise}.{site}.{area}.{line}_Asset"
+    asset_p = NID_LINE_ASSET
     asset_node = area_node.add_object(_nid(asset_p, idx), _qn(f"{line}_Asset", idx))
     aid_p = f"{asset_p}.Identification"
     aid_node = asset_node.add_object(_nid(aid_p, idx), _qn("Identification", idx))
@@ -163,6 +194,20 @@ def build_address_space(config: dict, port: int, run_id: str = "",
 
     return server, v, idx
 
+
+def close_unstarted(server) -> None:
+    """Release the ThreadLoop of a server that was built but never started.
+
+    ``asyncua.sync.Server()`` starts a ThreadLoop in its constructor, so a
+    throwaway address space (schema export) leaks two threads per build
+    unless it is torn down. ``Server.stop()`` is not usable here: it posts
+    ``aio_obj.stop()``, which fails on a server that was never started.
+    """
+    if server is None:
+        return
+    tloop = getattr(server, "tloop", None)
+    if tloop is not None and getattr(server, "close_tloop", False):
+        tloop.stop()
 
 
 class OPCUAServerPublisher(StatePublisher):
@@ -184,6 +229,7 @@ class OPCUAServerPublisher(StatePublisher):
             run_id=snapshot.run_id, speed_ratio=snapshot.speed_ratio,
         )
         wrap_opcua_vars_with_cache(self.opcua_vars, pending=self.pending_writes)
+
     # ----- publisher lifecycle -----
 
     def on_run_start(self, snapshot) -> None:
@@ -278,15 +324,29 @@ class OPCUAServerPublisher(StatePublisher):
         self._flush()
 
     def _flush(self) -> None:
-        """One batched write for the whole dirty set: single lock acquisition."""
+        """One batched write for the whole dirty set: a single hop onto the
+        server's event loop.
+
+        asyncua's address space is asyncio-owned and exposes no lock to hold,
+        so the parent's "one lock acquisition instead of hundreds" (perf spec
+        P2) becomes "one event-loop round-trip instead of hundreds" — the
+        whole dirty set is applied inside one posted coroutine rather than
+        marshalling each write across the thread boundary separately.
+        """
         if not self.pending_writes or self.server is None:
             return
-        iserver = self.server.iserver
-        aspace = iserver.aspace
-        with aspace._lock:  # RLock: inner acquisitions are re-entrant
-            for node, value, vtype in self.pending_writes:
-                variant = ua.Variant(value, vtype) if vtype else ua.Variant(value)
-                iserver.set_attribute_value(node.nodeid, ua.DataValue(variant))
+        writes = [
+            (node.nodeid,
+             ua.DataValue(ua.Variant(value, vtype) if vtype else ua.Variant(value)))
+            for node, value, vtype in self.pending_writes
+        ]
+        iserver = self.server.aio_obj.iserver
+
+        async def _write_all():
+            for nodeid, datavalue in writes:
+                await iserver.write_attribute_value(nodeid, datavalue)
+
+        self.server.tloop.post(_write_all())  # blocks until the batch lands
         self.pending_writes.clear()
 
     def on_run_end(self) -> None:
@@ -295,9 +355,13 @@ class OPCUAServerPublisher(StatePublisher):
             self._flush()
 
     def close(self) -> None:
-        if self._started and self.server is not None:
-            try:
-                self.server.stop()
-            except Exception:  # pragma: no cover - shutdown best-effort
-                logger.exception("OPC UA server stop failed")
-            self._started = False
+        if self.server is None:
+            return
+        try:
+            if self._started:
+                self.server.stop()  # also stops the ThreadLoop it owns
+            else:
+                close_unstarted(self.server)
+        except Exception:  # pragma: no cover - shutdown best-effort
+            logger.exception("OPC UA server stop failed")
+        self._started = False

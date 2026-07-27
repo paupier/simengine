@@ -391,3 +391,11 @@ class ConstantDistribution:
             The constant value
         """
         return self.value
+
+    def mean(self):
+        """Mean of a constant is the constant (scipy.stats interface)."""
+        return self.value
+
+    def std(self):
+        """A constant has no spread (scipy.stats interface)."""
+        return 0.0

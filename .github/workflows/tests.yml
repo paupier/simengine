@@ -12,7 +12,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.10', '3.11']
+        # 3.10 is the floor (pyproject requires-python). 3.12/3.13 are here to
+        # catch forward-compat breakage early — asyncua classifies through
+        # 3.13, but the rest of the stack is not otherwise exercised there.
+        python-version: ['3.10', '3.11', '3.12', '3.13']
 
     steps:
     - uses: actions/checkout@v4

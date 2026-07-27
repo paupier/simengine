@@ -5,6 +5,7 @@ from dataclasses import asdict
 import pytest
 
 from simengine.engine.line import LineEngine
+from simengine.engine.process_values import pv_display_range
 
 
 def engine_with_pv(pv_cfg, station_extra=None, steps=0, seed=1):
@@ -138,7 +139,7 @@ class TestConstantNoise:
 class TestPVAlarms:
     def test_high_alarm_raise_and_hysteresis_clear(self):
         from simengine.engine.alarms import AlarmRegistry
-        from simengine.engine.process_values import ProcessValueModel
+        from simengine.engine.process_values import ProcessValueModel, pv_display_range
 
         class FakeStation:
             name = "S1"
@@ -258,3 +259,44 @@ class TestSnapshotCarriesPVs:
         assert pvs[0]["unit"] == "degC"
         assert pvs[0]["alarm_state"] == "OK"
         json.dumps(snap)
+
+
+class TestDisplayRange:
+    """pv_display_range() feeds the OPC UA AnalogItemType EURange."""
+
+    def test_spans_profile_operating_range(self):
+        cfg = {"name": "OilTemp", "unit": "degC", "profile": "first_order_lag",
+               "setpoint": 55.0, "tau": 60, "initial": 20.0}
+        assert pv_display_range(cfg) == (20.0, 55.0)
+
+    def test_widens_to_include_alarm_limits(self):
+        """A trend scaled to EURange must still show the alarm threshold."""
+        cfg = {"name": "OilTemp", "unit": "degC", "profile": "first_order_lag",
+               "setpoint": 55.0, "tau": 60, "initial": 20.0, "alarm_high": 68.0}
+        assert pv_display_range(cfg) == (20.0, 68.0)
+
+    def test_cycle_ramp_uses_configured_range(self):
+        cfg = {"name": "StrokePos", "unit": "mm", "profile": "cycle_ramp",
+               "range": [0.0, 320.0]}
+        assert pv_display_range(cfg) == (0.0, 320.0)
+
+    def test_cycle_peak_spans_baseline_to_mean_peak(self):
+        cfg = {"name": "RamForce", "unit": "kN", "profile": "cycle_peak",
+               "baseline": 0.0,
+               "peak": {"distribution": "constant", "value": 850}}
+        assert pv_display_range(cfg) == (0.0, 850.0)
+
+    def test_constant_noise_spans_three_sigma(self):
+        cfg = {"name": "Flow", "unit": "lpm", "profile": "constant_noise",
+               "mean": 100.0,
+               "noise": {"distribution": "normal", "mean": 0.0, "std": 2.0}}
+        low, high = pv_display_range(cfg)
+        assert low < 100.0 < high
+        assert high - low > 0
+
+    def test_degenerate_range_returns_none(self):
+        """Zero-width EURange is worse than none — caller leaves the node a
+        plain variable instead of inventing a scale."""
+        cfg = {"name": "Fixed", "unit": "x", "profile": "constant_noise",
+               "mean": 0.0}
+        assert pv_display_range(cfg) is None

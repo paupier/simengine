@@ -28,6 +28,57 @@ HIGH = "HIGH"
 LOW = "LOW"
 
 
+def pv_display_range(cfg: dict):
+    """(low, high) display range for a process value, or None.
+
+    Feeds the OPC UA ``AnalogItemType`` EURange so clients (Optix, UaExpert)
+    get sensible default trend/gauge scaling instead of auto-scaling from
+    whatever happens to arrive first.
+
+    This is a *display* range derived from the PV's own config, not a
+    calibrated instrument range: it spans both the operating range the
+    profile's own parameters describe and any configured alarm limits, so a
+    trend scaled to it always shows the alarm thresholds. Returns None when
+    the config gives nothing to derive from (caller then leaves the node a
+    plain variable rather than inventing a scale).
+    """
+    pts = []
+
+    profile = cfg.get("profile")
+    if profile == "cycle_ramp":
+        pts += [float(v) for v in cfg["range"]]
+    elif profile == "first_order_lag":
+        initial = float(cfg["initial"])
+        pts += [initial, float(cfg["setpoint"]), float(cfg.get("ambient", initial))]
+    elif profile == "cycle_peak":
+        baseline = float(cfg["baseline"])
+        peak = float(DistributionFactory.create(cfg["peak"]).mean())
+        pts += [baseline, baseline + peak]
+    elif profile == "constant_noise":
+        mean = float(cfg["mean"])
+        spread = 0.0
+        if "noise" in cfg:
+            spread = 3.0 * float(DistributionFactory.create(cfg["noise"]).std())
+        if spread <= 0.0:
+            spread = 0.1 * abs(mean)
+        pts += [mean - spread, mean + spread]
+
+    for limit in (cfg.get("alarm_low"), cfg.get("alarm_high")):
+        if limit is not None:
+            pts.append(float(limit))
+
+    if not pts:
+        return None
+    return _ordered(min(pts), max(pts))
+
+
+def _ordered(low: float, high: float):
+    """Reject degenerate ranges — a zero-width EURange is worse than none."""
+    if high <= low:
+        return None
+    return low, high
+
+
 class ProcessValueModel:
     """One configured process value on one station."""
 

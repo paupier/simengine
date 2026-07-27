@@ -13,7 +13,13 @@ Same scenario config => byte-identical node-link JSON.
 from typing import Dict, List, Optional
 
 from simengine.engine import alarms as alarm_defs
+from simengine.publishers.metrics import STATION_METRIC_SCHEMA
 from simengine.publishers.opcua_mqtt import flat_topic
+from simengine.publishers.opcua_nodes import (
+    NID_LINE,
+    buffer_nid,
+    station_nid,
+)
 
 NODE_TYPES = (
     "Enterprise", "Site", "Area", "Line", "Station", "Buffer", "ProcessValue",
@@ -23,11 +29,9 @@ NODE_TYPES = (
 EDGE_TYPES = ("CONTAINS", "FEEDS", "HAS_PV", "HAS_FAILURE_MODE", "CAN_RAISE",
               "MEASURED_BY", "RUNS")
 
-# Station metric names published on every protocol (see publishers/metrics.py)
-STATION_METRIC_NAMES = (
-    "State", "Health", "PartsMade", "Good", "Scrap",
-    "OEE", "Availability", "Performance", "Quality", "ActiveReasonCode",
-)
+# Station metric names published on every protocol. Derived from — never
+# re-typed alongside — publishers/metrics.py, which owns the metric set.
+STATION_METRIC_NAMES = tuple(name for name, _ in STATION_METRIC_SCHEMA)
 
 
 class KnowledgeGraph:
@@ -118,7 +122,9 @@ def build_knowledge_graph(config: dict, scenario_name: str,
     group_id = spb_cfg.get("group_id", area)
     edge_node_id = spb_cfg.get("edge_node_id", line)
 
-    opcua_prefix = f"{enterprise}.{site}.{area}.{line}_Equipment"
+    # Rename-invariant NodeId roots — shared with the publisher so the two
+    # cannot drift (see opcua_nodes.py for why they drop the ISA-95 path).
+    opcua_prefix = NID_LINE
 
     def opcua_nid(path: str) -> str:
         return f"ns=2;s={path}"
@@ -171,7 +177,7 @@ def build_knowledge_graph(config: dict, scenario_name: str,
             defect_rate=st_cfg.get("defect_rate", 0.0),
             health_h_max=health_cfg.get("h_max"),
             opcua_node_id=opcua_nid(
-                f"{opcua_prefix}.Resources.{st_name}_Equipment"),
+                station_nid(st_name)),
         )
         kg.add_edge(line_id, st_id, "CONTAINS")
 
@@ -182,7 +188,7 @@ def build_knowledge_graph(config: dict, scenario_name: str,
             kg.add_node(
                 b_id, "Buffer", name=b_name, capacity=b_cfg["capacity"],
                 opcua_node_id=opcua_nid(
-                    f"{opcua_prefix}.Resources.{b_name}_StorageUnit"),
+                    buffer_nid(b_name)),
             )
             kg.add_edge(line_id, b_id, "CONTAINS")
             kg.add_edge(prev_id, b_id, "FEEDS")
@@ -206,8 +212,7 @@ def build_knowledge_graph(config: dict, scenario_name: str,
                 alarm_low=pv_cfg.get("alarm_low"),
                 addresses=metric_addresses(
                     st_name, f"PV/{pv_name}",
-                    f"{opcua_prefix}.Resources.{st_name}_Equipment"
-                    f".ProcessValues.{pv_name}",
+                    f"{station_nid(st_name)}.ProcessValues.{pv_name}",
                     f"stations.{st_name}.process_values[name={pv_name}].value",
                 ),
                 alarm_codes=alarm_codes,
@@ -273,8 +278,7 @@ def build_knowledge_graph(config: dict, scenario_name: str,
                 metric_id, "Metric", name=metric, station=st_name,
                 addresses=metric_addresses(
                     st_name, metric,
-                    f"{opcua_prefix}.Resources.{st_name}_Equipment"
-                    f".{opcua_paths[metric]}",
+                    f"{station_nid(st_name)}.{opcua_paths[metric]}",
                     f"stations.{st_name}.{rest_fields[metric]}",
                 ),
             )

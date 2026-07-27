@@ -39,3 +39,28 @@ class TestSchemaEndpoint:
         assert client.get("/api/v1/runs/current").get_json()["state"] == "IDLE"
         r = client.get("/api/v1/schema?scenario=balanced_line")
         assert r.status_code == 200
+
+
+class TestNodeSet2Endpoint:
+    def test_missing_scenario_param_400(self, client):
+        assert client.get("/api/v1/schema/nodeset2.xml").status_code == 400
+
+    def test_unknown_scenario_404(self, client):
+        r = client.get("/api/v1/schema/nodeset2.xml?scenario=nope")
+        assert r.status_code == 404
+
+    def test_returns_xml_content_type(self, client):
+        r = client.get("/api/v1/schema/nodeset2.xml?scenario=full_feature_line")
+        assert r.status_code == 200
+        assert r.mimetype == "application/xml"
+
+    def test_body_is_a_uanodeset(self, client):
+        r = client.get("/api/v1/schema/nodeset2.xml?scenario=full_feature_line")
+        body = r.get_data(as_text=True)
+        assert "<UANodeSet" in body
+        assert "<Uri>http://simengine.local/</Uri>" in body
+
+    def test_offers_a_scenario_named_download_filename(self, client):
+        r = client.get("/api/v1/schema/nodeset2.xml?scenario=balanced_line")
+        assert "balanced_line" in r.headers["Content-Disposition"]
+        assert ".NodeSet2.xml" in r.headers["Content-Disposition"]

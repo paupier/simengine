@@ -29,7 +29,7 @@ def main(argv=None):
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
     )
-    logging.getLogger("opcua").setLevel(logging.WARNING)
+    logging.getLogger("asyncua").setLevel(logging.WARNING)
 
     from simengine.api.rest import create_app
     from simengine.runtime.run_manager import RunManager

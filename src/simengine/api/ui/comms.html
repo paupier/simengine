@@ -82,7 +82,12 @@
   <div style="margin-top:10px; display:flex; gap:10px; align-items:center;">
     <button id="schema-view">View schema</button>
     <button id="schema-download" hidden>Download JSON</button>
+    <button id="nodeset-download">Download NodeSet2 XML</button>
   </div>
+  <p class="muted" style="margin-top:8px">NodeSet2 is the standard OPC UA
+    information-model file — import it into FactoryTalk Optix, Ignition or
+    UaExpert to bind screens against this scenario's address space without
+    starting a run.</p>
   <div id="schema-panels" style="margin-top:14px"></div>
 {% endblock %}
 {% block scripts %}
@@ -184,8 +189,7 @@
         });
       });
     } catch (e) {
-      $("schema-panels").innerHTML = `<div class="msg err">${e.body?.error || e.message || e}</div>`;
-      $("schema-download").hidden = true;
+      $("schema-panels").innerHTML = `<div class="msg err">${e.message}</div>`;
     }
   }
 
@@ -199,6 +203,14 @@
     a.download = `${lastSchema.scenario || "schema"}.json`;
     a.click();
     URL.revokeObjectURL(a.href);
+  };
+  // Served with Content-Disposition: attachment — navigating triggers the
+  // download without leaving the page.
+  $("nodeset-download").onclick = () => {
+    const scenario = currentCommsScenario();
+    if (!scenario) return;
+    window.location = "/api/v1/schema/nodeset2.xml?scenario=" +
+      encodeURIComponent(scenario);
   };
 </script>
 {% endblock %}
