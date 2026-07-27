@@ -9,7 +9,7 @@ description = "Real-time station simulation engine with OPC UA, MQTT (Part 14 + 
 requires-python = ">=3.10"
 dependencies = [
   "pyyaml>=6.0", "ruamel.yaml>=0.18", "numpy>=1.24", "scipy>=1.10",
-  "opcua>=0.98.13", "paho-mqtt>=2.0", "flask>=3.0", "mcp>=1.0",
+  "asyncua>=2.0", "paho-mqtt>=2.0", "flask>=3.0", "mcp>=1.0",
 ]
 
 [project.optional-dependencies]
@@ -44,3 +44,11 @@ simengine = ["api/ui/*.html", "api/ui/static/*.js"]
 pythonpath = ["src", "tests"]
 testpaths = ["tests"]
 markers = ["slow: long-running statistical tests"]
+filterwarnings = [
+  # asyncua's XmlExporter.indent() does `if elem:` on an ElementTree element
+  # (upstream, still present in 2.0.1 — the pretty-printer copied from
+  # effbot.org). The NodeSet2 export tests trip it ~16k times, which buries
+  # every warning we'd actually want to see. Scoped to that one module so our
+  # own DeprecationWarnings still surface. Drop when upstream fixes it.
+  "ignore:Testing an element's truth value:DeprecationWarning:asyncua.common.xmlexporter",
+]

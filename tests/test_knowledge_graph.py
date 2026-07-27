@@ -105,15 +105,20 @@ class TestAddressBinding:
         kg, config = demo_kg
         from simengine.engine.line import LineEngine
         from simengine.publishers.opcua_server import OPCUAServerPublisher
-        from opcua import ua
+        from asyncua import ua
 
         engine = LineEngine(config, "demo_line", seed=1, run_id="kg_check")
         pub = OPCUAServerPublisher(config, port=48998)
         pub._build(engine.snapshot())
-        for n in kg.find_nodes("ProcessValue"):
-            path = n["addresses"]["opcua_node_id"].replace("ns=2;s=", "")
-            node = pub.server.get_node(ua.NodeId(path, 2))
-            assert node.get_value() is not None  # resolvable float
+        try:
+            for n in kg.find_nodes("ProcessValue"):
+                path = n["addresses"]["opcua_node_id"].replace("ns=2;s=", "")
+                node = pub.server.get_node(ua.NodeId(path, 2))
+                assert node.get_value() is not None  # resolvable float
+        finally:
+            # asyncua.sync servers hold non-daemon ThreadLoop threads even
+            # when never started — leaking one hangs the interpreter at exit.
+            pub.close()
 
     def test_metric_nodes_have_addresses(self, demo_kg):
         kg, _ = demo_kg

@@ -2,14 +2,26 @@
 space / topic / metric structure a given scenario config will publish, with
 no engine run and no broker/server connection required. See
 docs/superpowers/specs/2026-07-24-schema-export-design.md.
+
+Everything here is derived from the *same* builders the live publishers use
+(``build_address_space`` for OPC UA, ``metrics.py``'s schema constants for
+MQTT/SparkplugB), so the exported schema cannot drift from what a run
+actually serves — the no-drift assertions in tests/test_schema.py pin that.
 """
 from __future__ import annotations
 
-from opcua import ua
+import copy
+import io
+import json
+from contextlib import contextmanager
+from functools import lru_cache
+
+from asyncua import ua
+from asyncua.common.xmlexporter import XmlExporter
 
 from simengine.publishers.metrics import line_metric_schema, station_metric_schema
 from simengine.publishers.opcua_mqtt import flat_topic
-from simengine.publishers.opcua_server import build_address_space
+from simengine.publishers.opcua_server import build_address_space, close_unstarted
 
 _DATATYPE_NAMES = {
     ua.VariantType.String: "String",
@@ -24,20 +36,76 @@ _DATATYPE_NAMES = {
 }
 
 
-def _walk(node) -> dict:
-    node_class = node.get_node_class().name
+# ---------------------------------------------------------------------------
+# Result caching.
+#
+# Both public builders construct an asyncua Server, which loads the ~7000-node
+# standard OPC UA namespace every time (~1.3 s on CPython 3.10, far worse on
+# 3.12 — see publishers/opcua_server._new_server). Both are pure functions of
+# the scenario config, so the result is cached on a canonical hash of it: an
+# edited scenario simply produces a different key, so there is nothing to
+# invalidate. Bounded, per the repo's no-unbounded-growth rule.
+# ---------------------------------------------------------------------------
+_CACHE_SIZE = 16
+
+
+def _config_key(config: dict) -> str:
+    """Canonical, order-independent key for a scenario config."""
+    return json.dumps(config, sort_keys=True, default=str)
+
+
+@contextmanager
+def _throwaway_address_space(config: dict, port: int):
+    """Build the address space, yield (server, namespace_idx), always release.
+
+    asyncua.sync.Server() starts a ThreadLoop in its constructor, so every
+    schema request would leak two threads without this teardown — these
+    servers are built purely to be walked and are never started.
+    """
+    server, _, idx = build_address_space(config, port, run_id="", speed_ratio=1.0)
+    try:
+        yield server, idx
+    finally:
+        close_unstarted(server)
+
+
+async def _walk(node) -> dict:
+    node_class = (await node.read_node_class()).name
     entry = {
-        "name": node.get_browse_name().Name,
+        "name": (await node.read_browse_name()).Name,
         "node_id": node.nodeid.to_string(),
         "node_class": node_class,
     }
     if node_class == "Variable":
-        vtype = node.get_data_type_as_variant_type()
+        vtype = await node.read_data_type_as_variant_type()
         entry["data_type"] = _DATATYPE_NAMES.get(vtype, str(vtype))
-    children = node.get_children()
+    children = await node.get_children()
     if children:
-        entry["children"] = [_walk(c) for c in children]
+        entry["children"] = [await _walk(c) for c in children]
     return entry
+
+
+async def _own_type_nodes(aio_server, idx) -> list:
+    """The ObjectTypes this address space declares (StationType, …).
+
+    Instances carry HasTypeDefinition references to these, so any export that
+    omitted them would import as instances of an undefined type.
+    """
+    base = aio_server.get_node(ua.NodeId(ua.ObjectIds.BaseObjectType))
+    return [c for c in await base.get_children()
+            if c.nodeid.NamespaceIndex == idx]
+
+
+async def _walk_own_children(aio_server, idx) -> list:
+    """Walk every simengine-namespace subtree under Objects, skipping the
+    standard ns=0 Server boilerplate node."""
+    return [await _walk(c)
+            for c in await aio_server.nodes.objects.get_children()
+            if c.nodeid.NamespaceIndex == idx]
+
+
+async def _walk_own_types(aio_server, idx) -> list:
+    return [await _walk(t) for t in await _own_type_nodes(aio_server, idx)]
 
 
 def build_opcua_schema(config: dict, port: int = 4840) -> dict:
@@ -46,19 +114,97 @@ def build_opcua_schema(config: dict, port: int = 4840) -> dict:
     OPC UA server publisher uses, so this cannot drift from what a run
     actually serves.
     """
-    server, _, idx = build_address_space(config, port, run_id="", speed_ratio=1.0)
-    objects = server.get_objects_node()
-    own_children = [c for c in objects.get_children()
-                    if c.nodeid.NamespaceIndex == idx]
+    with _throwaway_address_space(config, port) as (server, idx):
+        # One coroutine for the whole walk: each SyncNode attribute read is a
+        # separate thread round-trip onto the event loop, and the tree runs to
+        # hundreds of nodes.
+        children = server.tloop.post(_walk_own_children(server.aio_obj, idx))
+        object_types = server.tloop.post(_walk_own_types(server.aio_obj, idx))
     return {
         "endpoint": f"opc.tcp://<host>:{port}/simengine/",
         "namespace_uri": "http://simengine.local/",
+        "object_types": object_types,
         "address_space": {
             "name": "Objects",
             "node_class": "Object",
-            "children": [_walk(c) for c in own_children],
+            "children": children,
         },
     }
+
+
+def build_nodeset2_xml(config: dict, port: int = 4840) -> str:
+    """Cached wrapper — see :func:`_build_nodeset2_xml`.
+
+    The result is an immutable str, so it is safe to hand the cached object
+    straight back to every caller.
+    """
+    return _nodeset2_cached(_config_key(config), port, _Frozen(config))
+
+
+class _Frozen:
+    """Carries the real config past lru_cache's hashing.
+
+    lru_cache needs hashable arguments and a dict is not, so the canonical
+    string is the cache key and this wrapper smuggles the config through
+    without participating in hashing or equality.
+    """
+
+    __slots__ = ("value",)
+
+    def __init__(self, value):
+        self.value = value
+
+    def __hash__(self):
+        return 0
+
+    def __eq__(self, other):
+        return isinstance(other, _Frozen)
+
+
+@lru_cache(maxsize=_CACHE_SIZE)
+def _nodeset2_cached(_key: str, port: int, frozen: _Frozen) -> str:
+    return _build_nodeset2_xml(frozen.value, port)
+
+
+def _build_nodeset2_xml(config: dict, port: int = 4840) -> str:
+    """OPC UA NodeSet2 (``UANodeSet``) XML for `config` — the standard,
+    tool-neutral information-model exchange format.
+
+    Importable offline by FactoryTalk Optix, Ignition, UaExpert and any other
+    OPC UA client, so an integrator can bind screens against the scenario's
+    address space without ever starting the engine. Instance nodes only (the
+    address space declares no custom ObjectTypes); the ns=0 Server subtree is
+    excluded.
+    """
+    with _throwaway_address_space(config, port) as (server, idx):
+        aio_server = server.aio_obj
+
+        async def _export() -> str:
+            nodes = []
+
+            async def collect(node):
+                nodes.append(node)
+                for child in await node.get_children():
+                    await collect(child)
+
+            # ObjectTypes first: instances reference them via HasTypeDefinition.
+            for type_node in await _own_type_nodes(aio_server, idx):
+                await collect(type_node)
+
+            for child in await aio_server.nodes.objects.get_children():
+                if child.nodeid.NamespaceIndex == idx:
+                    await collect(child)
+
+            exporter = XmlExporter(aio_server)
+            await exporter.build_etree(nodes)
+            buf = io.BytesIO()
+            await exporter.write_xml(buf)
+            return buf.getvalue().decode("utf-8")
+
+        # asyncua's XmlExporter is async-only; run the whole export as one
+        # coroutine on the server's own ThreadLoop (post() blocks and returns
+        # the coroutine's result).
+        return server.tloop.post(_export())
 
 
 def build_mqtt_schema(config: dict, mqtt_cfg: dict) -> dict:
@@ -70,14 +216,14 @@ def build_mqtt_schema(config: dict, mqtt_cfg: dict) -> dict:
     line = config.get("line_name", "Line1")
     publisher_id = mqtt_cfg.get("publisher_id", "simengine-line1")
     publish_interval = mqtt_cfg.get("publish_interval", 1)
+    flat_topics_enabled = mqtt_cfg.get("flat_topics", True)
     stations = config.get("stations", [])
     buffers = config.get("buffers", [])
 
-    # Payload key order mirrors OPCUAMqttPublisher.publish() exactly: all
-    # station metrics first (config order), then line metrics — so the schema
-    # is byte-order-identical to the live envelope, not merely set-equal.
     payload: dict = {}
-    flat_topics_enabled = mqtt_cfg.get("flat_topics", True)
+    for name, dtype in line_metric_schema([b["name"] for b in buffers]):
+        payload[f"Line.{name.replace('/', '.')}"] = dtype
+
     flat_topics = []
     for st_cfg in stations:
         st_name = st_cfg["name"]
@@ -89,10 +235,9 @@ def build_mqtt_schema(config: dict, mqtt_cfg: dict) -> dict:
             for name, dtype in schema:
                 flat_topics.append({
                     "topic": flat_topic(line, st_name, name),
-                    "payload": {"value": dtype, "sim_time": "Float", "run_id": "String"},
+                    "payload": {"value": dtype, "sim_time": "Float",
+                                "run_id": "String"},
                 })
-    for name, dtype in line_metric_schema([b["name"] for b in buffers]):
-        payload[f"Line.{name.replace('/', '.')}"] = dtype
 
     return {
         "part14": {
@@ -168,12 +313,30 @@ def build_sparkplugb_schema(config: dict, spb_cfg: dict) -> dict:
 
 
 def build_schema(config: dict) -> dict:
+    """Cached wrapper — see :func:`_build_schema`.
+
+    Returns a deep copy every time: the result is a mutable nested dict and
+    callers do mutate it (rest.py stamps ``result["scenario"]`` onto it), which
+    would otherwise poison the cache for every later request.
+    """
+    return copy.deepcopy(_schema_cached(_config_key(config), _Frozen(config)))
+
+
+@lru_cache(maxsize=_CACHE_SIZE)
+def _schema_cached(_key: str, frozen: _Frozen) -> dict:
+    return _build_schema(frozen.value)
+
+
+def _build_schema(config: dict) -> dict:
     """Full schema export for one scenario config: OPC UA address space +
     MQTT (Part 14 + flat) + SparkplugB, each computed regardless of that
     protocol's `enabled` flag (so a protocol's shape can be previewed
     before it's turned on) but carrying that flag for the UI/caller.
     """
     comms = config.get("comms", {}) or {}
+    # The {"enabled": True} fallback applies only when the whole comms.opcua
+    # key is absent — a block that exists but omits "enabled" is disabled,
+    # matching how build_publishers() reads it.
     opcua_cfg = comms.get("opcua", {"enabled": True}) or {"enabled": True}
     mqtt_cfg = comms.get("opcua_mqtt", {}) or {}
     spb_cfg = comms.get("sparkplugb", {}) or {}

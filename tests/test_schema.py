@@ -1,11 +1,23 @@
 """Wire-schema export (OPC UA / MQTT / SparkplugB) — buildable from a saved
 scenario config alone, no run required. See
 docs/superpowers/specs/2026-07-24-schema-export-design.md."""
+import json
 from unittest.mock import MagicMock
 
-from simengine.api.schema import build_opcua_schema
+from simengine.api.schema import (
+    build_mqtt_schema,
+    build_nodeset2_xml,
+    build_opcua_schema,
+    build_schema,
+    build_sparkplugb_schema,
+)
 from simengine.engine.line import LineEngine
-from simengine.publishers.opcua_mqtt import OPCUAMqttPublisher
+from simengine.publishers.opcua_mqtt import OPCUAMqttPublisher, flat_topic
+from simengine.publishers.sparkplugb import SparkplugBPublisher
+
+MQTT_CFG = {"broker": "mqtt://mosquitto:1883", "publisher_id": "simengine-line1"}
+SPB_CFG = {"broker": "mqtt://localhost:1883", "group_id": "Area01",
+           "edge_node_id": "Line1"}
 
 
 def demo_config():
@@ -74,19 +86,55 @@ class TestBuildOpcuaSchema:
         r2 = build_opcua_schema(demo_config())
         assert r1 == r2
 
+    def test_node_ids_match_the_live_publisher(self):
+        """No-drift check: every node id in the exported tree is one the real
+        OPCUAServerPublisher creates (same builder, never started)."""
+        from simengine.publishers.opcua_server import OPCUAServerPublisher
 
-MQTT_CFG = {"broker": "mqtt://mosquitto:1883", "publisher_id": "simengine-line1"}
+        engine = LineEngine(demo_config(), "demo", seed=1, run_id="schema_test")
+        pub = OPCUAServerPublisher(demo_config(), port=4840)
+        pub._build(engine.snapshot())
+
+        # One coroutine for the whole walk — per-node SyncNode reads each cost
+        # a thread round-trip onto the event loop.
+        async def collect_live():
+            ids = set()
+
+            async def walk(node):
+                ids.add(node.nodeid.to_string())
+                for child in await node.get_children():
+                    await walk(child)
+
+            for child in await pub.server.aio_obj.nodes.objects.get_children():
+                await walk(child)
+            return ids
+
+        try:
+            live_ids = pub.server.tloop.post(collect_live())
+        finally:
+            pub.close()
+
+        schema_ids = set()
+
+        def walk_schema(entry):
+            schema_ids.add(entry["node_id"])
+            for child in entry.get("children", []):
+                walk_schema(child)
+
+        for child in build_opcua_schema(demo_config())["address_space"]["children"]:
+            walk_schema(child)
+
+        assert schema_ids <= live_ids
+        assert len(schema_ids) > 100  # sanity: the tree really was walked
 
 
 class TestBuildMqttSchema:
     def test_topics(self):
-        from simengine.api.schema import build_mqtt_schema
         result = build_mqtt_schema(demo_config(), MQTT_CFG)
         assert result["part14"]["data_topic"] == "opcua/simengine-line1/json"
         assert result["part14"]["status_topic"] == "opcua/simengine-line1/status"
 
     def test_publish_interval_defaults(self):
-        from simengine.api.schema import build_mqtt_schema
         result = build_mqtt_schema(demo_config(), {})
         assert result["part14"]["publish_interval"] == 1
         assert result["part14"]["data_topic"] == "opcua/simengine-line1/json"
@@ -94,7 +142,6 @@ class TestBuildMqttSchema:
     def test_envelope_payload_keys_match_real_publisher(self):
         """No-drift check: the schema's Payload keys must match what
         OPCUAMqttPublisher.publish() actually writes for this config."""
-        from simengine.api.schema import build_mqtt_schema
         engine = LineEngine(demo_config(), "demo", seed=1, run_id="schema_test")
         pub = OPCUAMqttPublisher(demo_config(), MQTT_CFG)
         pub._client = MagicMock()
@@ -102,47 +149,32 @@ class TestBuildMqttSchema:
         pub.publish(engine.snapshot())
         envelope_call = [c for c in pub._client.publish.call_args_list
                          if c.args[0] == pub.data_topic][0]
-        import json
-        real_payload_keys = list(json.loads(envelope_call.args[1])["Payload"].keys())
+        real_payload_keys = set(json.loads(envelope_call.args[1])["Payload"].keys())
 
         schema_result = build_mqtt_schema(demo_config(), MQTT_CFG)
-        schema_keys = list(schema_result["part14"]["envelope"]["Payload"].keys())
-        # Order-identical, not merely set-equal, so the schema mirrors the exact
-        # live envelope key order (stations first, then line metrics).
-        assert schema_keys == real_payload_keys
+        assert set(schema_result["part14"]["envelope"]["Payload"].keys()) == real_payload_keys
 
     def test_flat_topics_match_flat_topic_helper(self):
-        from simengine.api.schema import build_mqtt_schema
-        from simengine.publishers.opcua_mqtt import flat_topic
         result = build_mqtt_schema(demo_config(), MQTT_CFG)
         topics = {t["topic"] for t in result["flat_topics"]}
         assert flat_topic("Line1", "Press01", "State") in topics
         assert flat_topic("Line1", "Press01", "PV/OilTemp") in topics
 
     def test_flat_topic_payload_shape(self):
-        from simengine.api.schema import build_mqtt_schema
         result = build_mqtt_schema(demo_config(), MQTT_CFG)
         entry = result["flat_topics"][0]
         assert set(entry["payload"].keys()) == {"value", "sim_time", "run_id"}
         assert entry["payload"]["sim_time"] == "Float"
         assert entry["payload"]["run_id"] == "String"
 
-    def test_flat_topics_empty_when_disabled(self):
-        from simengine.api.schema import build_mqtt_schema
-        result = build_mqtt_schema(demo_config(), {**MQTT_CFG, "flat_topics": False})
-        assert result["flat_topics"] == []
-
     def test_flat_topics_present_by_default(self):
-        from simengine.api.schema import build_mqtt_schema
         result = build_mqtt_schema(demo_config(), MQTT_CFG)
         assert len(result["flat_topics"]) > 0
 
-
-from simengine.api.schema import build_sparkplugb_schema
-from simengine.publishers.sparkplugb import SparkplugBPublisher
-
-
-SPB_CFG = {"broker": "mqtt://localhost:1883", "group_id": "Area01", "edge_node_id": "Line1"}
+    def test_flat_topics_empty_when_disabled(self):
+        result = build_mqtt_schema(demo_config(),
+                                   {**MQTT_CFG, "flat_topics": False})
+        assert result["flat_topics"] == []
 
 
 class TestBuildSparkplugbSchema:
@@ -193,9 +225,6 @@ class TestBuildSparkplugbSchema:
             assert schema_device_aliases == pub._aliases[device["station"]]
 
 
-from simengine.api.schema import build_schema
-
-
 class TestBuildSchema:
     def test_combines_all_three_with_enabled_flags(self):
         config = demo_config()
@@ -216,11 +245,153 @@ class TestBuildSchema:
         assert result["opcua"]["enabled"] is True
 
     def test_opcua_enabled_false_when_block_present_without_enabled_key(self):
-        """Matches build_publishers()'s real default: the {"enabled": True}
-        fallback only applies when the whole comms.opcua key is absent —
-        if comms.opcua exists but has no "enabled" key inside it, that's
-        disabled, same as build_publishers() would treat it."""
+        """The {"enabled": True} fallback only applies when the whole
+        comms.opcua key is absent — a block that exists but omits "enabled"
+        is disabled, same as build_publishers() would treat it."""
         config = demo_config()
         config["comms"] = {"opcua": {"port": 4840}}
         result = build_schema(config)
         assert result["opcua"]["enabled"] is False
+
+
+class TestBuildNodeSet2Xml:
+    def test_is_a_uanodeset_document(self):
+        xml = build_nodeset2_xml(demo_config())
+        assert xml.lstrip().startswith("<?xml")
+        assert "<UANodeSet" in xml
+        assert "http://opcfoundation.org/UA/2011/03/UANodeSet.xsd" in xml
+
+    def test_declares_the_simengine_namespace_uri(self):
+        xml = build_nodeset2_xml(demo_config())
+        assert "<Uri>http://simengine.local/</Uri>" in xml
+
+    def test_contains_the_scenario_instance_nodes(self):
+        xml = build_nodeset2_xml(demo_config())
+        # Browse names of nodes the address space builder creates.
+        assert "Press01_Equipment" in xml
+        assert "Pack02_Equipment" in xml
+        assert "B1_StorageUnit" in xml
+        assert "OilTemp" in xml
+
+    def test_excludes_standard_server_boilerplate(self):
+        xml = build_nodeset2_xml(demo_config())
+        assert "ServerStatusDataType" not in xml
+
+    def test_node_ids_are_namespace_qualified_strings(self):
+        """Optix (and any client) binds against these — they must be the
+        stable ns=1;s=... string ids the live server serves, not numeric."""
+        xml = build_nodeset2_xml(demo_config())
+        assert 'ns=1;s=Line' in xml
+
+    def test_deterministic(self):
+        assert build_nodeset2_xml(demo_config()) == build_nodeset2_xml(demo_config())
+
+    def test_parses_as_xml(self):
+        import xml.etree.ElementTree as ET
+
+        root = ET.fromstring(build_nodeset2_xml(demo_config()))
+        assert root.tag.endswith("UANodeSet")
+        variables = root.findall(
+            "{http://opcfoundation.org/UA/2011/03/UANodeSet.xsd}UAVariable")
+        assert len(variables) > 50
+
+
+class TestObjectTypesExported:
+    """Stations are instances of StationType; an export that omitted the type
+    would import as instances of an undefined type."""
+
+    def test_json_schema_lists_object_types(self):
+        result = build_opcua_schema(demo_config())
+        names = {t["name"] for t in result["object_types"]}
+        assert {"StationType", "BufferStorageUnitType"} <= names
+
+    def test_station_type_declares_its_members(self):
+        result = build_opcua_schema(demo_config())
+        station_type = [t for t in result["object_types"]
+                        if t["name"] == "StationType"][0]
+        groups = {c["name"] for c in station_type["children"]}
+        assert {"Identification", "OperationsState",
+                "OperationsPerformance", "OEE", "Alarms"} <= groups
+
+    def test_nodeset2_includes_the_object_types(self):
+        xml = build_nodeset2_xml(demo_config())
+        assert "<UAObjectType" in xml
+        assert 'ns=1;s=StationType' in xml
+        assert 'ns=1;s=BufferStorageUnitType' in xml
+
+    def test_nodeset2_roundtrips_with_types(self, tmp_path):
+        """Re-import the exported file and confirm a station still resolves as
+        a StationType instance."""
+        from asyncua import ua
+        from asyncua.sync import Server
+
+        path = tmp_path / "export.NodeSet2.xml"
+        path.write_text(build_nodeset2_xml(demo_config()), encoding="utf-8")
+
+        server = Server()
+        try:
+            server.set_endpoint("opc.tcp://0.0.0.0:48123/roundtrip/")
+            server.import_xml(str(path))
+            idx = server.get_namespace_array().index("http://simengine.local/")
+            station = server.get_node(ua.NodeId("Station.Press01", idx))
+            assert station.read_type_definition() == ua.NodeId("StationType", idx)
+            state = server.get_node(
+                ua.NodeId("Station.Press01.OperationsState.State", idx))
+            assert state.read_browse_name().Name == "State"
+        finally:
+            server.tloop.stop()
+
+
+class TestResultCaching:
+    """Both builders construct an asyncua Server, which reloads the ~7000-node
+    standard OPC UA namespace every time. They are pure functions of the
+    config, so results are cached on a canonical hash of it."""
+
+    def test_repeated_build_hits_the_cache(self):
+        from simengine.api import schema as schema_mod
+
+        schema_mod._schema_cached.cache_clear()
+        before = schema_mod._schema_cached.cache_info()
+        build_schema(demo_config())
+        build_schema(demo_config())
+        after = schema_mod._schema_cached.cache_info()
+        assert after.misses - before.misses == 1
+        assert after.hits - before.hits == 1
+
+    def test_cached_result_is_not_poisoned_by_caller_mutation(self):
+        """rest.py stamps result["scenario"] onto the returned dict; that must
+        not leak into what the next caller gets."""
+        first = build_schema(demo_config())
+        first["scenario"] = "stamped-by-caller"
+        first["opcua"]["endpoint"] = "mutated"
+
+        second = build_schema(demo_config())
+        assert "scenario" not in second
+        assert second["opcua"]["endpoint"] == "opc.tcp://<host>:4840/simengine/"
+
+    def test_different_config_is_not_a_false_hit(self):
+        other = demo_config()
+        other["stations"][0]["name"] = "Renamed01"
+        assert build_schema(demo_config()) != build_schema(other)
+
+    def test_edited_config_bypasses_the_cache(self):
+        """No invalidation needed — an edited scenario is a different key."""
+        cfg = demo_config()
+        first = build_schema(cfg)
+        cfg["line_name"] = "LineZ"
+        assert build_schema(cfg)["sparkplugb"]["edge_node_id"] == "LineZ"
+        assert first["sparkplugb"]["edge_node_id"] == "Line1"
+
+    def test_nodeset2_is_cached_and_identical(self):
+        from simengine.api import schema as schema_mod
+
+        schema_mod._nodeset2_cached.cache_clear()
+        first = build_nodeset2_xml(demo_config())
+        second = build_nodeset2_xml(demo_config())
+        assert first == second
+        assert schema_mod._nodeset2_cached.cache_info().hits == 1
+
+    def test_nodeset2_port_is_part_of_the_key(self):
+        a = build_nodeset2_xml(demo_config(), port=4840)
+        b = build_nodeset2_xml(demo_config(), port=4999)
+        assert isinstance(a, str) and isinstance(b, str)

@@ -2,20 +2,65 @@
 
 The ISA-95 address-space shape is preserved so parent-era OPC UA clients
 (FactoryTalk Optix, UaExpert) browse identically. New in the clone: a
-``ProcessValues/`` folder per station (one Float per configured PV) and
-``ActiveReasonCode``/``ActiveReasonText`` strings under each ``Alarms/`` node.
-Dropped from the parent: SPC chart nodes and failure-mode stats nodes
-(replaced by reason codes).
+``ProcessValues/`` folder per station (one ``AnalogItemType`` per configured
+PV, carrying EngineeringUnits + EURange) and ``ActiveReasonCode``/
+``ActiveReasonText`` strings under each ``Alarms/`` node. Dropped from the
+parent: SPC chart nodes and failure-mode stats nodes (replaced by reason
+codes).
+
+Stations and buffers are instances of the ``StationType`` /
+``BufferStorageUnitType`` ObjectTypes declared here, so a client can bind one
+screen to a type and reuse it across every station.
 
 Writes are batched: ``CachedOpcuaNode`` appends dirty values to a shared
-pending list; the publisher flushes the whole set once per publish
-(one lock acquisition instead of hundreds — parent perf spec P2).
+pending list; the publisher flushes the whole set once per publish (one
+event-loop round-trip instead of hundreds — parent perf spec P2).
 """
 from datetime import datetime
 
-from opcua import ua
+from asyncua import ua
 
 _SENTINEL = object()
+
+# ---------------------------------------------------------------------------
+# NodeId roots — deliberately rename-invariant.
+#
+# BrowseNames still carry the full ISA-95 hierarchy (Acme > Plant1 > Area01 >
+# Line1_Equipment > ...), so browsing is unchanged. NodeIds do NOT: they are
+# what SCADA clients persist in their bindings, and deriving them from
+# enterprise/site/area/line_name meant renaming any of those in the Configure
+# tab silently invalidated every binding in every client project.
+#
+# Only one line is served per address space, so no line qualifier is needed.
+# The functional group segment (OperationsState/OEE/ProcessValues/...) is kept
+# rather than flattening to Station.<name>.<leaf>, because process value names
+# come from user config and could otherwise collide with a metric name (a PV
+# called "State" or "OEE" is legal).
+# ---------------------------------------------------------------------------
+NID_ENTERPRISE = "Enterprise"
+NID_SITE = "Site"
+NID_AREA = "Area"
+NID_LINE = "Line"
+NID_LINE_ASSET = "LineAsset"
+
+
+def station_nid(name: str) -> str:
+    return f"Station.{name}"
+
+
+def station_asset_nid(name: str) -> str:
+    return f"StationAsset.{name}"
+
+
+def buffer_nid(name: str) -> str:
+    return f"Buffer.{name}"
+
+
+# "No alarm has occurred yet" — a fixed epoch, not datetime.now(). The node is
+# never written by the publisher, so a now() default made every station report
+# an alarm timestamp of server-boot-time forever, and made the exported
+# NodeSet2 XML (api/schema.py) differ on every export.
+_NO_ALARM_TIME = datetime(1970, 1, 1)
 
 # Dead-band mapping — float keys that drift by tiny increments each step.
 _OEE_FLOAT_KEYS = frozenset([
@@ -115,117 +160,219 @@ def wrap_opcua_vars_with_cache(d, pending=None):
             )
 
 
-def create_alarms_node(parent_node, idx: int, alarm_type: str = "machine",
-                       node_prefix: str = ""):
-    """Alarms sub-node: reason codes + parent-compatible booleans."""
-    p = node_prefix
-    alarms_node = parent_node.add_object(_nid(p, idx), _qn("Alarms", idx))
+def _promote_to_analog_item(var, idx: int, node_prefix: str, unit: str,
+                            eu_range) -> None:
+    """Retype a plain variable as OPC UA ``AnalogItemType`` with real
+    EngineeringUnits and EURange.
 
-    vars_dict = {}
-    vars_dict["alarm_count"] = alarms_node.add_variable(
-        _nid(f"{p}.ActiveAlarmCount", idx), _qn("ActiveAlarmCount", idx), 0)
-    vars_dict["last_alarm_time"] = alarms_node.add_variable(
-        _nid(f"{p}.LastAlarmTime", idx), _qn("LastAlarmTime", idx), datetime.now())
-    vars_dict["last_alarm_message"] = alarms_node.add_variable(
-        _nid(f"{p}.LastAlarmMessage", idx), _qn("LastAlarmMessage", idx), "")
-    vars_dict["last_alarm_severity"] = alarms_node.add_variable(
-        _nid(f"{p}.LastAlarmSeverity", idx), _qn("LastAlarmSeverity", idx), "")
+    Clients that render engineering units and default trend scaling (Optix,
+    UaExpert) read these properties; a unit buried in the Description string
+    is not machine-readable. EURange is mandatory on AnalogItemType, which is
+    why callers only promote when a range is actually derivable.
+    """
+    var.delete_reference(ua.NodeId(ua.ObjectIds.BaseDataVariableType),
+                         ua.NodeId(ua.ObjectIds.HasTypeDefinition))
+    var.add_reference(ua.NodeId(ua.ObjectIds.AnalogItemType),
+                      ua.NodeId(ua.ObjectIds.HasTypeDefinition))
 
-    if alarm_type == "machine":
-        vars_dict["reason_code"] = alarms_node.add_variable(
-            _nid(f"{p}.ActiveReasonCode", idx), _qn("ActiveReasonCode", idx), "")
-        vars_dict["reason_text"] = alarms_node.add_variable(
-            _nid(f"{p}.ActiveReasonText", idx), _qn("ActiveReasonText", idx), "")
-        vars_dict["alarm_failure"] = alarms_node.add_variable(
-            _nid(f"{p}.MachineFailureActive", idx), _qn("MachineFailureActive", idx), False)
-        vars_dict["alarm_maintenance"] = alarms_node.add_variable(
-            _nid(f"{p}.MaintenanceActive", idx), _qn("MaintenanceActive", idx), False)
-        vars_dict["alarm_quality"] = alarms_node.add_variable(
-            _nid(f"{p}.QualityAlertActive", idx), _qn("QualityAlertActive", idx), False)
-    elif alarm_type == "buffer":
-        vars_dict["alarm_high"] = alarms_node.add_variable(
-            _nid(f"{p}.HighLevelWarningActive", idx), _qn("HighLevelWarningActive", idx), False)
-        vars_dict["alarm_low"] = alarms_node.add_variable(
-            _nid(f"{p}.LowLevelWarningActive", idx), _qn("LowLevelWarningActive", idx), False)
-
-    return vars_dict
+    low, high = eu_range
+    var.add_property(
+        _nid(f"{node_prefix}.EURange", idx), ua.QualifiedName("EURange", 0),
+        ua.Range(Low=low, High=high), ua.VariantType.ExtensionObject)
+    var.add_property(
+        _nid(f"{node_prefix}.EngineeringUnits", idx),
+        ua.QualifiedName("EngineeringUnits", 0),
+        ua.EUInformation(DisplayName=ua.LocalizedText(unit),
+                         Description=ua.LocalizedText(unit)),
+        ua.VariantType.ExtensionObject)
 
 
 def create_process_values_node(parent_node, idx: int, pv_names_units: list,
                                node_prefix: str = ""):
-    """ProcessValues/ folder: one Double variable per configured PV (python-opcua
-    infers VariantType.Double from the bare 0.0 float initializer)."""
+    """ProcessValues/ folder: one Double variable per configured PV.
+
+    PVs whose config yields a display range (see
+    ``process_values.pv_display_range``) are modelled as AnalogItemType with
+    EngineeringUnits + EURange; the rest stay plain variables carrying the
+    unit in their Description.
+    """
     p = node_prefix
     pv_node = parent_node.add_object(_nid(p, idx), _qn("ProcessValues", idx))
     vars_dict = {}
-    for name, unit in pv_names_units:
-        var = pv_node.add_variable(
-            _nid(f"{p}.{name}", idx), _qn(name, idx), 0.0)
-        var.set_attribute(
+    for name, unit, eu_range in pv_names_units:
+        nid = f"{p}.{name}"
+        var = pv_node.add_variable(_nid(nid, idx), _qn(name, idx), 0.0)
+        var.write_attribute(
             ua.AttributeIds.Description,
-            ua.DataValue(ua.LocalizedText(f"{name} [{unit}]")),
+            ua.DataValue(ua.Variant(ua.LocalizedText(f"{name} [{unit}]"),
+                                    ua.VariantType.LocalizedText)),
         )
+        if eu_range is not None:
+            _promote_to_analog_item(var, idx, nid, unit, eu_range)
         vars_dict[f"pv_{name}"] = var
     return vars_dict
 
 
-def create_station_node(parent_node, idx: int, station_name: str,
+# ---------------------------------------------------------------------------
+# ObjectType declarations.
+#
+# Stations and buffers are instances of StationType / BufferStorageUnitType
+# rather than bare BaseObjectType. That is what lets a SCADA client (Optix,
+# Ignition) build ONE screen bound to the type and reuse it for every station,
+# instead of a hand-built screen per station.
+#
+# The members are declared once here and instantiated by asyncua, which — when
+# the instance has a String NodeId — derives child NodeIds as
+# "<parent>.<BrowseName>" (instantiate_util.py). That is exactly the
+# rename-invariant scheme in this module, so typing the nodes and keeping
+# readable NodeIds are not in tension.
+#
+# Each entry: (group | None, browse name, default value, vars_dict key | None).
+# The vars_dict key is what publishers/opcua_server.py writes through.
+# ---------------------------------------------------------------------------
+STATION_TYPE_NID = "StationType"
+BUFFER_TYPE_NID = "BufferStorageUnitType"
+
+_STATION_MEMBERS = (
+    ("Identification", "EquipmentID", "", None),
+    ("Identification", "EquipmentClass", "WorkCell", None),
+    ("Identification", "Description", "", None),
+
+    ("OperationsState", "State", "IDLE", "state"),
+    ("OperationsState", "CyclePhase", 0.0, "cycle_phase"),
+
+    ("OperationsPerformance", "PartCount", 0, "partcount"),
+    ("OperationsPerformance", "ScrapCount", 0, "scrap_count"),
+    ("OperationsPerformance", "ReworkCount", 0, "rework_count"),
+    ("OperationsPerformance", "BlockedTime", 0.0, "blocked_time"),
+    ("OperationsPerformance", "StarvedTime", 0.0, "starved_time"),
+    ("OperationsPerformance", "DownTime", 0.0, "down_time"),
+    ("OperationsPerformance", "ProcessingTime", 0.0, "processing_time"),
+    ("OperationsPerformance", "IdleTime", 0.0, "idle_time"),
+    ("OperationsPerformance", "MinorStopTime", 0.0, "minor_stop_time"),
+
+    ("OEE", "Availability", 0.0, "availability"),
+    ("OEE", "Performance", 0.0, "performance"),
+    ("OEE", "Quality", 1.0, "quality"),
+    ("OEE", "OEE", 0.0, "oee"),
+    ("OEE", "GoodPartCount", 0, "good_parts"),
+    ("OEE", "DefectivePartCount", 0, "defective_parts"),
+
+    ("Alarms", "ActiveAlarmCount", 0, "alarm_alarm_count"),
+    ("Alarms", "LastAlarmTime", _NO_ALARM_TIME, "alarm_last_alarm_time"),
+    ("Alarms", "LastAlarmMessage", "", "alarm_last_alarm_message"),
+    ("Alarms", "LastAlarmSeverity", "", "alarm_last_alarm_severity"),
+    ("Alarms", "ActiveReasonCode", "", "alarm_reason_code"),
+    ("Alarms", "ActiveReasonText", "", "alarm_reason_text"),
+    ("Alarms", "MachineFailureActive", False, "alarm_alarm_failure"),
+    ("Alarms", "MaintenanceActive", False, "alarm_alarm_maintenance"),
+    ("Alarms", "QualityAlertActive", False, "alarm_alarm_quality"),
+)
+
+# Only present when the station configures a health model, so declared with the
+# Optional modelling rule and instantiated per station.
+_STATION_OPTIONAL_MEMBERS = (
+    ("OperationsState", "HealthState", 0, "health"),
+    ("OperationsState", "HealthPercent", 100.0, "health_pct"),
+)
+
+_BUFFER_MEMBERS = (
+    (None, "CurrentLevel", 0, "level"),
+    (None, "Capacity", 0, "capacity"),
+
+    ("Alarms", "ActiveAlarmCount", 0, "alarm_alarm_count"),
+    ("Alarms", "LastAlarmTime", _NO_ALARM_TIME, "alarm_last_alarm_time"),
+    ("Alarms", "LastAlarmMessage", "", "alarm_last_alarm_message"),
+    ("Alarms", "LastAlarmSeverity", "", "alarm_last_alarm_severity"),
+    ("Alarms", "HighLevelWarningActive", False, "alarm_alarm_high"),
+    ("Alarms", "LowLevelWarningActive", False, "alarm_alarm_low"),
+)
+
+
+def _declare_object_type(server, idx: int, type_nid: str, type_name: str,
+                         members, optional_members=()):
+    """Declare one ObjectType with its members and modelling rules."""
+    base = server.get_node(ua.NodeId(ua.ObjectIds.BaseObjectType))
+    type_node = base.add_object_type(_nid(type_nid, idx), _qn(type_name, idx))
+
+    groups = {}
+
+    def group_node(group):
+        if group is None:
+            return type_node
+        if group not in groups:
+            node = type_node.add_object(
+                _nid(f"{type_nid}.{group}", idx), _qn(group, idx))
+            node.set_modelling_rule(True)
+            groups[group] = node
+        return groups[group]
+
+    def declare(member_list, mandatory):
+        for group, name, default, _key in member_list:
+            parent = group_node(group)
+            path = f"{type_nid}.{group}.{name}" if group else f"{type_nid}.{name}"
+            var = parent.add_variable(_nid(path, idx), _qn(name, idx), default)
+            var.set_modelling_rule(mandatory)
+
+    declare(members, True)
+    declare(optional_members, False)
+    return type_node
+
+
+def declare_object_types(server, idx: int) -> dict:
+    """Declare StationType and BufferStorageUnitType once per address space."""
+    return {
+        "station": _declare_object_type(
+            server, idx, STATION_TYPE_NID, "StationType",
+            _STATION_MEMBERS, _STATION_OPTIONAL_MEMBERS),
+        "buffer": _declare_object_type(
+            server, idx, BUFFER_TYPE_NID, "BufferStorageUnitType",
+            _BUFFER_MEMBERS),
+    }
+
+
+def _collect_instance_vars(server, idx: int, node_prefix: str, members):
+    """Map vars_dict keys to the instantiated child nodes by NodeId.
+
+    Safe because asyncua derives instance child NodeIds as
+    "<parent>.<BrowseName>" for string-id parents — the same paths declared on
+    the type.
+    """
+    out = {}
+    for group, name, _default, key in members:
+        if key is None:
+            continue
+        path = (f"{node_prefix}.{group}.{name}" if group
+                else f"{node_prefix}.{name}")
+        out[key] = server.get_node(ua.NodeId(path, idx))
+    return out
+
+
+def create_station_node(server, parent_node, idx: int, station_name: str,
                         enable_health: bool = False,
                         pv_names_units: list = None,
-                        node_prefix: str = ""):
-    """ISA-95 Equipment node for one station ({name}_Equipment)."""
+                        node_prefix: str = "", station_type=None):
+    """ISA-95 Equipment node for one station, instantiated from StationType."""
     p = node_prefix
-    node_name = f"{station_name}_Equipment"
-    st_node = parent_node.add_object(_nid(p, idx), _qn(node_name, idx))
+    st_node = parent_node.add_object(
+        _nid(p, idx), _qn(f"{station_name}_Equipment", idx),
+        objecttype=station_type, instantiate_optional=enable_health)
 
-    vars_dict = {}
+    members = _STATION_MEMBERS + (_STATION_OPTIONAL_MEMBERS if enable_health else ())
+    vars_dict = _collect_instance_vars(server, idx, p, members)
 
-    id_p = f"{p}.Identification"
-    id_node = st_node.add_object(_nid(id_p, idx), _qn("Identification", idx))
-    id_node.add_variable(_nid(f"{id_p}.EquipmentID", idx), _qn("EquipmentID", idx), station_name)
-    id_node.add_variable(_nid(f"{id_p}.EquipmentClass", idx), _qn("EquipmentClass", idx), "WorkCell")
-    id_node.add_variable(_nid(f"{id_p}.Description", idx), _qn("Description", idx), f"Station {station_name}")
+    # Per-station identification values (the type carries only defaults).
+    server.get_node(
+        ua.NodeId(f"{p}.Identification.EquipmentID", idx)).set_value(station_name)
+    server.get_node(
+        ua.NodeId(f"{p}.Identification.Description", idx)
+    ).set_value(f"Station {station_name}")
 
-    os_p = f"{p}.OperationsState"
-    ops_state = st_node.add_object(_nid(os_p, idx), _qn("OperationsState", idx))
-    vars_dict["state"] = ops_state.add_variable(_nid(f"{os_p}.State", idx), _qn("State", idx), "IDLE")
-    if enable_health:
-        vars_dict["health"] = ops_state.add_variable(
-            _nid(f"{os_p}.HealthState", idx), _qn("HealthState", idx), 0)
-        vars_dict["health_pct"] = ops_state.add_variable(
-            _nid(f"{os_p}.HealthPercent", idx), _qn("HealthPercent", idx), 100.0)
-    vars_dict["cycle_phase"] = ops_state.add_variable(
-        _nid(f"{os_p}.CyclePhase", idx), _qn("CyclePhase", idx), 0.0)
-
-    op_p = f"{p}.OperationsPerformance"
-    ops_perf = st_node.add_object(_nid(op_p, idx), _qn("OperationsPerformance", idx))
-    vars_dict["partcount"] = ops_perf.add_variable(_nid(f"{op_p}.PartCount", idx), _qn("PartCount", idx), 0)
-    vars_dict["scrap_count"] = ops_perf.add_variable(_nid(f"{op_p}.ScrapCount", idx), _qn("ScrapCount", idx), 0)
-    vars_dict["rework_count"] = ops_perf.add_variable(_nid(f"{op_p}.ReworkCount", idx), _qn("ReworkCount", idx), 0)
-    vars_dict["blocked_time"] = ops_perf.add_variable(_nid(f"{op_p}.BlockedTime", idx), _qn("BlockedTime", idx), 0.0)
-    vars_dict["starved_time"] = ops_perf.add_variable(_nid(f"{op_p}.StarvedTime", idx), _qn("StarvedTime", idx), 0.0)
-    vars_dict["down_time"] = ops_perf.add_variable(_nid(f"{op_p}.DownTime", idx), _qn("DownTime", idx), 0.0)
-    vars_dict["processing_time"] = ops_perf.add_variable(_nid(f"{op_p}.ProcessingTime", idx), _qn("ProcessingTime", idx), 0.0)
-    vars_dict["idle_time"] = ops_perf.add_variable(_nid(f"{op_p}.IdleTime", idx), _qn("IdleTime", idx), 0.0)
-    vars_dict["minor_stop_time"] = ops_perf.add_variable(_nid(f"{op_p}.MinorStopTime", idx), _qn("MinorStopTime", idx), 0.0)
-
-    oee_p = f"{p}.OEE"
-    oee_node = st_node.add_object(_nid(oee_p, idx), _qn("OEE", idx))
-    vars_dict["availability"] = oee_node.add_variable(_nid(f"{oee_p}.Availability", idx), _qn("Availability", idx), 0.0)
-    vars_dict["performance"] = oee_node.add_variable(_nid(f"{oee_p}.Performance", idx), _qn("Performance", idx), 0.0)
-    vars_dict["quality"] = oee_node.add_variable(_nid(f"{oee_p}.Quality", idx), _qn("Quality", idx), 1.0)
-    vars_dict["oee"] = oee_node.add_variable(_nid(f"{oee_p}.OEE", idx), _qn("OEE", idx), 0.0)
-    vars_dict["good_parts"] = oee_node.add_variable(_nid(f"{oee_p}.GoodPartCount", idx), _qn("GoodPartCount", idx), 0)
-    vars_dict["defective_parts"] = oee_node.add_variable(_nid(f"{oee_p}.DefectivePartCount", idx), _qn("DefectivePartCount", idx), 0)
-
-    alarm_vars = create_alarms_node(st_node, idx, alarm_type="machine",
-                                    node_prefix=f"{p}.Alarms")
-    vars_dict.update({f"alarm_{k}": v for k, v in alarm_vars.items()})
-
+    # Process values are per-station, so they are added to the instance rather
+    # than declared on the type (an instance may have extra components).
     if pv_names_units:
-        pv_vars = create_process_values_node(
-            st_node, idx, pv_names_units, node_prefix=f"{p}.ProcessValues")
-        vars_dict.update(pv_vars)
+        vars_dict.update(create_process_values_node(
+            st_node, idx, pv_names_units, node_prefix=f"{p}.ProcessValues"))
 
     return vars_dict
 
@@ -246,21 +393,20 @@ def create_station_asset_node(parent_node, idx: int, station_name: str,
     return {}
 
 
-def create_storage_unit_node(parent_node, idx: int, unit_name: str, capacity: int,
-                             node_prefix: str = "", include_alarms: bool = True):
-    """ISA-95 StorageUnit node for a buffer."""
+def create_storage_unit_node(server, parent_node, idx: int, unit_name: str,
+                             capacity: int, node_prefix: str = "",
+                             buffer_type=None):
+    """ISA-95 StorageUnit node for a buffer, instantiated from
+    BufferStorageUnitType.
+
+    Capacity is a type member and so always present; a negative value means
+    unbounded (previously the node was omitted entirely in that case).
+    """
     p = node_prefix
-    unit_node = parent_node.add_object(_nid(p, idx), _qn(unit_name, idx))
-    vars_dict = {}
-    vars_dict["level"] = unit_node.add_variable(
-        _nid(f"{p}.CurrentLevel", idx), _qn("CurrentLevel", idx), 0)
-    if capacity >= 0:
-        vars_dict["capacity"] = unit_node.add_variable(
-            _nid(f"{p}.Capacity", idx), _qn("Capacity", idx), capacity)
-    if include_alarms:
-        alarm_vars = create_alarms_node(unit_node, idx, alarm_type="buffer",
-                                        node_prefix=f"{p}.Alarms")
-        vars_dict.update({f"alarm_{k}": v for k, v in alarm_vars.items()})
+    parent_node.add_object(_nid(p, idx), _qn(unit_name, idx),
+                           objecttype=buffer_type)
+    vars_dict = _collect_instance_vars(server, idx, p, _BUFFER_MEMBERS)
+    vars_dict["capacity"].set_value(capacity)
     return vars_dict
 
 

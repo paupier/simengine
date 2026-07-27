@@ -24,7 +24,7 @@ from simengine.config.loader import (
     validate_comms,
     validate_serial_topology,
 )
-from simengine.api.schema import build_schema
+from simengine.api.schema import build_nodeset2_xml, build_schema
 from simengine.engine.knowledge_graph import build_knowledge_graph
 from simengine.runtime.recipe_runner import parse_recipe, validate_recipe
 from simengine.runtime.run_manager import IDLE, RunConflictError, RunManager
@@ -312,21 +312,45 @@ def create_api_blueprint(run_manager: RunManager) -> Blueprint:
 
     # ----- wire schema export -----
 
-    @api.get("/api/v1/schema")
-    def get_schema():
-        scenario = request.args.get("scenario")
+    def _schema_config(scenario):
+        """(config, error_response) for a saved scenario — 400/404 per the
+        same conventions as GET /api/v1/comms."""
         if not scenario:
-            return jsonify({"error": "scenario query parameter required"}), 400
+            return None, (jsonify({"error": "scenario query parameter required"}), 400)
         data, _ = _load_scenarios_file()
         if scenario not in data:
-            return jsonify({"error": f"unknown scenario '{scenario}'"}), 404
-        config = _plain(data[scenario])
+            return None, (jsonify({"error": f"unknown scenario '{scenario}'"}), 404)
+        return _plain(data[scenario]), None
+
+    @api.get("/api/v1/schema")
+    def get_schema():
+        config, err = _schema_config(request.args.get("scenario"))
+        if err:
+            return err
         try:
             result = build_schema(config)
         except (KeyError, TypeError) as exc:
             return jsonify({"error": f"invalid config: {exc}"}), 400
-        result["scenario"] = scenario
+        result["scenario"] = request.args.get("scenario")
         return jsonify(result)
+
+    @api.get("/api/v1/schema/nodeset2.xml")
+    def get_nodeset2():
+        """OPC UA NodeSet2 XML — the standard information-model exchange
+        format, importable offline by Optix/Ignition/UaExpert."""
+        scenario = request.args.get("scenario")
+        config, err = _schema_config(scenario)
+        if err:
+            return err
+        try:
+            xml = build_nodeset2_xml(config)
+        except (KeyError, TypeError) as exc:
+            return jsonify({"error": f"invalid config: {exc}"}), 400
+        return xml, 200, {
+            "Content-Type": "application/xml; charset=utf-8",
+            "Content-Disposition":
+                f'attachment; filename="{scenario}.NodeSet2.xml"',
+        }
 
     # ----- plugins helper (comms page) -----
 

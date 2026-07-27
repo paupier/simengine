@@ -102,6 +102,12 @@ simengine/
 
 ### P0.4 pyproject.toml
 
+> **Superseded — `pyproject.toml` is authoritative for dependencies.** The block
+> below records the dependency set as originally planned. Two entries have since
+> changed: `sparkplug` moved off `mqtt-spb-wrapper` (it hard-pins paho 1.6.1
+> against our paho≥2.0) to vendored Eclipse Tahu pb2 + `protobuf`, and `opcua`
+> (python-opcua, archived upstream since 2021) was replaced by `asyncua>=2.0`.
+
 ```toml
 [project]
 name = "simengine"

@@ -12,13 +12,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.10', '3.11']
+        # 3.10 is the floor (pyproject requires-python). 3.12/3.13 are here to
+        # catch forward-compat breakage early — asyncua classifies through
+        # 3.13, but the rest of the stack is not otherwise exercised there.
+        python-version: ['3.10', '3.11', '3.12', '3.13']
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
 
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v7
       with:
         python-version: ${{ matrix.python-version }}
         cache: 'pip'
@@ -59,7 +62,7 @@ jobs:
         "
 
     - name: Upload coverage
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: coverage-report-py${{ matrix.python-version }}
         path: htmlcov/

@@ -6,6 +6,35 @@
 
 Hierarchy names are configurable per scenario via `enterprise`, `site`, `area`, `line_name` (all default to generic placeholders — see `config/scenarios.yaml`).
 
+## BrowseNames vs NodeIds
+
+The tree below shows **BrowseNames** — what you see when browsing, carrying the
+full configured ISA-95 hierarchy.
+
+**NodeIds are deliberately different**: they do *not* embed the ISA-95 path, so
+renaming `enterprise`, `site`, `area` or `line_name` never invalidates a client
+binding. Only one line is served per address space, so no line qualifier is
+needed.
+
+| Node | BrowseName path | NodeId |
+|---|---|---|
+| Line | `Acme > Plant1 > Area01 > Line1_Equipment` | `ns=2;s=Line` |
+| Line state | `… > OperationsState > SimTime` | `ns=2;s=Line.OperationsState.SimTime` |
+| Station | `… > Resources > Press01_Equipment` | `ns=2;s=Station.Press01` |
+| Station tag | `… > OperationsState > State` | `ns=2;s=Station.Press01.OperationsState.State` |
+| Process value | `… > ProcessValues > OilTemp` | `ns=2;s=Station.Press01.ProcessValues.OilTemp` |
+| Station asset | `… > Resources > Press01_Asset` | `ns=2;s=StationAsset.Press01` |
+| Buffer | `… > Resources > B1_StorageUnit` | `ns=2;s=Buffer.B1` |
+| Line asset | `… > Line1_Asset` | `ns=2;s=LineAsset` |
+
+The functional group segment (`OperationsState`, `OEE`, `ProcessValues`, …) is
+kept rather than flattening to `Station.Press01.State`, because process value
+names come from user config and could otherwise collide with a metric name — a
+PV called `State` or `OEE` is legal.
+
+Bind clients to NodeIds, not browse paths. `GET /api/v1/kg` publishes the exact
+NodeId for every metric and process value.
+
 ```
 Objects/
 └─ {Enterprise}/
@@ -91,7 +120,7 @@ Objects/
   │  └─ QualityAlertActive      (Boolean) any PV_* alarm active
   │
   └─ ProcessValues/             (only present if `process_values:` is configured)
-     └─ {PVName}                (Double)  one Float variable per configured process value
+     └─ {PVName}                (Double)  AnalogItemType + EngineeringUnits/EURange — see below
 ```
 
 Reason codes follow the taxonomy `FM_*` (failure modes, CRITICAL), `PV_*` (process-value threshold, HIGH), `CS_*` (cycle stops, WARNING), `MT_*` (maintenance, INFO) — see `src/simengine/engine/alarms.py`.
@@ -120,22 +149,104 @@ All variables are **read-only** during a run. `SimSpeedRatio` reflects the value
 | `ProcessValues/` | station has a `process_values:` list |
 | `SupportFunctions/ShiftManagement/` | scenario has `shifts.schedule` configured |
 
+## ObjectTypes
+
+The address space declares two ObjectTypes in `ns=2`, and every station and
+buffer is an **instance** of one rather than a bare `BaseObjectType`:
+
+| Type | NodeId | Instances |
+|---|---|---|
+| `StationType` | `ns=2;s=StationType` | `ns=2;s=Station.{name}` |
+| `BufferStorageUnitType` | `ns=2;s=BufferStorageUnitType` | `ns=2;s=Buffer.{name}` |
+
+This is what lets a SCADA client build **one** screen bound to `StationType`
+and reuse it for every station, instead of a hand-built screen per station.
+Both types are included in the NodeSet2 export, so an importing client resolves
+the `HasTypeDefinition` references.
+
+`StationType` declares `Identification`, `OperationsState`,
+`OperationsPerformance`, `OEE` and `Alarms` as mandatory members.
+`HealthState`/`HealthPercent` are **optional** members, instantiated only for
+stations that configure a `health:` block. `ProcessValues/` is per-station and
+added to the instance rather than declared on the type, since the PV set
+differs per station.
+
+Instance child NodeIds are derived by the standard instantiation rule
+`"{parent}.{BrowseName}"`, which is why typed nodes and readable NodeIds are
+not in tension here.
+
+## Process values are AnalogItemType
+
+Each configured process value is modelled as OPC UA `AnalogItemType` carrying
+two standard properties, so clients render units and default trend scaling
+without any per-tag configuration:
+
+- **`EngineeringUnits`** (`EUInformation`) — the PV's configured `unit`.
+- **`EURange`** (`Range`) — a *display* range derived from the PV's own config:
+  the span of the profile's operating parameters, widened to include any
+  configured `alarm_high`/`alarm_low` so a trend scaled to it always shows the
+  alarm thresholds. It is not a calibrated instrument range.
+
+A PV whose config yields no usable span (e.g. `constant_noise` with `mean: 0`
+and no `noise`) stays a plain `BaseDataVariableType` rather than being given an
+invented scale — `EURange` is mandatory on `AnalogItemType`, so it is all or
+nothing per tag.
+
 ## Browsing (Python client)
 
 ```python
-from opcua import Client
+from asyncua.sync import Client
+from asyncua import ua
 
 client = Client("opc.tcp://localhost:4840/simengine/")
 client.connect()
 
-root = client.get_objects_node()
-line = root.get_child(["2:Acme", "2:Plant1", "2:Area01", "2:Line1_Equipment"])
-press01 = line.get_child(["2:Resources", "2:Press01_Equipment"])
-state = press01.get_child(["2:OperationsState", "2:State"])
-print(state.get_value())  # "PROCESSING"
+# Preferred: resolve the namespace by URI (never hard-code the index) and
+# address nodes by their rename-invariant NodeId.
+idx = client.get_namespace_array().index("http://simengine.local/")
+state = client.get_node(ua.NodeId("Station.Press01.OperationsState.State", idx))
+print(state.read_value())  # "PROCESSING"
 
-oil_temp = press01.get_child(["2:ProcessValues", "2:OilTemp"])
-print(oil_temp.get_value())
+oil_temp = client.get_node(ua.NodeId("Station.Press01.ProcessValues.OilTemp", idx))
+print(oil_temp.read_value())
+
+# Browsing by BrowseName still works, but the path shifts whenever the
+# scenario's ISA-95 names are edited:
+root = client.nodes.objects
+line = root.get_child([f"{idx}:Acme", f"{idx}:Plant1",
+                       f"{idx}:Area01", f"{idx}:Line1_Equipment"])
 ```
 
 Or resolve NodeIds via the knowledge graph instead of walking browse paths — `GET /api/v1/kg?type=ProcessValue` returns the exact `ns=2;s=...` NodeId for every configured process value alongside its SparkplugB, MQTT, and REST addresses. See [`docs/ai_interface.md`](ai_interface.md).
+
+## Offline export: NodeSet2 XML
+
+`GET /api/v1/schema/nodeset2.xml?scenario=<name>` returns the scenario's
+address space as an OPC UA **NodeSet2** (`UANodeSet`) document — the standard
+information-model exchange format. The Comms tab exposes it as
+*Download NodeSet2 XML*.
+
+No run is required: the file is built from the saved scenario config through
+the same `build_address_space()` the live publisher uses, so it cannot drift
+from what a run actually serves. Import it into FactoryTalk Optix, Ignition or
+UaExpert to build and bind screens before the engine is even started.
+
+The export is deterministic — same config in, byte-identical XML out — so the
+file can be committed and diffed alongside the scenario it describes.
+
+**Bind by namespace URI, not index.** The exported file numbers the simengine
+namespace `ns=1` (NodeSet2 files use a document-local index), while the live
+server serves it at `ns=2`. Resolve `http://simengine.local/` in the client's
+namespace array and use the index it maps to — every conformant client
+(Optix included) does this by default. The NodeId *strings* are identical
+either way, and stable across restarts.
+
+**Types are included.** The export carries the `StationType` /
+`BufferStorageUnitType` ObjectTypes as well as the instance tree, so an
+importing client resolves every `HasTypeDefinition` reference and can template
+one screen per type. The ns=0 standard `Server` subtree is excluded.
+
+**NodeIds are rename-invariant** — see "BrowseNames vs NodeIds" above. Renaming
+`enterprise`, `site`, `area` or `line_name` changes BrowseNames only, so an
+already-imported NodeSet2 keeps working; re-export only if you want the browse
+labels refreshed.
