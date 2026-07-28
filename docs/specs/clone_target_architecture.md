@@ -4,6 +4,8 @@
 **Refines:** `clone_reuse_evaluation.md` (the per-module reuse audit).
 **Extended by:** `clone_ai_interface_spec.md` — knowledge graph of the data model, MCP server (:8765), and BYO-key Anthropic chat in the UI; adds Phase 7 to the build plan. That document established *what can be reused*; this one defines *what the clone actually is*: a lean real-time station simulation engine whose only mandatory outputs are **OPC UA (TCP)**, **OPC UA PubSub over MQTT**, and **SparkplugB**, controlled through a **REST interface**, with all historian/analytics/observability machinery moved to separate optional packages.
 
+> **Historical planning document.** Recipes (the `/api/v1/runs/recipe` and `/api/v1/recipes` endpoints, `recipe_runner.py`, the Configure recipe editor) were removed entirely after this was written — scenarios + per-shift performance factors replaced them. See `CLAUDE.md` and `README.md` for current state.
+
 ---
 
 ## 1. Design Rule

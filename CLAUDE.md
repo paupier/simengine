@@ -51,7 +51,9 @@ src/simengine/
                 collect.py (snapshot-diff edge detection)
   api/          rest.py (+create_app), tools.py (12-tool registry), mcp_server.py,
                 chat.py, config_files.py, diagnostics.py (MQTT/REST connectivity
-                probe, no engine coupling), ui/ (Jinja templates)
+                probe, no engine coupling), schema.py (OPC UA/MQTT/SparkplugB
+                wire-schema export + NodeSet2 XML, memoized per config),
+                ui/ (Jinja templates)
   plugins.py    historian registry with install-hint errors
 src/simengine_historian_{csv,influx,neo4j}/   optional backends (register() hook)
 config/scenarios.yaml   §3 schema

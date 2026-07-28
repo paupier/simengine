@@ -4,6 +4,8 @@
 **Audience:** An AI coding agent (or developer) executing autonomously. Where this document conflicts with `clone_reuse_evaluation.md` or `clone_target_architecture.md`, **this document governs** — it exists to remove every judgment call those documents left open.
 **Companion docs:** `clone_reuse_evaluation.md` (what to reuse and why), `clone_target_architecture.md` (architecture and rationale).
 
+> **Historical planning document.** This describes the plan as originally written and largely built. Since then: **recipes were removed entirely** (`recipe_runner.py`, `config/recipes/`, the `POST /api/v1/runs/recipe` and `/api/v1/recipes` endpoints, the `start_recipe`/`list_recipes`/`get_recipe`/`update_recipe` tools, and the Configure UI's recipe editor are all gone — scenarios + per-shift performance factors are the supported model now), and the MCP/chat tool registry is **12 tools, not 16**. See `CLAUDE.md` and `README.md` for current state; git history for the removal.
+
 ---
 
 ## 0. Guardrails for the Executing Agent

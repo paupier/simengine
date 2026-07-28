@@ -4,6 +4,8 @@
 **Scope:** Runtime processing speed, container/CI deployment footprint, and scenario/model rollout lifecycle.
 **Constraint:** All runtime optimizations in this spec are **transparent** — they must not change any observable output (OPC UA values, historian events, KPIs, reproducibility under `--seed`). Behavior-changing optimizations are listed under *Deferred* only.
 
+> **Historical planning document.** References to `config/recipes/*.yaml` and scenario-bundling by recipe below no longer apply — recipes were removed after this was written. See `CLAUDE.md` and `README.md` for current state.
+
 ---
 
 ## Part 1 — Runtime Performance
