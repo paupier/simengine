@@ -10,17 +10,26 @@ from simengine.api.i3x_build import build_i3x_objects, error_response, success_r
 
 I3X_SPEC_VERSION = "1.0"
 
-# Cache of the last-built object graph, keyed by run_id -- rebuilt only when
-# the active run changes, mirroring how run_manager.knowledge_graph itself is
-# "built at run start, static per run."
+# Cache of the last-built object graph, keyed by id(run_manager.knowledge_graph)
+# -- rebuilt only when the active run changes, mirroring how
+# run_manager.knowledge_graph itself is "built at run start, static per run."
+#
+# Keyed on object identity rather than run_manager.run_id: run_id is
+# f"{scenario}_{datetime.now().strftime('%Y%m%d_%H%M%S')}" (1-second
+# resolution), so stopping and restarting the same scenario within the same
+# wall-clock second produces an identical run_id string and would leave this
+# cache serving the previous run's stale graph. A fresh KnowledgeGraph
+# instance is built on every start() (run_manager.py), so id() is
+# collision-proof where the timestamp string isn't.
 _graph_cache = {"run_id": None, "graph": None}
 
 
 def _current_graph(run_manager):
     if run_manager.knowledge_graph is None:
         return None
-    if _graph_cache["run_id"] != run_manager.run_id:
-        _graph_cache["run_id"] = run_manager.run_id
+    cache_key = id(run_manager.knowledge_graph)
+    if _graph_cache["run_id"] != cache_key:
+        _graph_cache["run_id"] = cache_key
         _graph_cache["graph"] = build_i3x_objects(run_manager.knowledge_graph)
     return _graph_cache["graph"]
 

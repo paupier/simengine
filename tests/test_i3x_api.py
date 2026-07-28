@@ -131,5 +131,12 @@ class TestNamespacesTypesRelationshiptypes:
         _start_with_i3x(c, rm, scenario="demo_line")  # a scenario with different node types (health)
         assert rm.run_id != first_run_id
         second = {o["elementId"] for o in c.get("/i3x/v1/objecttypes").get_json()["result"]}
-        # both are valid graphs; the point is the cache actually reflects the new run
-        assert second  # non-empty, and no stale exception from a mismatched cache key
+        # Prove the cache actually picked up the new run's graph, not just that
+        # it's non-empty (which a stale cache would also satisfy):
+        # demo_line's Press01 has a failure_modes block -- two_station_minimal
+        # has no health config at all -- so "type:FailureMode" is a
+        # scenario-specific fingerprint that must appear in the new graph and
+        # must not have been present in the old one.
+        assert "type:FailureMode" not in first
+        assert "type:FailureMode" in second
+        assert second != first
