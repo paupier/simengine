@@ -68,7 +68,7 @@ Open `http://localhost:8080/` for the dashboard (material-flow strip, per-statio
 OPC UA clients ─────┤ OPCUAServerPublisher       :4840  │
 MQTT (Part14/SpB) ──┤ OPCUAMqttPublisher / SparkplugB   │──── Mosquitto broker
 Browser UI ─────────┤ Flask: REST + UI + Chat    :8080  │
-Claude Desktop/Code ┤ MCP server (FastMCP)      :8765   │──── Anthropic API
+Claude Desktop/Code ┤ MCP server (MCPServer)    :8765   │──── Anthropic API
 any MCP host        │        │                          │     (BYO key)
                     │  RunManager · LineEngine ·         │
                     │  Snapshot · KnowledgeGraph          │

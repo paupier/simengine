@@ -91,7 +91,7 @@ Two further consequences bite anything that touches the address space: `asyncua.
 
 ### AI interface
 
-Knowledge graph (`engine/knowledge_graph.py`, stdlib-only, deterministic, built at run start, owned by run_manager) binds every metric to all four wire addresses. `api/tools.py` is the one 12-tool registry behind both the MCP server (FastMCP, `:8765/mcp`, streamable HTTP, control tools always on — treat the port like :8080) and the `/assistant` chat (Anthropic tool_runner, key in process memory only). See `docs/ai_interface.md`.
+Knowledge graph (`engine/knowledge_graph.py`, stdlib-only, deterministic, built at run start, owned by run_manager) binds every metric to all four wire addresses. `api/tools.py` is the one 12-tool registry behind both the MCP server (`mcp`'s `MCPServer`, `:8765/mcp`, streamable HTTP, control tools always on — treat the port like :8080) and the `/assistant` chat (Anthropic tool_runner, key in process memory only). See `docs/ai_interface.md`.
 
 ### Frontend safety (`api/ui/*.html`)
 

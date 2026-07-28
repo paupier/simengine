@@ -1,4 +1,4 @@
-"""MCP server (AI interface spec §2): FastMCP, streamable HTTP, :8765/mcp.
+"""MCP server (AI interface spec §2): MCPServer, streamable HTTP, :8765/mcp.
 
 Runs in the engine process alongside REST — direct access to the run manager,
 live snapshot, knowledge graph, and validators; no OPC UA round-trips.
@@ -21,21 +21,25 @@ MCP_PATH = "/mcp"
 
 def create_mcp_server(registry: ToolRegistry, host: str = "0.0.0.0",
                       port: int = MCP_PORT):
-    """Build the FastMCP server with every registry tool attached."""
-    from mcp.server.fastmcp import FastMCP
+    """Build the MCPServer with every registry tool attached.
 
-    mcp = FastMCP(
+    `host`/`port` are stashed as attributes rather than passed to the
+    constructor: mcp 2.0 moved them from `FastMCP.__init__` to the
+    `.run(transport="streamable-http", ...)` call (`MCPServer.__init__` no
+    longer accepts them at all).
+    """
+    from mcp.server.mcpserver import MCPServer
+
+    mcp = MCPServer(
         "simengine",
         instructions=(
             "Live control and observation of a simengine station-simulation "
             "run: read line/station state, resolve metrics to wire addresses "
             "through the knowledge graph, and start/stop/configure runs."
         ),
-        host=host,
-        port=port,
-        streamable_http_path=MCP_PATH,
-        stateless_http=True,
     )
+    mcp.host = host
+    mcp.port = port
     for name, func in registry.all_tools():
         mcp.add_tool(func, name=name)
     return mcp
@@ -48,7 +52,8 @@ def start_mcp_server_thread(registry: ToolRegistry, host: str = "0.0.0.0",
 
     def _serve():
         try:
-            mcp.run(transport="streamable-http")
+            mcp.run(transport="streamable-http", host=mcp.host, port=mcp.port,
+                     streamable_http_path=MCP_PATH, stateless_http=True)
         except Exception:  # pragma: no cover - server crash is logged, not fatal
             logger.exception("MCP server crashed")
 
