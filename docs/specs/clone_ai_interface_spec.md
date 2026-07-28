@@ -4,6 +4,8 @@
 **Extends:** `clone_target_architecture.md` (lean core + optional plugins) and `clone_build_plan.md` (adds Phase 7).
 **Decisions baked in:** MCP tools have **full control always** (read + run control + config edits, no gating flag); embedded chat is **Anthropic-only** (other LLM providers reach the system through external MCP hosts); the MCP server is exposed **both** as a network endpoint for external hosts and as the tool registry behind the built-in UI chat.
 
+> **Historical planning document.** The tool registry here includes recipe tools (`list_recipes`, `get_recipe`, `start_recipe`, `update_recipe`) and a `Recipe` KG node type — all removed along with recipes generally. Current registry is **12 tools** (8 read, 4 control), no `Recipe` node type. See `docs/ai_interface.md` for current state.
+
 ---
 
 ## 1. Knowledge Graph of the Data Model

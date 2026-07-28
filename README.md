@@ -11,12 +11,12 @@ A real-time **station simulation engine** for production lines — a PLC-replace
 ## What it does
 
 - **Simulates** configurable serial lines of stations (2+, no hard upper limit) with buffers between them
-- **Degrades** stations through a configurable health model — competing-risk failure modes (Weibull/exponential/lognormal MTTF/MTTR), condition-based maintenance vs. run-to-failure, short cycle stops (jams, no-picks) distinct from full failures
+- **Degrades** stations through a run-to-failure health model — competing-risk failure modes (Weibull/exponential/lognormal MTTF/MTTR), short cycle stops (jams, no-picks) distinct from full failures
 - **Synthesizes** continuous process values per station — force, temperature, position — via four signal profiles (`cycle_peak`, `first_order_lag`, `cycle_ramp`, `constant_noise`), with threshold alarms and hysteresis
 - **Rolls** quality per completed cycle (health-correlated defect rate, optional rework) and tracks OEE (per-station and bottleneck line-level) every step
-- **Publishes** the same live state on three protocols at once — OPC UA TCP (ISA-95 address space), OPC UA PubSub over MQTT (Part 14 JSON), and SparkplugB (Protobuf, delta-encoded) — with a reason-coded alarm surface (`FM_*`, `PV_*`, `CS_*`, `MT_*`) instead of flat booleans
-- **Runs** multi-segment production recipes with stochastic changeovers
-- **Exposes** a knowledge graph binding every metric to all of its wire addresses (OPC UA NodeId, SparkplugB coordinates, MQTT topic, REST path), consumed by an MCP server and an embedded LLM chat
+- **Publishes** the same live state on three protocols at once — OPC UA TCP (ISA-95 address space, `StationType`/`BufferStorageUnitType` ObjectTypes, `AnalogItemType` process values), OPC UA PubSub over MQTT (Part 14 JSON), and SparkplugB (Protobuf, delta-encoded) — with a reason-coded alarm surface (`FM_*`, `PV_*`, `CS_*`, `MT_*`) instead of flat booleans
+- **Varies by shift** — a scenario's shift schedule can make a shift run proportionally slower (`cycle_time_factor`, hits Performance) and/or less reliable (`health_degrade_factor`, hits Availability), independently, line-wide
+- **Exposes** a knowledge graph binding every metric to all of its wire addresses (OPC UA NodeId, SparkplugB coordinates, MQTT topic, REST path), consumed by an MCP server and an embedded LLM chat, plus a wire-schema export (including OPC UA NodeSet2 XML) so an integrator can see or import the exact address space without a live run
 - **Deterministic** by construction: `--seed N` gives a byte-identical trajectory, forever, regardless of run length
 
 ---
@@ -33,9 +33,6 @@ python3 -m venv .venv
 # Faster than real time (10 sim-seconds per wall-second)
 .venv/bin/python -m simengine --scenario press_line_8 --seed 42 --speed-ratio 10
 
-# Multi-segment recipe
-.venv/bin/python -m simengine --recipe monday_schedule --seed 42
-
 # API/UI only — start runs later via REST, the web UI, or an MCP tool
 .venv/bin/python -m simengine
 ```
@@ -45,7 +42,6 @@ python -m simengine --help
 ```
 ```
 --scenario SCENARIO   start this scenario immediately
---recipe RECIPE       start this recipe immediately
 --seed SEED
 --speed-ratio SPEED_RATIO   sim seconds per wall second (1.0 = real time)
 --port PORT            REST/UI port (default 8080)
@@ -54,7 +50,7 @@ python -m simengine --help
 --verbose
 ```
 
-Open `http://localhost:8080/` for the dashboard (material-flow strip, per-station state/health/OEE/process values), `/configure` for the scenario and recipe editor, `/comms` to toggle the three protocol outputs, and `/assistant` for the chat page (requires `pip install -e ".[chat]"` and your own Anthropic API key, entered in the browser and held only in server process memory for that session).
+Open `http://localhost:8080/` for the dashboard (material-flow strip, per-station state/health/OEE/process values), `/configure` for the scenario editor (plant-model view/edit, station and shift editing, wire-schema export), `/comms` to toggle the three protocol outputs, `/diagnostics` for a raw MQTT publish / REST scratch-value probe with no engine coupling, and `/assistant` for the chat page (requires `pip install -e ".[chat]"` and your own Anthropic API key, entered in the browser and held only in server process memory for that session).
 
 ### Connect a client
 
@@ -96,10 +92,10 @@ Scenarios live in `config/scenarios.yaml`. Three are shipped:
 | Scenario | Stations | What it exercises |
 |---|---|---|
 | `two_station_minimal` | 2 | Smallest valid line — no health, no PVs |
-| `demo_line` | 3 | Health/CBM, one failure mode, cycle stops, all four PV profiles, alarms |
-| `press_line_8` | 8 | Full feature set at scale — health, failure modes, cycle stops, PVs, SPC, shifts |
+| `demo_line` | 3 | Health degradation, one failure mode, cycle stops, all four PV profiles, alarms |
+| `press_line_8` | 8 | Full feature set at scale — health, failure modes, cycle stops, PVs, SPC, per-shift performance factors |
 
-A station config accepts `cycle_time` (or `target_ppm`, which takes precedence — `cycle_time = 60/ppm`), `defect_rate`, `health` (`h_max`, `p_degrade`, `cbm_threshold`, `mttr`), `failure_modes`, `cycle_stops`, `process_values`, and `spc.enabled`. Buffers are implicit-serial: exactly `len(stations) - 1`, connecting station *i* to *i+1*. See `CLAUDE.md` for the full schema reference and `docs/specs/clone_build_plan.md §3` for the governing spec.
+A station config accepts `cycle_time` (or `target_ppm`, which takes precedence — `cycle_time = 60/ppm`), `defect_rate`, `health` (`h_max`, `p_degrade`, `mttr` — run-to-failure only, no condition-based-maintenance path), `failure_modes`, `cycle_stops`, `process_values`, and `spc.enabled`. Buffers are implicit-serial: exactly `len(stations) - 1`, connecting station *i* to *i+1*. A scenario can also carry a `shifts.schedule` — each entry may set `cycle_time_factor` and/or `health_degrade_factor` to make that shift run slower and/or less reliable, line-wide. See `CLAUDE.md` for the full schema reference and `docs/specs/clone_build_plan.md §3` for the original governing spec (superseded in places — see the note at the top of that document).
 
 ```yaml
 demo_line:
@@ -110,7 +106,6 @@ demo_line:
       health:
         h_max: 5
         p_degrade: 0.001
-        cbm_threshold: 5          # == h_max means run-to-failure
         mttr: {distribution: lognormal, mean: 120, std: 30}
       failure_modes:
         - name: bearing_wear
@@ -137,16 +132,6 @@ demo_line:
     sparkplugb: {enabled: false, broker: "mqtt://mosquitto:1883", group_id: "Area01", edge_node_id: "Line1"}
 ```
 
-### Recipes
-
-Multi-segment production schedules with stochastic changeovers, in `config/recipes/`:
-
-```bash
-python -m simengine --recipe monday_schedule --seed 42
-```
-
-Each segment references a base scenario with optional per-station overrides and a `quantity` (batch) or `duration` (time-boxed) stop condition. During changeover, line state is `CHANGEOVER` on OPC UA.
-
 ---
 
 ## REST API
@@ -156,13 +141,14 @@ GET    /api/v1/state                    Full snapshot: line KPIs, per-station st
 GET    /api/v1/state/stations/{name}    One station
 GET    /api/v1/runs/current             run_id, scenario, sim_time, RUNNING/IDLE
 POST   /api/v1/runs                     {scenario, seed?, speed_ratio?} -> 201 {run_id}
-POST   /api/v1/runs/recipe              {recipe, seed?} -> 201 {run_id}
 DELETE /api/v1/runs/current             Stop the active run
 
-GET    /api/v1/scenarios                List / GET/PUT/POST individual scenarios
-GET    /api/v1/recipes                  List / GET/PUT/POST individual recipes
+GET    /api/v1/scenarios                List / GET/PUT/POST individual scenarios; POST .../validate for a draft
 GET/PUT /api/v1/comms                   Read/update a scenario's protocol outputs (applies next run)
-GET    /api/v1/kg                       Knowledge graph, node-link JSON (?type=, ?station=, ?edge=)
+GET    /api/v1/kg                       Knowledge graph, node-link JSON (?type=, ?station=, ?edge=); POST /preview for a draft config
+GET    /api/v1/schema                   OPC UA/MQTT/SparkplugB wire schema for a saved scenario, no run required
+GET    /api/v1/schema/nodeset2.xml      Same address space as an OPC UA NodeSet2 document (importable offline)
+GET/PUT /api/v1/diagnostics/value       Raw REST scratch-value probe; POST /mqtt-publish for a one-shot MQTT publish
 GET    /api/v1/plugins                  Which optional historian/analysis packages are installed
 GET    /healthz                         Liveness
 ```
@@ -188,7 +174,7 @@ Metric names are identical across all three encodings — only transport and enc
 A deterministic, stdlib-only **knowledge graph** is built at run start from the scenario config, binding every process value and metric to all four of its wire addresses (OPC UA NodeId, SparkplugB coordinates, MQTT topic, REST path). It backs:
 
 - **`GET /api/v1/kg`** — node-link JSON for any consumer
-- **MCP server** at `:8765/mcp` — 16 tools (10 read, 6 always-on control) shared with the REST API and the chat, so external hosts (Claude Desktop, Claude Code, or any MCP client) get full read/control access
+- **MCP server** at `:8765/mcp` — 12 tools (8 read, 4 always-on control) shared with the REST API and the chat, so external hosts (Claude Desktop, Claude Code, or any MCP client) get full read/control access
 - **`/assistant` chat page** — an Anthropic-only agent loop over the same tools, with the knowledge graph as a cached system prompt; your API key lives only in server process memory for the session, never on disk or in logs
 
 Full details, connection snippet, and the security note (control tools are always on — treat `:8765` like `:8080`, a trusted-network interface) are in [`docs/ai_interface.md`](docs/ai_interface.md).
@@ -230,11 +216,11 @@ The Dockerfile is a multi-stage build (builder venv, slim runtime image); pass `
 ## Testing
 
 ```bash
-pytest tests/ -v                                    # 363 tests, all local, no external services
+pytest tests/ -v                                    # 408 tests, all local, no external services
 flake8 src/ tests/ --count --select=E9,F63,F7,F82    # error-only lint pass
 ```
 
-Coverage includes: engine determinism (identical snapshot JSON under a fixed seed across arbitrary run lengths), the full 7-state machine, run-to-failure and CBM health paths, quality conservation, cycle-stop firing, hand-computed OEE fixtures, all four process-value profiles, OPC UA address-space shape and write-batching, REST CRUD and run-lifecycle (409 on double-start), SparkplugB birth/delta/rebirth/seq framing, the plugin registry, MCP tool registry (including path-traversal rejection on recipe names), and BYO-key chat (SSE event shapes, key-never-persisted).
+Coverage includes: engine determinism (identical snapshot JSON under a fixed seed across arbitrary run lengths), the full 7-state machine, run-to-failure health paths, quality conservation, cycle-stop firing, hand-computed OEE fixtures, all four process-value profiles, per-shift `cycle_time_factor`/`health_degrade_factor` (deterministic edge-case probabilities, not statistical sampling), OPC UA address-space shape/ObjectTypes/write-batching, wire-schema and NodeSet2 export (no-drift checks against the live publishers), REST CRUD and run-lifecycle (409 on double-start), SparkplugB birth/delta/rebirth/seq framing, the plugin registry, the MCP tool registry, and BYO-key chat (SSE event shapes, key-never-persisted).
 
 ---
 
@@ -246,20 +232,25 @@ src/simengine/
                 station.py (7-state machine), health.py, process_values.py,
                 alarms.py, knowledge_graph.py
   config/       loader.py (schema + validators), distributions.py
-  publishers/   OPC UA TCP, OPC UA-over-MQTT, SparkplugB, shared metric map
-  runtime/      run_manager.py (lifecycle, run_id, recipes), shift_manager.py,
-                spc.py, fault_injector.py
+  publishers/   OPC UA TCP (asyncua; ObjectTypes + AnalogItemType PVs),
+                OPC UA-over-MQTT, SparkplugB, shared metric map
+  runtime/      run_manager.py (lifecycle, run_id, shift-factor wiring),
+                shift_manager.py, spc.py
   events/       SimEvent + EventHistorian ABC, snapshot-diff event collector
-  api/          rest.py, tools.py (16-tool registry), mcp_server.py, chat.py,
-                ui/ (Jinja templates: dashboard, configure, comms, chat)
+  api/          rest.py, tools.py (12-tool registry), mcp_server.py, chat.py,
+                config_files.py, diagnostics.py (MQTT/REST connectivity probe,
+                no engine coupling), schema.py (wire-schema + NodeSet2 export),
+                ui/ (Jinja templates: dashboard, configure, comms, diagnostics, chat)
   plugins.py    historian registry with install-hint errors
 src/simengine_historian_{csv,influx,neo4j}/   optional historian backends
-config/         scenarios.yaml, recipes/*.yaml
+config/         scenarios.yaml
 docker/         Dockerfile, docker-compose.yml (mosquitto + influx/graph profiles)
-docs/           address_space.md, ai_interface.md, specs/ (governing build-plan documents)
+docs/           address_space.md, ai_interface.md, deployment.md,
+                fleet_deployment.md, specs/ (original build-plan documents,
+                since superseded in places — see notes at the top of each)
 ```
 
-See `CLAUDE.md` for engine invariants (determinism, health/CBM semantics, KPI formulas) that should not be changed casually, and `docs/specs/` for the original architecture and build-plan documents this engine was built from.
+See `CLAUDE.md` for engine invariants (determinism, health/run-to-failure semantics, KPI formulas) that should not be changed casually, and `docs/specs/` for the original architecture and build-plan documents this engine was built from (superseded in places — see the note at the top of each).
 
 ---
 
