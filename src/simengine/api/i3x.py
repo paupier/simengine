@@ -10,8 +10,11 @@ from simengine.api.i3x_build import (
     build_i3x_objects, error_response, make_vqt, run_quality, success_response,
     utc_now_iso,
 )
+from simengine.api.i3x_subscriptions import SubscriptionRegistry
 
 I3X_SPEC_VERSION = "1.0"
+
+_subscriptions = SubscriptionRegistry()
 
 # {node_type: metric-name -> snapshot field name}, copied from the exact maps
 # already used to build each Metric node's REST address in
@@ -241,6 +244,43 @@ def create_i3x_blueprint(run_manager) -> Blueprint:
             results.append({"success": True, "elementId": eid, "result": {
                 "isComposition": obj["isComposition"], "values": [],
             }})
+        return jsonify({"success": all(r["success"] for r in results), "results": results})
+
+    @i3x.post("/subscriptions")
+    def create_subscription():
+        body = request.get_json(force=True, silent=True) or {}
+        result = _subscriptions.create(body["clientId"], body.get("displayName"))
+        return jsonify(success_response(result))
+
+    @i3x.post("/subscriptions/register")
+    def register_subscription():
+        body = request.get_json(force=True, silent=True) or {}
+        graph = _current_graph(run_manager)
+        known_ids = {o["elementId"] for o in graph["objects"]}
+        results = _subscriptions.register(body["clientId"], body["subscriptionId"],
+                                          body.get("elementIds", []), known_ids)
+        if results is None:
+            return jsonify(error_response("Subscription not found", 404)), 404
+        return jsonify({"success": all(r["success"] for r in results), "results": results})
+
+    @i3x.post("/subscriptions/unregister")
+    def unregister_subscription():
+        body = request.get_json(force=True, silent=True) or {}
+        results = _subscriptions.unregister(body["clientId"], body["subscriptionId"], body.get("elementIds", []))
+        if results is None:
+            return jsonify(error_response("Subscription not found", 404)), 404
+        return jsonify({"success": all(r["success"] for r in results), "results": results})
+
+    @i3x.post("/subscriptions/delete")
+    def delete_subscriptions():
+        body = request.get_json(force=True, silent=True) or {}
+        results = _subscriptions.delete(body["clientId"], body.get("subscriptionIds", []))
+        return jsonify({"success": all(r["success"] for r in results), "results": results})
+
+    @i3x.post("/subscriptions/list")
+    def list_subscriptions():
+        body = request.get_json(force=True, silent=True) or {}
+        results = _subscriptions.list(body["clientId"], body.get("subscriptionIds", []))
         return jsonify({"success": all(r["success"] for r in results), "results": results})
 
     return i3x

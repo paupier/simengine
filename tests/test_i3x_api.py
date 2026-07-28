@@ -243,3 +243,47 @@ class TestObjectsHistory:
         })
         result = resp.get_json()["results"][0]["result"]
         assert result["values"] == []
+
+
+class TestSubscriptionCrud:
+    def test_create_then_register_then_list(self, client):
+        c, rm = client
+        _start_with_i3x(c, rm)
+
+        created = c.post("/i3x/v1/subscriptions",
+                         json={"clientId": "test-client", "displayName": "watch S1"}).get_json()
+        assert created["success"] is True
+        sub_id = created["result"]["subscriptionId"]
+
+        reg = c.post("/i3x/v1/subscriptions/register", json={
+            "clientId": "test-client", "subscriptionId": sub_id, "elementIds": ["metric:S1.State"],
+        }).get_json()
+        assert reg["results"][0]["success"] is True
+
+        listed = c.post("/i3x/v1/subscriptions/list",
+                        json={"clientId": "test-client", "subscriptionIds": [sub_id]}).get_json()
+        assert listed["results"][0]["result"]["monitoredObjects"] == [{"elementId": "metric:S1.State"}]
+
+    def test_register_unknown_element_404s(self, client):
+        c, rm = client
+        _start_with_i3x(c, rm)
+        sub_id = c.post("/i3x/v1/subscriptions", json={"clientId": "c1"}).get_json()["result"]["subscriptionId"]
+        resp = c.post("/i3x/v1/subscriptions/register",
+                      json={"clientId": "c1", "subscriptionId": sub_id, "elementIds": ["ghost"]})
+        assert resp.get_json()["results"][0]["responseDetail"]["status"] == 404
+
+    def test_register_on_missing_subscription_404s(self, client):
+        c, rm = client
+        _start_with_i3x(c, rm)
+        resp = c.post("/i3x/v1/subscriptions/register",
+                      json={"clientId": "c1", "subscriptionId": "no-such-sub", "elementIds": ["metric:S1.State"]})
+        assert resp.status_code == 404
+
+    def test_delete_subscription(self, client):
+        c, rm = client
+        _start_with_i3x(c, rm)
+        sub_id = c.post("/i3x/v1/subscriptions", json={"clientId": "c1"}).get_json()["result"]["subscriptionId"]
+        resp = c.post("/i3x/v1/subscriptions/delete", json={"clientId": "c1", "subscriptionIds": [sub_id]})
+        assert resp.get_json()["results"][0]["success"] is True
+        listed = c.post("/i3x/v1/subscriptions/list", json={"clientId": "c1", "subscriptionIds": [sub_id]}).get_json()
+        assert listed["results"][0]["success"] is False
