@@ -93,6 +93,12 @@ Two further consequences bite anything that touches the address space: `asyncua.
 
 Knowledge graph (`engine/knowledge_graph.py`, stdlib-only, deterministic, built at run start, owned by run_manager) binds every metric to all four wire addresses. `api/tools.py` is the one 12-tool registry behind both the MCP server (FastMCP, `:8765/mcp`, streamable HTTP, control tools always on — treat the port like :8080) and the `/assistant` chat (Anthropic tool_runner, key in process memory only). See `docs/ai_interface.md`.
 
+### Frontend safety (`api/ui/*.html`)
+
+No frontend framework — plain Jinja templates + vanilla JS, with two established-safe patterns already in use: `note(id, text, isErr)` (`configure.html`) sets `.textContent`, never `.innerHTML`, for user-facing messages; everywhere else builds an HTML string via template literal and escapes every interpolated value through `esc()` (`base.html`, HTML-entity escaping). Any new interpolation into `.innerHTML` must go through `esc()` — grep for `innerHTML` before opening a PR that touches these templates, and check every `${...}` inside one.
+
+`comms.html`'s `viewSchema()` catch block was the one place this had drifted: `` `<div class="msg err">${e.message}</div>` `` assigned to `.innerHTML` with no `esc()` — fixed. Confirmed via Playwright that the escaped version neutralizes a payload correctly (`<img onerror=...>` renders as literal text, doesn't fire). The specific live call site happened to be inert anyway, for an unrelated reason: `jget()` (`base.html`) does `throw new Error()` with no message argument, so `.message` is always empty for `jget`-sourced errors regardless of escaping — `jsend()` does populate `.message` from the server's `error` field correctly, unlike `jget()`, and several REST endpoints echo unsanitized query params straight into that field (e.g. `f"unknown scenario '{scenario}'"`). Fix the escaping anyway: don't treat "the current caller happens not to reach it" as a reason to skip `esc()` on a new `.innerHTML` site — the next caller might.
+
 ## Known deferred items
 
 - Parent Telegraf generator + Grafana dashboards (target the parent address space; events reach InfluxDB directly via the historian backend).
