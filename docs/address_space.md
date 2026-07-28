@@ -250,3 +250,11 @@ one screen per type. The ns=0 standard `Server` subtree is excluded.
 `enterprise`, `site`, `area` or `line_name` changes BrowseNames only, so an
 already-imported NodeSet2 keeps working; re-export only if you want the browse
 labels refreshed.
+
+**The `Aliases` block is standard exporter output, not simengine content.**
+Every NodeSet2 file carries an `<Aliases>` element mapping common reference-
+and data-type NodeIds (`i=40`, `i=58`, ...) to short names (`HasComponent`,
+`BaseObjectType`, ...) — `asyncua`'s `XmlExporter` emits it automatically per
+the UANodeSet XSD. If your OPC UA client (e.g. Optix) surfaces `Aliases` as
+its own folder on import, that's the client organizing its project view, not
+something simengine authored or configured.
