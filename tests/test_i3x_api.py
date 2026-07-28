@@ -140,3 +140,106 @@ class TestNamespacesTypesRelationshiptypes:
         assert "type:FailureMode" not in first
         assert "type:FailureMode" in second
         assert second != first
+
+
+class TestObjects:
+    def test_get_objects_returns_full_list(self, client):
+        c, rm = client
+        _start_with_i3x(c, rm)
+        resp = c.get("/i3x/v1/objects")
+        assert resp.status_code == 200
+        elem_ids = {o["elementId"] for o in resp.get_json()["result"]}
+        assert "station:S1" in elem_ids
+
+    def test_objects_list_by_id(self, client):
+        c, rm = client
+        _start_with_i3x(c, rm)
+        resp = c.post("/i3x/v1/objects/list", json={"elementIds": ["station:S1", "ghost"]})
+        body = resp.get_json()
+        assert body["results"][0]["success"] is True
+        assert body["results"][1]["success"] is False
+
+
+class TestObjectsRelated:
+    def test_related_returns_neighbors(self, client):
+        c, rm = client
+        _start_with_i3x(c, rm)
+        resp = c.post("/i3x/v1/objects/related", json={"elementIds": ["station:S1"]})
+        body = resp.get_json()
+        assert body["results"][0]["success"] is True
+        related = body["results"][0]["result"]
+        assert isinstance(related, list) and len(related) > 0
+        assert "sourceRelationship" in related[0]
+        assert "object" in related[0]
+
+
+class TestObjectsValue:
+    def test_value_for_metric_while_running(self, client):
+        c, rm = client
+        _start_with_i3x(c, rm)
+        resp = c.post("/i3x/v1/objects/value", json={"elementIds": ["metric:S1.State"]})
+        body = resp.get_json()
+        result = body["results"][0]["result"]
+        assert result["quality"] == "Good"
+        assert result["value"] in ("IDLE", "PROCESSING", "BLOCKED", "STARVED", "DEGRADED", "FAILED", "UNDER_REPAIR")
+        assert "timestamp" in result
+
+    def test_value_no_run_is_good_no_data(self, client):
+        c, rm = client
+        c.post("/api/v1/runs", json={"scenario": "two_station_minimal", "seed": 1})
+        import time; time.sleep(0.2)
+        rm.config.setdefault("comms", {})["i3x"] = {"enabled": True}
+        rm.stop()
+        import time; time.sleep(0.2)
+        resp = c.post("/i3x/v1/objects/value", json={"elementIds": ["metric:S1.State"]})
+        result = resp.get_json()["results"][0]["result"]
+        assert result["quality"] == "GoodNoData"
+
+    def test_value_for_unknown_element_404s_in_bulk_result(self, client):
+        c, rm = client
+        _start_with_i3x(c, rm)
+        resp = c.post("/i3x/v1/objects/value", json={"elementIds": ["metric:ghost"]})
+        result = resp.get_json()["results"][0]
+        assert result["success"] is False
+        assert result["responseDetail"]["status"] == 404
+
+    def test_value_for_structural_node_is_composition_with_no_value(self, client):
+        c, rm = client
+        _start_with_i3x(c, rm)
+        resp = c.post("/i3x/v1/objects/value", json={"elementIds": ["station:S1"]})
+        result = resp.get_json()["results"][0]["result"]
+        # two_station_minimal's S1 has no process_values configured, so it
+        # carries no HAS_PV edge and isComposition is correctly False here
+        # (see engine/knowledge_graph.py's HAS_PV edge construction and
+        # i3x_build.py's _is_composition) -- the point under test is that a
+        # structural node's value/quality resolve to None/GoodNoData
+        # regardless of its isComposition flag.
+        assert result["isComposition"] is False
+        assert result["value"] is None
+        assert result["quality"] == "GoodNoData"
+
+
+class TestNoWriteRoutes:
+    def test_put_object_value_is_not_registered(self, client):
+        c, rm = client
+        _start_with_i3x(c, rm)
+        resp = c.put("/i3x/v1/objects/value", json={"updates": []})
+        assert resp.status_code in (404, 405)  # Flask's default for an unregistered route/method
+
+    def test_put_object_history_is_not_registered(self, client):
+        c, rm = client
+        _start_with_i3x(c, rm)
+        resp = c.put("/i3x/v1/objects/history", json={"updates": []})
+        assert resp.status_code in (404, 405)
+
+
+class TestObjectsHistory:
+    def test_history_empty_without_historian(self, client):
+        c, rm = client
+        _start_with_i3x(c, rm)
+        resp = c.post("/i3x/v1/objects/history", json={
+            "elementIds": ["metric:S1.State"],
+            "startTime": "2026-01-01T00:00:00Z", "endTime": "2026-01-02T00:00:00Z",
+        })
+        result = resp.get_json()["results"][0]["result"]
+        assert result["values"] == []
