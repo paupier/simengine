@@ -1,4 +1,5 @@
 import shutil
+import threading
 import time
 from pathlib import Path
 
@@ -34,7 +35,19 @@ def client(tmp_path, monkeypatch):
     app = create_app(rm)
     app.testing = True
     yield app.test_client(), rm
+    _stop_i3x_poller(app)
     rm.stop()
+
+
+def _stop_i3x_poller(app):
+    """Signal the i3x blueprint's poll-worker stop event (if the poller was
+    ever lazily started for this app) so it doesn't keep running -- and
+    keep interfering with other tests' threading.enumerate() assertions --
+    past this test's teardown. See create_i3x_blueprint's poll_stop_event."""
+    i3x_bp = app.blueprints.get("i3x")
+    stop_event = getattr(i3x_bp, "poll_stop_event", None)
+    if stop_event is not None:
+        stop_event.set()
 
 
 def _start_with_i3x(client, rm, scenario="two_station_minimal", speed_ratio=1.0):
@@ -660,3 +673,117 @@ class TestStream:
         _start_with_i3x(c, rm)
         resp = c.post("/i3x/v1/subscriptions/stream", json={"clientId": "c1", "subscriptionId": "no-such-sub"})
         assert resp.status_code == 404
+
+
+def _poller_threads():
+    return [t for t in threading.enumerate() if t.name == "i3x-subscription-poller"]
+
+
+class TestPerAppSubscriptionIsolation:
+    """Fix: _subscriptions and _graph_cache used to be i3x.py module-level
+    globals shared by every create_app() call in the same process -- so a
+    second Flask app silently saw the first app's subscription state. Each
+    create_i3x_blueprint() call must now own its own registry/cache via
+    closure."""
+
+    def test_two_apps_do_not_share_subscription_state(self, client):
+        c1, rm1 = client
+        _start_with_i3x(c1, rm1)
+
+        rm2 = RunManager()
+        app2 = create_app(rm2)
+        app2.testing = True
+        c2 = app2.test_client()
+        try:
+            _start_with_i3x(c2, rm2)
+
+            sub_id = c1.post("/i3x/v1/subscriptions",
+                             json={"clientId": "shared-client-id"}).get_json()["result"]["subscriptionId"]
+            reg = c1.post("/i3x/v1/subscriptions/register", json={
+                "clientId": "shared-client-id", "subscriptionId": sub_id,
+                "elementIds": ["metric:S1.State"],
+            }).get_json()
+            assert reg["results"][0]["success"] is True
+
+            # App B was never told about this subscription -- if the two
+            # blueprints shared a module-level SubscriptionRegistry, this
+            # would incorrectly succeed and return app A's subscription.
+            listed = c2.post("/i3x/v1/subscriptions/list",
+                             json={"clientId": "shared-client-id", "subscriptionIds": [sub_id]}).get_json()
+            assert listed["results"][0]["success"] is False
+            assert listed["results"][0]["responseDetail"]["status"] == 404
+        finally:
+            _stop_i3x_poller(app2)
+            rm2.stop()
+
+
+class TestPollWorkerLazyStartAndStop:
+    """Fix: the poll worker thread used to start unconditionally (and
+    unstoppably) at blueprint-creation time -- meaning even an i3X-disabled,
+    OPC-UA-only deployment woke a thread every 200ms forever, and every
+    create_app() call in a test run leaked one more live daemon thread
+    sharing the module-level registry. It must now start lazily, only on
+    the first successful /subscriptions/register call, start at most once,
+    and be stoppable via an exposed threading.Event."""
+
+    def test_poller_not_started_by_create_app_alone(self, client):
+        c, rm = client
+        # No run started, nothing registered yet -- create_app() alone (via
+        # the client fixture) must not have spawned a poller thread.
+        assert _poller_threads() == []
+
+    def test_poller_not_started_merely_by_enabling_i3x(self, client):
+        c, rm = client
+        _start_with_i3x(c, rm)
+        # A run is active and i3x is enabled, but no client has registered
+        # anything yet -- still no poller thread.
+        assert _poller_threads() == []
+
+    def test_poller_starts_after_first_register_and_only_once(self, client):
+        c, rm = client
+        _start_with_i3x(c, rm)
+        assert _poller_threads() == []
+
+        sub_id = c.post("/i3x/v1/subscriptions", json={"clientId": "c1"}).get_json()["result"]["subscriptionId"]
+        reg = c.post("/i3x/v1/subscriptions/register", json={
+            "clientId": "c1", "subscriptionId": sub_id, "elementIds": ["metric:S1.State"],
+        }).get_json()
+        assert reg["results"][0]["success"] is True
+
+        threads = _poller_threads()
+        assert len(threads) == 1
+
+        # A second register call (even a fresh subscription) must not spawn
+        # a second poller thread -- the lazy-start must be guarded.
+        sub_id2 = c.post("/i3x/v1/subscriptions", json={"clientId": "c1"}).get_json()["result"]["subscriptionId"]
+        c.post("/i3x/v1/subscriptions/register", json={
+            "clientId": "c1", "subscriptionId": sub_id2, "elementIds": ["metric:S1.State"],
+        })
+        assert len(_poller_threads()) == 1
+
+    def test_stop_event_actually_stops_the_poller_thread(self, client):
+        c, rm = client
+        app = c.application if hasattr(c, "application") else None
+        # Flask's test Client exposes the app it was built from.
+        assert app is not None
+
+        _start_with_i3x(c, rm)
+        sub_id = c.post("/i3x/v1/subscriptions", json={"clientId": "c1"}).get_json()["result"]["subscriptionId"]
+        c.post("/i3x/v1/subscriptions/register", json={
+            "clientId": "c1", "subscriptionId": sub_id, "elementIds": ["metric:S1.State"],
+        })
+
+        threads = _poller_threads()
+        assert len(threads) == 1
+        poller_thread = threads[0]
+        assert poller_thread.is_alive()
+
+        i3x_bp = app.blueprints["i3x"]
+        stop_event = i3x_bp.poll_stop_event
+        assert isinstance(stop_event, threading.Event)
+
+        stop_event.set()
+        # The poll loop sleeps up to 0.2s per iteration, so give it a little
+        # more than that to notice the event and exit.
+        poller_thread.join(timeout=1.0)
+        assert poller_thread.is_alive() is False

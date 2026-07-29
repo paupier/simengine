@@ -18,37 +18,44 @@ from simengine.api.i3x_subscriptions import SubscriptionRegistry
 
 I3X_SPEC_VERSION = "1.0"
 
-_subscriptions = SubscriptionRegistry()
-
 
 def _sse(event: dict) -> str:
     return f"data: {json.dumps(event)}\n\n"
 
 
-def _start_poll_worker(run_manager):
+def _start_poll_worker(run_manager, subscriptions, current_graph, stop_event):
     """Background daemon: every 0.2s, if a new snapshot has arrived, stage a
-    fresh VQT for every element id currently monitored by any subscription."""
+    fresh VQT for every element id currently monitored by any subscription.
+
+    Takes the per-blueprint SubscriptionRegistry, a current_graph() closure
+    (bound to that blueprint's graph cache), and a threading.Event so the
+    caller can signal the loop to exit -- see create_i3x_blueprint, which
+    owns all three and starts this lazily on first subscription registration
+    rather than unconditionally at blueprint-creation time."""
     last_step_count = {"value": None}
 
     def _poll():
-        while True:
+        while not stop_event.is_set():
             _time.sleep(0.2)
+            if stop_event.is_set():
+                return
             snap = run_manager.latest_snapshot
             if snap is None or snap.step_count == last_step_count["value"]:
                 continue
             last_step_count["value"] = snap.step_count
-            graph = _current_graph(run_manager)
+            graph = current_graph()
             if graph is None:
                 continue
             timestamp = utc_now_iso()
             quality = run_quality(run_manager)
-            monitored_ids = _subscriptions.all_monitored_element_ids()
+            monitored_ids = subscriptions.all_monitored_element_ids()
             for eid in monitored_ids:
                 value = _resolve_value(snap, eid)
-                _subscriptions.stage_update(eid, value, quality if value is not None else "GoodNoData", timestamp)
+                subscriptions.stage_update(eid, value, quality if value is not None else "GoodNoData", timestamp)
 
     thread = threading.Thread(target=_poll, daemon=True, name="i3x-subscription-poller")
     thread.start()
+    return thread
 
 # {node_type: metric-name -> snapshot field name}, copied from the exact maps
 # already used to build each Metric node's REST address in
@@ -95,28 +102,28 @@ def _resolve_value(snap, element_id: str):
 
     return None
 
-# Cache of the last-built object graph, keyed by id(run_manager.knowledge_graph)
-# -- rebuilt only when the active run changes, mirroring how
-# run_manager.knowledge_graph itself is "built at run start, static per run."
-#
-# Keyed on object identity rather than run_manager.run_id: run_id is
-# f"{scenario}_{datetime.now().strftime('%Y%m%d_%H%M%S')}" (1-second
-# resolution), so stopping and restarting the same scenario within the same
-# wall-clock second produces an identical run_id string and would leave this
-# cache serving the previous run's stale graph. A fresh KnowledgeGraph
-# instance is built on every start() (run_manager.py), so id() is
-# collision-proof where the timestamp string isn't.
-_graph_cache = {"run_id": None, "graph": None}
+def _current_graph(run_manager, graph_cache):
+    """Cache of the last-built object graph, keyed by
+    id(run_manager.knowledge_graph) -- rebuilt only when the active run
+    changes, mirroring how run_manager.knowledge_graph itself is "built at
+    run start, static per run."
 
-
-def _current_graph(run_manager):
+    graph_cache is owned by create_i3x_blueprint (one dict per blueprint,
+    not a module-level global -- see the isolation note there) and keyed on
+    object identity rather than run_manager.run_id: run_id is
+    f"{scenario}_{datetime.now().strftime('%Y%m%d_%H%M%S')}" (1-second
+    resolution), so stopping and restarting the same scenario within the same
+    wall-clock second produces an identical run_id string and would leave this
+    cache serving the previous run's stale graph. A fresh KnowledgeGraph
+    instance is built on every start() (run_manager.py), so id() is
+    collision-proof where the timestamp string isn't."""
     if run_manager.knowledge_graph is None:
         return None
     cache_key = id(run_manager.knowledge_graph)
-    if _graph_cache["run_id"] != cache_key:
-        _graph_cache["run_id"] = cache_key
-        _graph_cache["graph"] = build_i3x_objects(run_manager.knowledge_graph)
-    return _graph_cache["graph"]
+    if graph_cache["run_id"] != cache_key:
+        graph_cache["run_id"] = cache_key
+        graph_cache["graph"] = build_i3x_objects(run_manager.knowledge_graph)
+    return graph_cache["graph"]
 
 
 def _i3x_enabled(run_manager) -> bool:
@@ -126,7 +133,29 @@ def _i3x_enabled(run_manager) -> bool:
 
 
 def create_i3x_blueprint(run_manager) -> Blueprint:
+    """Each call gets its own isolated subscription registry and graph
+    cache (previously module-level globals shared by every blueprint in the
+    process -- see the fix-i3x-followups changelog) and its own lazily-
+    started, independently-stoppable poll-worker thread."""
     i3x = Blueprint("i3x", __name__, url_prefix="/i3x/v1")
+
+    subscriptions = SubscriptionRegistry()
+    graph_cache = {"run_id": None, "graph": None}
+    poll_stop_event = threading.Event()
+    poll_state = {"thread": None}
+    poll_start_lock = threading.Lock()
+
+    def current_graph():
+        return _current_graph(run_manager, graph_cache)
+
+    def start_poll_worker_once():
+        # Lazy-start on first successful subscription registration, guarded
+        # so a second/third register() call doesn't spawn a second thread.
+        with poll_start_lock:
+            if poll_state["thread"] is not None:
+                return
+            poll_state["thread"] = _start_poll_worker(
+                run_manager, subscriptions, current_graph, poll_stop_event)
 
     @i3x.before_request
     def _gate():
@@ -156,17 +185,17 @@ def create_i3x_blueprint(run_manager) -> Blueprint:
 
     @i3x.get("/namespaces")
     def get_namespaces():
-        graph = _current_graph(run_manager)
+        graph = current_graph()
         return jsonify(success_response(graph["namespaces"]))
 
     @i3x.get("/objecttypes")
     def get_objecttypes():
-        graph = _current_graph(run_manager)
+        graph = current_graph()
         return jsonify(success_response(graph["objecttypes"]))
 
     @i3x.post("/objecttypes/query")
     def query_objecttypes():
-        graph = _current_graph(run_manager)
+        graph = current_graph()
         by_id = {t["elementId"]: t for t in graph["objecttypes"]}
         body = request.get_json(force=True, silent=True) or {}
         results = []
@@ -182,12 +211,12 @@ def create_i3x_blueprint(run_manager) -> Blueprint:
 
     @i3x.get("/relationshiptypes")
     def get_relationshiptypes():
-        graph = _current_graph(run_manager)
+        graph = current_graph()
         return jsonify(success_response(graph["relationshiptypes"]))
 
     @i3x.post("/relationshiptypes/query")
     def query_relationshiptypes():
-        graph = _current_graph(run_manager)
+        graph = current_graph()
         by_id = {t["elementId"]: t for t in graph["relationshiptypes"]}
         body = request.get_json(force=True, silent=True) or {}
         results = []
@@ -203,12 +232,12 @@ def create_i3x_blueprint(run_manager) -> Blueprint:
 
     @i3x.get("/objects")
     def get_objects():
-        graph = _current_graph(run_manager)
+        graph = current_graph()
         return jsonify(success_response(graph["objects"]))
 
     @i3x.post("/objects/list")
     def list_objects():
-        graph = _current_graph(run_manager)
+        graph = current_graph()
         by_id = {o["elementId"]: o for o in graph["objects"]}
         body = request.get_json(force=True, silent=True) or {}
         results = []
@@ -224,7 +253,7 @@ def create_i3x_blueprint(run_manager) -> Blueprint:
     @i3x.post("/objects/related")
     def objects_related():
         kg = run_manager.knowledge_graph
-        graph = _current_graph(run_manager)
+        graph = current_graph()
         by_id = {o["elementId"]: o for o in graph["objects"]}
         body = request.get_json(force=True, silent=True) or {}
         results = []
@@ -250,7 +279,7 @@ def create_i3x_blueprint(run_manager) -> Blueprint:
 
     @i3x.post("/objects/value")
     def objects_value():
-        graph = _current_graph(run_manager)
+        graph = current_graph()
         by_id = {o["elementId"]: o for o in graph["objects"]}
         kg = run_manager.knowledge_graph
         body = request.get_json(force=True, silent=True) or {}
@@ -289,7 +318,7 @@ def create_i3x_blueprint(run_manager) -> Blueprint:
 
     @i3x.post("/objects/history")
     def objects_history():
-        graph = _current_graph(run_manager)
+        graph = current_graph()
         by_id = {o["elementId"]: o for o in graph["objects"]}
         kg = run_manager.knowledge_graph
         body = request.get_json(force=True, silent=True) or {}
@@ -321,7 +350,7 @@ def create_i3x_blueprint(run_manager) -> Blueprint:
         client_id = body.get("clientId")
         if not client_id:
             return jsonify(error_response("clientId is required", 400)), 400
-        result = _subscriptions.create(client_id, body.get("displayName"))
+        result = subscriptions.create(client_id, body.get("displayName"))
         return jsonify(success_response(result))
 
     @i3x.post("/subscriptions/register")
@@ -334,7 +363,7 @@ def create_i3x_blueprint(run_manager) -> Blueprint:
         if not subscription_id:
             return jsonify(error_response("subscriptionId is required", 400)), 400
         max_depth = body.get("maxDepth", 1)
-        graph = _current_graph(run_manager)
+        graph = current_graph()
         by_id = {o["elementId"]: o for o in graph["objects"]}
         known_ids = set(by_id)
         kg = run_manager.knowledge_graph
@@ -347,10 +376,14 @@ def create_i3x_blueprint(run_manager) -> Blueprint:
                     for edge in kg.edges:
                         if edge["type"] == "HAS_PV" and edge["source"] == eid:
                             element_ids.append(edge["target"])
-        results = _subscriptions.register(client_id, subscription_id,
+        results = subscriptions.register(client_id, subscription_id,
                                           element_ids, known_ids)
         if results is None:
             return jsonify(error_response("Subscription not found", 404)), 404
+        # Lazy-start: the poll worker only needs to run once a client has
+        # actually registered something to monitor -- a pure OPC-UA-only
+        # deployment that never touches i3X should never wake this thread.
+        start_poll_worker_once()
         return jsonify({"success": all(r["success"] for r in results), "results": results})
 
     @i3x.post("/subscriptions/unregister")
@@ -362,7 +395,7 @@ def create_i3x_blueprint(run_manager) -> Blueprint:
         subscription_id = body.get("subscriptionId")
         if not subscription_id:
             return jsonify(error_response("subscriptionId is required", 400)), 400
-        results = _subscriptions.unregister(client_id, subscription_id, body.get("elementIds", []))
+        results = subscriptions.unregister(client_id, subscription_id, body.get("elementIds", []))
         if results is None:
             return jsonify(error_response("Subscription not found", 404)), 404
         return jsonify({"success": all(r["success"] for r in results), "results": results})
@@ -373,7 +406,7 @@ def create_i3x_blueprint(run_manager) -> Blueprint:
         client_id = body.get("clientId")
         if not client_id:
             return jsonify(error_response("clientId is required", 400)), 400
-        results = _subscriptions.delete(client_id, body.get("subscriptionIds", []))
+        results = subscriptions.delete(client_id, body.get("subscriptionIds", []))
         return jsonify({"success": all(r["success"] for r in results), "results": results})
 
     @i3x.post("/subscriptions/list")
@@ -382,7 +415,7 @@ def create_i3x_blueprint(run_manager) -> Blueprint:
         client_id = body.get("clientId")
         if not client_id:
             return jsonify(error_response("clientId is required", 400)), 400
-        results = _subscriptions.list(client_id, body.get("subscriptionIds", []))
+        results = subscriptions.list(client_id, body.get("subscriptionIds", []))
         return jsonify({"success": all(r["success"] for r in results), "results": results})
 
     @i3x.post("/subscriptions/sync")
@@ -394,7 +427,7 @@ def create_i3x_blueprint(run_manager) -> Blueprint:
         subscription_id = body.get("subscriptionId")
         if not subscription_id:
             return jsonify(error_response("subscriptionId is required", 400)), 400
-        batches = _subscriptions.sync(client_id, subscription_id, body.get("lastSequenceNumber"))
+        batches = subscriptions.sync(client_id, subscription_id, body.get("lastSequenceNumber"))
         if batches is None:
             return jsonify(error_response("Subscription not found", 404)), 404
         return jsonify(success_response(batches))
@@ -408,13 +441,13 @@ def create_i3x_blueprint(run_manager) -> Blueprint:
         subscription_id = body.get("subscriptionId")
         if not subscription_id:
             return jsonify(error_response("subscriptionId is required", 400)), 400
-        if _subscriptions.find(client_id, subscription_id) is None:
+        if subscriptions.find(client_id, subscription_id) is None:
             return jsonify(error_response("Subscription not found", 404)), 404
 
         def _events():
             last_acked = None
             while True:
-                batches = _subscriptions.sync(client_id, subscription_id, last_acked)
+                batches = subscriptions.sync(client_id, subscription_id, last_acked)
                 if batches is None:
                     return  # subscription deleted mid-stream
                 for batch in batches:
@@ -425,6 +458,11 @@ def create_i3x_blueprint(run_manager) -> Blueprint:
         return Response(_events(), mimetype="text/event-stream",
                         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
-    _start_poll_worker(run_manager)
+    # No unconditional start here: the poll worker is now started lazily by
+    # register_subscription's start_poll_worker_once(). Expose the stop
+    # event as an attribute on the returned Blueprint so a caller (tests,
+    # or a future graceful-shutdown hook) can signal it -- Flask keeps this
+    # exact Blueprint instance reachable via app.blueprints["i3x"].
+    i3x.poll_stop_event = poll_stop_event
 
     return i3x

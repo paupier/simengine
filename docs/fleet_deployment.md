@@ -146,7 +146,8 @@ the current fleet deployment.
   are all configurable per container; assign non-colliding host ports or
   rely on container-orchestrator network namespacing (K8s/Swarm) where every
   container can use identical *internal* ports.
-- **No built-in auth.** Both `:8080` and `:8765` are trusted-network
+- **No built-in auth.** Both `:8080` (including `/i3x/v1/*`, if
+  `comms.i3x.enabled` is on for a line) and `:8765` are trusted-network
   interfaces by design (see `docs/ai_interface.md`). A fleet multiplies the
   attack surface by the number of lines — put a reverse proxy or network
   isolation in front of every one of them, not just a single central

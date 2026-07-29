@@ -4,7 +4,7 @@
 [![OPC UA](https://img.shields.io/badge/OPC%20UA-Compliant-orange.svg)](https://opcfoundation.org/)
 [![SparkplugB](https://img.shields.io/badge/Sparkplug%20B-Compliant-brightgreen.svg)](https://sparkplug.eclipse.org/)
 
-A real-time **station simulation engine** for production lines — a PLC-replacement data source for SCADA/MES tools such as FactoryTalk Optix, Ignition, and UaExpert. A native, fixed-timestep engine (no external DES dependency) simulates serial lines of stations with health degradation, cycle stops, quality rolls, and continuous process values, and publishes the result over **OPC UA TCP**, **OPC UA PubSub over MQTT**, and **SparkplugB** simultaneously — controlled through an embedded **REST API**, a browser HMI, an **MCP server**, and an optional BYO-key **Claude chat**.
+A real-time **station simulation engine** for production lines — a PLC-replacement data source for SCADA/MES tools such as FactoryTalk Optix, Ignition, and UaExpert. A native, fixed-timestep engine (no external DES dependency) simulates serial lines of stations with health degradation, cycle stops, quality rolls, and continuous process values, and publishes the result over **OPC UA TCP**, **OPC UA PubSub over MQTT**, and **SparkplugB** simultaneously — controlled through an embedded **REST API**, a browser HMI, an **MCP server**, an optional BYO-key **Claude chat**, and an opt-in **i3X (CESMII) interface**.
 
 ---
 
@@ -16,7 +16,7 @@ A real-time **station simulation engine** for production lines — a PLC-replace
 - **Rolls** quality per completed cycle (health-correlated defect rate, optional rework) and tracks OEE (per-station and bottleneck line-level) every step
 - **Publishes** the same live state on three protocols at once — OPC UA TCP (ISA-95 address space, `StationType`/`BufferStorageUnitType` ObjectTypes, `AnalogItemType` process values), OPC UA PubSub over MQTT (Part 14 JSON), and SparkplugB (Protobuf, delta-encoded) — with a reason-coded alarm surface (`FM_*`, `PV_*`, `CS_*`, `MT_*`) instead of flat booleans
 - **Varies by shift** — a scenario's shift schedule can make a shift run proportionally slower (`cycle_time_factor`, hits Performance) and/or less reliable (`health_degrade_factor`, hits Availability), independently, line-wide
-- **Exposes** a knowledge graph binding every metric to all of its wire addresses (OPC UA NodeId, SparkplugB coordinates, MQTT topic, REST path), consumed by an MCP server and an embedded LLM chat, plus a wire-schema export (including OPC UA NodeSet2 XML) so an integrator can see or import the exact address space without a live run
+- **Exposes** a knowledge graph binding every metric to all of its wire addresses (OPC UA NodeId, SparkplugB coordinates, MQTT topic, REST path), consumed by an MCP server, an embedded LLM chat, and an optional i3X (CESMII) read+subscriptions interface, plus a wire-schema export (including OPC UA NodeSet2 XML) so an integrator can see or import the exact address space without a live run
 - **Deterministic** by construction: `--seed N` gives a byte-identical trajectory, forever, regardless of run length
 
 ---
@@ -177,6 +177,7 @@ A deterministic, stdlib-only **knowledge graph** is built at run start from the 
 - **`GET /api/v1/kg`** — node-link JSON for any consumer
 - **MCP server** at `:8765/mcp` — 12 tools (8 read, 4 always-on control) shared with the REST API and the chat, so external hosts (Claude Desktop, Claude Code, or any MCP client) get full read/control access
 - **`/assistant` chat page** — an Anthropic-only agent loop over the same tools, with the knowledge graph as a cached system prompt; your API key lives only in server process memory for the session, never on disk or in logs
+- **i3X interface** at `:8080/i3x/v1` — the same graph projected as a CESMII i3X 1.0 object/relationship model with live VQT values, for validating against i3X tooling (read + subscriptions, opt-in per scenario)
 
 Full details, connection snippet, and the security note (control tools are always on — treat `:8765` like `:8080`, a trusted-network interface) are in [`docs/ai_interface.md`](docs/ai_interface.md).
 
@@ -241,6 +242,8 @@ src/simengine/
   api/          rest.py, tools.py (12-tool registry), mcp_server.py, chat.py,
                 config_files.py, diagnostics.py (MQTT/REST connectivity probe,
                 no engine coupling), schema.py (wire-schema + NodeSet2 export),
+                i3x.py + i3x_build.py + i3x_subscriptions.py (CESMII i3X
+                interface, read + subscriptions),
                 ui/ (Jinja templates: dashboard, configure, comms, diagnostics, chat)
   plugins.py    historian registry with install-hint errors
 src/simengine_historian_{csv,influx,neo4j}/   optional historian backends
@@ -248,7 +251,8 @@ config/         scenarios.yaml
 docker/         Dockerfile, docker-compose.yml (mosquitto + influx/graph profiles)
 docs/           address_space.md, ai_interface.md, deployment.md,
                 fleet_deployment.md, specs/ (original build-plan documents,
-                since superseded in places — see notes at the top of each)
+                since superseded in places — see notes at the top of each),
+                specs/i3x/ (vendored i3X 1.0.0 spec snapshot)
 ```
 
 See `CLAUDE.md` for engine invariants (determinism, health/run-to-failure semantics, KPI formulas) that should not be changed casually, and `docs/specs/` for the original architecture and build-plan documents this engine was built from (superseded in places — see the note at the top of each).
