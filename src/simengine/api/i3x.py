@@ -341,7 +341,13 @@ def create_i3x_blueprint(run_manager) -> Blueprint:
     @i3x.post("/subscriptions/sync")
     def sync_subscription():
         body = request.get_json(force=True, silent=True) or {}
-        batches = _subscriptions.sync(body["clientId"], body["subscriptionId"], body.get("lastSequenceNumber"))
+        client_id = body.get("clientId")
+        if not client_id:
+            return jsonify(error_response("clientId is required", 400)), 400
+        subscription_id = body.get("subscriptionId")
+        if not subscription_id:
+            return jsonify(error_response("subscriptionId is required", 400)), 400
+        batches = _subscriptions.sync(client_id, subscription_id, body.get("lastSequenceNumber"))
         if batches is None:
             return jsonify(error_response("Subscription not found", 404)), 404
         return jsonify(success_response(batches))
@@ -349,7 +355,12 @@ def create_i3x_blueprint(run_manager) -> Blueprint:
     @i3x.post("/subscriptions/stream")
     def stream_subscription():
         body = request.get_json(force=True, silent=True) or {}
-        client_id, subscription_id = body["clientId"], body["subscriptionId"]
+        client_id = body.get("clientId")
+        if not client_id:
+            return jsonify(error_response("clientId is required", 400)), 400
+        subscription_id = body.get("subscriptionId")
+        if not subscription_id:
+            return jsonify(error_response("subscriptionId is required", 400)), 400
         if _subscriptions.find(client_id, subscription_id) is None:
             return jsonify(error_response("Subscription not found", 404)), 404
 

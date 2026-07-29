@@ -354,6 +354,42 @@ class TestSubscriptionMissingFields:
         assert body["success"] is False
         assert "clientId" in body["responseDetail"]["detail"]
 
+    def test_sync_missing_clientId(self, client):
+        c, rm = client
+        _start_with_i3x(c, rm)
+        resp = c.post("/i3x/v1/subscriptions/sync", json={"subscriptionId": "sid"})
+        assert resp.status_code == 400
+        body = resp.get_json()
+        assert body["success"] is False
+        assert "clientId" in body["responseDetail"]["detail"]
+
+    def test_sync_missing_subscriptionId(self, client):
+        c, rm = client
+        _start_with_i3x(c, rm)
+        resp = c.post("/i3x/v1/subscriptions/sync", json={"clientId": "c1"})
+        assert resp.status_code == 400
+        body = resp.get_json()
+        assert body["success"] is False
+        assert "subscriptionId" in body["responseDetail"]["detail"]
+
+    def test_stream_missing_clientId(self, client):
+        c, rm = client
+        _start_with_i3x(c, rm)
+        resp = c.post("/i3x/v1/subscriptions/stream", json={"subscriptionId": "sid"})
+        assert resp.status_code == 400
+        body = resp.get_json()
+        assert body["success"] is False
+        assert "clientId" in body["responseDetail"]["detail"]
+
+    def test_stream_missing_subscriptionId(self, client):
+        c, rm = client
+        _start_with_i3x(c, rm)
+        resp = c.post("/i3x/v1/subscriptions/stream", json={"clientId": "c1"})
+        assert resp.status_code == 400
+        body = resp.get_json()
+        assert body["success"] is False
+        assert "subscriptionId" in body["responseDetail"]["detail"]
+
 
 class TestSync:
     def test_sync_receives_updates_after_polling_interval(self, client):
