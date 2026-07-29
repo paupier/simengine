@@ -115,6 +115,13 @@ class SubscriptionRegistry:
                 results.append({"success": True, "subscriptionId": sid, "result": None})
             return results
 
+    def all_monitored_element_ids(self) -> set:
+        with self._lock:
+            out = set()
+            for sub in self._subs:
+                out |= sub.monitored_element_ids
+            return out
+
     def list(self, client_id: str, subscription_ids: List[str]) -> List[dict]:
         with self._lock:
             results = []

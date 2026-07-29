@@ -126,3 +126,13 @@ class TestDeleteAndList:
         assert results[0]["success"] is True
         assert results[0]["result"]["displayName"] == "my sub"
         assert results[0]["result"]["monitoredObjects"] == [{"elementId": "a"}]
+
+
+class TestAllMonitoredElementIds:
+    def test_union_across_subscriptions(self):
+        reg = SubscriptionRegistry()
+        s1 = reg.create("c1")
+        s2 = reg.create("c1")
+        reg.register("c1", s1["subscriptionId"], ["a"], known_element_ids={"a", "b"})
+        reg.register("c1", s2["subscriptionId"], ["b"], known_element_ids={"a", "b"})
+        assert reg.all_monitored_element_ids() == {"a", "b"}

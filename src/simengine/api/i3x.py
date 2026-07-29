@@ -4,7 +4,11 @@ Positioned as a test/reference data source for i3X tooling, not a production
 path Optix will consume. See docs/superpowers/specs/2026-07-28-i3x-interface-
 design.md. Pinned against i3X tag 1.0.0.
 """
-from flask import Blueprint, jsonify, request
+import json
+import threading
+import time as _time
+
+from flask import Blueprint, Response, jsonify, request
 
 from simengine.api.i3x_build import (
     build_i3x_objects, error_response, make_vqt, run_quality, success_response,
@@ -15,6 +19,36 @@ from simengine.api.i3x_subscriptions import SubscriptionRegistry
 I3X_SPEC_VERSION = "1.0"
 
 _subscriptions = SubscriptionRegistry()
+
+
+def _sse(event: dict) -> str:
+    return f"data: {json.dumps(event)}\n\n"
+
+
+def _start_poll_worker(run_manager):
+    """Background daemon: every 0.2s, if a new snapshot has arrived, stage a
+    fresh VQT for every element id currently monitored by any subscription."""
+    last_step_count = {"value": None}
+
+    def _poll():
+        while True:
+            _time.sleep(0.2)
+            snap = run_manager.latest_snapshot
+            if snap is None or snap.step_count == last_step_count["value"]:
+                continue
+            last_step_count["value"] = snap.step_count
+            graph = _current_graph(run_manager)
+            if graph is None:
+                continue
+            timestamp = utc_now_iso()
+            quality = run_quality(run_manager)
+            monitored_ids = _subscriptions.all_monitored_element_ids()
+            for eid in monitored_ids:
+                value = _resolve_value(run_manager, eid)
+                _subscriptions.stage_update(eid, value, quality if value is not None else "GoodNoData", timestamp)
+
+    thread = threading.Thread(target=_poll, daemon=True, name="i3x-subscription-poller")
+    thread.start()
 
 # {node_type: metric-name -> snapshot field name}, copied from the exact maps
 # already used to build each Metric node's REST address in
@@ -303,5 +337,36 @@ def create_i3x_blueprint(run_manager) -> Blueprint:
             return jsonify(error_response("clientId is required", 400)), 400
         results = _subscriptions.list(client_id, body.get("subscriptionIds", []))
         return jsonify({"success": all(r["success"] for r in results), "results": results})
+
+    @i3x.post("/subscriptions/sync")
+    def sync_subscription():
+        body = request.get_json(force=True, silent=True) or {}
+        batches = _subscriptions.sync(body["clientId"], body["subscriptionId"], body.get("lastSequenceNumber"))
+        if batches is None:
+            return jsonify(error_response("Subscription not found", 404)), 404
+        return jsonify(success_response(batches))
+
+    @i3x.post("/subscriptions/stream")
+    def stream_subscription():
+        body = request.get_json(force=True, silent=True) or {}
+        client_id, subscription_id = body["clientId"], body["subscriptionId"]
+        if _subscriptions.find(client_id, subscription_id) is None:
+            return jsonify(error_response("Subscription not found", 404)), 404
+
+        def _events():
+            last_acked = None
+            while True:
+                batches = _subscriptions.sync(client_id, subscription_id, last_acked)
+                if batches is None:
+                    return  # subscription deleted mid-stream
+                for batch in batches:
+                    yield _sse(batch)
+                    last_acked = batch["sequenceNumber"]
+                _time.sleep(0.25)
+
+        return Response(_events(), mimetype="text/event-stream",
+                        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+    _start_poll_worker(run_manager)
 
     return i3x

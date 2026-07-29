@@ -1,4 +1,5 @@
 import shutil
+import time
 from pathlib import Path
 
 import pytest
@@ -36,9 +37,9 @@ def client(tmp_path, monkeypatch):
     rm.stop()
 
 
-def _start_with_i3x(client, rm, scenario="two_station_minimal"):
+def _start_with_i3x(client, rm, scenario="two_station_minimal", speed_ratio=1.0):
     import time
-    resp = client.post("/api/v1/runs", json={"scenario": scenario, "seed": 1})
+    resp = client.post("/api/v1/runs", json={"scenario": scenario, "seed": 1, "speed_ratio": speed_ratio})
     assert resp.status_code == 201, resp.get_json()
     time.sleep(0.2)
     rm.config.setdefault("comms", {})["i3x"] = {"enabled": True}
@@ -352,3 +353,67 @@ class TestSubscriptionMissingFields:
         body = resp.get_json()
         assert body["success"] is False
         assert "clientId" in body["responseDetail"]["detail"]
+
+
+class TestSync:
+    def test_sync_receives_updates_after_polling_interval(self, client):
+        c, rm = client
+        # Default speed_ratio=1.0 means one sim step per wall-clock second
+        # (see run_manager.run_segment: step_wall = sim_step / speed_ratio).
+        # The poll worker is a module-level singleton started at blueprint-
+        # creation time (well before this test's run/registration exist), so
+        # by the time _start_with_i3x's 0.2s sleep elapses it has typically
+        # already observed the run's near-instant first step (engine.step()
+        # runs before run_segment's first wall-clock sleep) and recorded that
+        # step_count as "last seen" -- before any element is registered here.
+        # The *next* observable change then requires a full ~1s wall-clock
+        # step, which a fixed 0.5s post-registration sleep can't reliably
+        # cover. Using a fast speed_ratio (matching test_rest_api.py's
+        # established pattern for tests needing rapid step cadence) ensures a
+        # step_count change lands well within the 0.5s window regardless of
+        # exactly when the poll worker's own 0.2s cycle happens to fall.
+        _start_with_i3x(c, rm, speed_ratio=1000.0)
+        sub_id = c.post("/i3x/v1/subscriptions", json={"clientId": "c1"}).get_json()["result"]["subscriptionId"]
+        c.post("/i3x/v1/subscriptions/register",
+              json={"clientId": "c1", "subscriptionId": sub_id, "elementIds": ["metric:S1.State"]})
+
+        time.sleep(0.5)  # let the poll worker observe at least one step_count change
+
+        resp = c.post("/i3x/v1/subscriptions/sync",
+                      json={"clientId": "c1", "subscriptionId": sub_id, "lastSequenceNumber": None})
+        body = resp.get_json()
+        assert body["success"] is True
+        assert len(body["result"]) >= 1
+        assert body["result"][0]["updates"][0]["elementId"] == "metric:S1.State"
+
+    def test_sync_on_missing_subscription_404s(self, client):
+        c, rm = client
+        _start_with_i3x(c, rm)
+        resp = c.post("/i3x/v1/subscriptions/sync",
+                      json={"clientId": "c1", "subscriptionId": "no-such-sub", "lastSequenceNumber": None})
+        assert resp.status_code == 404
+
+
+class TestStream:
+    def test_stream_emits_at_least_one_sse_event(self, client):
+        c, rm = client
+        # See TestSync.test_sync_receives_updates_after_polling_interval for
+        # why a fast speed_ratio is needed here, not a longer sleep.
+        _start_with_i3x(c, rm, speed_ratio=1000.0)
+        sub_id = c.post("/i3x/v1/subscriptions", json={"clientId": "c1"}).get_json()["result"]["subscriptionId"]
+        c.post("/i3x/v1/subscriptions/register",
+              json={"clientId": "c1", "subscriptionId": sub_id, "elementIds": ["metric:S1.State"]})
+        time.sleep(0.5)
+
+        resp = c.post("/i3x/v1/subscriptions/stream", json={"clientId": "c1", "subscriptionId": sub_id})
+        assert resp.mimetype == "text/event-stream"
+        # Flask's test client buffers the generator eagerly; take the first chunk.
+        chunk = next(resp.response)
+        assert b"data:" in chunk
+        assert b"metric:S1.State" in chunk
+
+    def test_stream_on_missing_subscription_404s(self, client):
+        c, rm = client
+        _start_with_i3x(c, rm)
+        resp = c.post("/i3x/v1/subscriptions/stream", json={"clientId": "c1", "subscriptionId": "no-such-sub"})
+        assert resp.status_code == 404
