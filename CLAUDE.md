@@ -110,7 +110,7 @@ unbounded sample list (it failed the memory-flatness acceptance run at
 ~95 MB/hour with just 4 monitors); `tests/test_spc_analytics.py::TestBoundedMemory`
 guards this.
 
-### i3X interface
+## i3X interface
 
 A CESMII i3X 1.0 read+subscriptions REST/SSE surface, positioned as a
 test/reference data source for i3X tooling rather than a production path
