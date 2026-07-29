@@ -222,6 +222,7 @@ def create_i3x_blueprint(run_manager) -> Blueprint:
         by_id = {o["elementId"]: o for o in graph["objects"]}
         body = request.get_json(force=True, silent=True) or {}
         results = []
+        relationship_type_filter = body.get("relationshipType")
         for eid in body.get("elementIds", []):
             if eid not in by_id:
                 results.append({"success": False, "elementId": eid,
@@ -230,10 +231,14 @@ def create_i3x_blueprint(run_manager) -> Blueprint:
                 continue
             related = []
             for edge in kg.edges:
+                edge_rel_type = f"rel:{edge['type']}"
+                # Skip if filter is set and this edge doesn't match
+                if relationship_type_filter is not None and edge_rel_type != relationship_type_filter:
+                    continue
                 if edge["source"] == eid:
-                    related.append({"sourceRelationship": f"rel:{edge['type']}", "object": by_id[edge["target"]]})
+                    related.append({"sourceRelationship": edge_rel_type, "object": by_id[edge["target"]]})
                 elif edge["target"] == eid:
-                    related.append({"sourceRelationship": f"rel:{edge['type']}", "object": by_id[edge["source"]]})
+                    related.append({"sourceRelationship": edge_rel_type, "object": by_id[edge["source"]]})
             results.append({"success": True, "elementId": eid, "result": related})
         return jsonify({"success": all(r["success"] for r in results), "results": results})
 

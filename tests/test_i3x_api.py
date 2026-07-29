@@ -173,6 +173,34 @@ class TestObjectsRelated:
         assert "sourceRelationship" in related[0]
         assert "object" in related[0]
 
+    def test_related_filters_by_relationship_type(self, client):
+        c, rm = client
+        _start_with_i3x(c, rm)
+        # Get all related for S1 to verify it has multiple relationship types
+        resp_all = c.post("/i3x/v1/objects/related", json={"elementIds": ["station:S1"]})
+        all_related = resp_all.get_json()["results"][0]["result"]
+        all_types = set(edge["sourceRelationship"] for edge in all_related)
+
+        # Verify S1 has multiple relationship types (test precondition)
+        assert len(all_types) > 1, f"Test requires S1 to have multiple relationship types, got {all_types}"
+
+        # Filter by rel:CONTAINS
+        resp_filtered = c.post("/i3x/v1/objects/related", json={
+            "elementIds": ["station:S1"],
+            "relationshipType": "rel:CONTAINS"
+        })
+        body_filtered = resp_filtered.get_json()
+        assert body_filtered["results"][0]["success"] is True
+        filtered = body_filtered["results"][0]["result"]
+        filtered_types = set(edge["sourceRelationship"] for edge in filtered)
+
+        # Should only have rel:CONTAINS when filtered
+        assert filtered_types == {"rel:CONTAINS"}, \
+            f"Expected only rel:CONTAINS, got {filtered_types}"
+        # And should have fewer edges than the unfiltered result
+        assert len(filtered) < len(all_related), \
+            f"Filtered result should have fewer edges ({len(filtered)}) than all ({len(all_related)})"
+
 
 class TestObjectsValue:
     def test_value_for_metric_while_running(self, client):
