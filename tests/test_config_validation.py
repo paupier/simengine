@@ -305,6 +305,25 @@ class TestValidateComms:
         validate_comms({"comms": {"opcua_mqtt": {"enabled": False}}})
 
 
+class TestI3xCommsValidation:
+    def test_i3x_enabled_true_is_valid(self):
+        validate_comms({"comms": {"i3x": {"enabled": True}}})  # must not raise
+
+    def test_i3x_enabled_false_is_valid(self):
+        validate_comms({"comms": {"i3x": {"enabled": False}}})  # must not raise
+
+    def test_i3x_absent_is_valid(self):
+        validate_comms({"comms": {}})  # must not raise -- default is disabled
+
+    def test_i3x_enabled_must_be_bool(self):
+        with pytest.raises(ValueError, match="comms.i3x.enabled must be a boolean"):
+            validate_comms({"comms": {"i3x": {"enabled": "yes"}}})
+
+    def test_i3x_block_must_be_mapping(self):
+        with pytest.raises(ValueError, match="comms.i3x must be a mapping"):
+            validate_comms({"comms": {"i3x": "on"}})
+
+
 class TestValidateHistorians:
     def test_absent_ok(self):
         validate_historians({})

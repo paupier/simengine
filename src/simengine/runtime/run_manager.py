@@ -33,6 +33,7 @@ class RunManager:
         self.state = IDLE
         self.run_id: Optional[str] = None
         self.scenario: Optional[str] = None
+        self.config: Optional[dict] = None
         self.latest_snapshot = None
         self.engine: Optional[LineEngine] = None
         self.knowledge_graph = None  # built at run start, static per run
@@ -49,6 +50,7 @@ class RunManager:
             if self.state != IDLE:
                 raise RunConflictError("a run is already active")
             config = load_line_config(scenario)  # validates; raises ValueError
+            self.config = config
             seed = self._resolve_seed(seed)
             run_id = f"{scenario}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             self.state = RUNNING

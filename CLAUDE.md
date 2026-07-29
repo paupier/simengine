@@ -110,52 +110,43 @@ unbounded sample list (it failed the memory-flatness acceptance run at
 ~95 MB/hour with just 4 monitors); `tests/test_spc_analytics.py::TestBoundedMemory`
 guards this.
 
-## Candidate feature: i3X interface (under consideration — do not build without sign-off)
+## i3X interface
 
-**Status:** evaluated, high-alignment, deferred pending owner decision. The org is
-looking to adopt i3X to some degree, so **if built, build the whole thing**
-(read + write + subscriptions + conformance), not a partial read-only projection.
+A CESMII i3X 1.0 read+subscriptions REST/SSE surface, positioned as a
+test/reference data source for i3X tooling rather than a production path
+Optix will consume — no writes (`update.current`/`update.history` report
+`false` in `/i3x/v1/info`), no auth. Gated per scenario by
+`comms.i3x.enabled` (default off; enabled on the shipped `demo_line` so a
+fresh checkout demonstrates it), mounted at `http://<host>:8080/i3x/v1/`
+alongside the REST API — not a `StatePublisher`, since i3X is pull
+(REST+SSE) rather than push.
 
-**What i3X is:** a CESMII (US DOE Smart Manufacturing institute) standard — a
-REST+JSON API (with SSE streaming and poll-with-ack subscriptions) that presents
-an industrial data source as a typed **object/relationship graph** with live
-**Value-Quality-Timestamp** values. Spec lives at github.com/cesmii/i3X (use the
-`1.0-Beta` branch — `IMPLEMENTATION_GUIDE.md` + `UNDERSTANDING_RELATIONSHIPS.md`
-are the substance; the OpenAPI is at `api.i3x.dev/v1/openapi.json`). It has a
-`conformance-tests/` suite to validate against. Note the spec is still
-stabilizing — pin against a snapshot, don't track the moving branch.
+`api/i3x_build.py` projects the run's `KnowledgeGraph` into i3X's
+object/relationship/type model once per run (cached on
+`id(run_manager.knowledge_graph)`, mirroring the KG's own build-once-per-run
+lifecycle): KG nodes become i3X objects (`CONTAINS` edges give `parentId`,
+`HAS_PV` gives `isComposition`), KG node/edge types become i3X
+`objecttypes`/`relationshiptypes`, and the KG's existing OPC UA/SparkplugB/
+MQTT/REST address bindings are exposed as i3X `namespaces` — a fifth
+projection over the same registry the AI interface uses. `api/i3x.py` is the
+Flask blueprint: `/info`, `/namespaces`, `/objecttypes`(+`/query`),
+`/relationshiptypes`(+`/query`), `/objects`(+`/list`), `/objects/related`,
+`/objects/value` (live VQT — Good while RUNNING, GoodNoData otherwise),
+`/objects/history` (always `values: []` — core keeps no in-process value
+history by design, see the SPC/Welford note above; only meaningful once a
+`historian-influx` backend exists to back it). `api/i3x_subscriptions.py` is
+an in-memory `SubscriptionRegistry` (create/register/unregister/list/delete)
+fed by a background poller that stages a VQT for every monitored element id
+each time `run_manager.latest_snapshot` advances; clients drain it via
+sequence-numbered poll-with-ack (`/subscriptions/sync`) or SSE
+(`/subscriptions/stream`). Deliberately simpler than the pinned reference
+server: no subscription TTL auto-expiry, no queue-overflow tracking — not a
+concern for a single-operator deployment.
 
-**Why it fits simengine (the pieces are ~80–90% already here):** i3X's model is
-almost exactly the KG + snapshot we already built for the AI interface.
-Architecturally it is a *pull* REST+SSE API, so it's a new Flask blueprint
-(`api/i3x.py`) reading the KG + snapshot + run_manager + historians — **not** a
-`StatePublisher` push class, and **no engine changes**.
-
-Concrete mapping (i3X ← simengine):
-- object ← KG node; `elementId`←node id, `displayName`←name, `typeId`←node type,
-  `parentId`←`CONTAINS` parent, `isComposition`←`HAS_PV` edge, `relationships`←edges
-- `/objecttypes` ← KG node types; `/relationshiptypes` ← KG edge types
-- `/objects/related` ← `KnowledgeGraph.neighbors()`
-- `/objects/value` (VQT) ← `LineSnapshot` (PV/metric value + unit); quality =
-  Good while RUNNING, GoodNoData when IDLE/no run
-- `/objects/history` ← historian plugins (**only meaningful with `historian-influx`**
-  — core keeps no value history by design; see the SPC memory note above)
-- `/subscriptions/stream` (SSE) ← SSE already implemented for chat; run_manager
-  already emits a fresh snapshot every step
-- `namespaceUri` projection ← the KG already binds every metric to OPC UA /
-  SparkplugB / MQTT / REST addresses; i3X is a fifth projection over the same
-  registry (i3X explicitly supports `?projection=i3X` namespace URIs)
-
-**Full-implementation scope (what "the whole thing" means here):**
-- Read surface: `/info`, `/namespaces`, `/objecttypes`(+`/query`),
-  `/relationshiptypes`(+`/query`), `/objects`(+`/list`), `/objects/related`,
-  `/objects/value` (with `maxDepth` composition recursion), `/objects/history`
-- Subscriptions: create/register/unregister/list/delete, `/stream` (SSE) and
-  `/sync` (sequence-numbered poll-with-ack)
-- Writes (`PUT /objects/{id}/value|history`): the hard part — simengine *computes*
-  values, it doesn't accept them. For a full impl this means deciding what a write
-  means (config/setpoint override applied at next step? a scenario edit? rejected
-  as read-only with 501?). Resolve this before starting; it's the main design
-  question, not the endpoints.
-- Enable via the `comms` block (like the other protocols) + a `[i3x]` extra if any
-  new dep is needed; validate against the CESMII `conformance-tests/` suite.
+Pinned against i3X tag `1.0.0` / commit `34b766442f6ef614d47fe905459a2ea8b91c6f8b`
+(github.com/cesmii/i3X) — field names and response-wrapper shapes are copied
+from that commit's `demo/server/models.py` and
+`demo/server/routers/utils.py`, not improvised. Vendored spec snapshot
+(OpenAPI + the two guide docs) lives in `docs/specs/i3x/`; design rationale
+in `docs/superpowers/specs/2026-07-28-i3x-interface-design.md`. See
+`docs/ai_interface.md` for the surface-level summary.

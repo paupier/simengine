@@ -106,3 +106,19 @@ class TestShiftFactorWiring:
         shift_mgr = create_shift_manager_from_config(config, ["S1", "S2"])
         recorded = run_and_record_factors(config, max_sim_time=2.0, shift_mgr=shift_mgr)
         assert recorded == [(1.0, 0.5)] * 2
+
+
+class TestConfigExposure:
+    def test_config_is_none_before_any_run(self):
+        rm = RunManager()
+        assert rm.config is None
+
+    def test_config_set_on_start_and_survives_stop(self):
+        import time
+        rm = RunManager()
+        rm.start(scenario="balanced_line", seed=1)
+        time.sleep(0.2)
+        assert rm.config is not None
+        assert rm.config["stations"][0]["name"]  # real validated config, not a stub
+        rm.stop()
+        assert rm.config is not None  # survives stop, like self.scenario does

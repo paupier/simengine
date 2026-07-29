@@ -1,13 +1,16 @@
-# AI Interface — Knowledge Graph, MCP Server, Assistant Chat
+# AI Interface — Knowledge Graph, MCP Server, Assistant Chat, i3X
 
-simengine exposes three AI-facing surfaces, all backed by the same tool
-registry and knowledge graph (spec: `docs/specs/clone_ai_interface_spec.md`):
+simengine exposes four AI/integration-facing surfaces, all backed by the same
+tool registry and knowledge graph (spec: `docs/specs/clone_ai_interface_spec.md`
+for the first three; `docs/superpowers/specs/2026-07-28-i3x-interface-design.md`
+for i3X):
 
 | Surface | Where | For |
 |---|---|---|
 | Knowledge graph | `GET /api/v1/kg` (`?type=`, `?station=`, `?edge=`) | Address binding + topology, human or machine consumers |
 | MCP server | `http://<host>:8765/mcp` (streamable HTTP) | Any MCP host: Claude Desktop, Claude Code, other LLM stacks |
 | Assistant chat | UI page `/assistant` (BYO Anthropic key) | Operators, in the browser |
+| i3X interface | `http://<host>:8080/i3x/v1/*` | i3X-conformant test/reference clients |
 
 ## Knowledge graph
 
@@ -59,6 +62,39 @@ for the UI session, and never written to disk, config files, logs, or the
 historian. The status endpoint reports only `{"chat_key_set": true|false}`.
 Other LLM providers are not supported in the embedded chat by design — bring
 any MCP-capable host and point it at `:8765/mcp` instead.
+
+## i3X interface
+
+A [CESMII i3X](https://github.com/cesmii/i3X) 1.0 read+subscriptions REST/SSE
+API — presents the same knowledge graph as an i3X object/relationship graph
+with live Value-Quality-Timestamp values, for validating against i3X
+conformance suites and reference clients rather than as a production path.
+Enable per scenario with:
+
+```yaml
+comms:
+  i3x:
+    enabled: true
+```
+
+(default off; the shipped `demo_line` scenario has it on). When enabled, the
+surface is mounted at `/i3x/v1/` on the same port as the REST API (`:8080`):
+`/info`, `/namespaces`, `/objecttypes`, `/relationshiptypes`, `/objects`,
+`/objects/related`, `/objects/value`, `/objects/history`, and the
+`/subscriptions/*` family (create/register/unregister/list/delete, plus
+`/subscriptions/sync` poll-with-ack and `/subscriptions/stream` SSE).
+
+**No writes, no auth.** `/info` reports `update.current` and
+`update.history` as `false` — `PUT`-style value/history writes are not
+implemented; simengine computes values, it doesn't accept them. There is no
+authentication layer, same as the REST and MCP surfaces: treat `:8080/i3x/v1`
+as trusted-network, not internet-facing. `/objects/history` always returns
+an empty `values` array — core simengine keeps no in-process value history
+by design (see the SPC/Welford memory-flatness note in `CLAUDE.md`); it only
+becomes meaningful once a `historian-influx` backend is wired in.
+
+The vendored spec snapshot (OpenAPI + the two implementation guides, pinned
+against i3X tag `1.0.0`) lives in `docs/specs/i3x/`.
 
 ## Security note
 

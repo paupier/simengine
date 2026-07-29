@@ -304,7 +304,7 @@ def _validate_broker_url(url: str, context: str) -> None:
 
 def validate_comms(config: Dict[str, Any]) -> None:
     """
-    Validate the scenario-level comms block (§3): opcua, opcua_mqtt, sparkplugb.
+    Validate the scenario-level comms block (§3): opcua, opcua_mqtt, sparkplugb, i3x.
 
     Raises:
         ValueError: If the comms configuration is invalid.
@@ -316,7 +316,7 @@ def validate_comms(config: Dict[str, Any]) -> None:
     if not isinstance(comms, dict):
         raise ValueError("comms must be a mapping")
 
-    for proto in ("opcua", "opcua_mqtt", "sparkplugb"):
+    for proto in ("opcua", "opcua_mqtt", "sparkplugb", "i3x"):
         block = comms.get(proto)
         if block is None:
             continue
