@@ -44,7 +44,7 @@ def _start_poll_worker(run_manager):
             quality = run_quality(run_manager)
             monitored_ids = _subscriptions.all_monitored_element_ids()
             for eid in monitored_ids:
-                value = _resolve_value(run_manager, eid)
+                value = _resolve_value(snap, eid)
                 _subscriptions.stage_update(eid, value, quality if value is not None else "GoodNoData", timestamp)
 
     thread = threading.Thread(target=_poll, daemon=True, name="i3x-subscription-poller")
@@ -61,10 +61,14 @@ _METRIC_REST_FIELDS = {
 }
 
 
-def _resolve_value(run_manager, element_id: str):
+def _resolve_value(snap, element_id: str):
     """Live value for a Metric or ProcessValue node id; None for anything else
-    (structural nodes have no directly associated live value)."""
-    snap = run_manager.latest_snapshot
+    (structural nodes have no directly associated live value).
+
+    Takes an already-captured LineSnapshot rather than run_manager, so every
+    caller resolves a whole batch of element ids against exactly one
+    snapshot -- avoiding a bulk request tearing across an engine step
+    boundary if it instead re-read run_manager.latest_snapshot per element."""
     if snap is None:
         return None
 
@@ -126,7 +130,9 @@ def create_i3x_blueprint(run_manager) -> Blueprint:
 
     @i3x.before_request
     def _gate():
-        if request.path == "/i3x/v1/info":
+        # Flask's blueprint-qualified endpoint name ("i3x.get_info"), not the
+        # URL path -- stays correct if the blueprint's url_prefix ever changes.
+        if request.endpoint == "i3x.get_info":
             return None
         if not _i3x_enabled(run_manager):
             return jsonify(error_response(
@@ -246,7 +252,14 @@ def create_i3x_blueprint(run_manager) -> Blueprint:
     def objects_value():
         graph = _current_graph(run_manager)
         by_id = {o["elementId"]: o for o in graph["objects"]}
+        kg = run_manager.knowledge_graph
         body = request.get_json(force=True, silent=True) or {}
+        # 0=infinite, 1(default)=no recursion. Composition nesting in this KG
+        # is exactly one level deep (Station/Buffer -HAS_PV-> ProcessValue,
+        # never deeper), so "0" and "2+" both just mean "include the direct
+        # HAS_PV children" -- there's no third level to recurse into.
+        max_depth = body.get("maxDepth", 1)
+        snap = run_manager.latest_snapshot  # captured once for the whole request
         results = []
         for eid in body.get("elementIds", []):
             obj = by_id.get(eid)
@@ -255,20 +268,32 @@ def create_i3x_blueprint(run_manager) -> Blueprint:
                                 "responseDetail": {"title": "Not Found", "status": 404,
                                                    "detail": f"Element not found: {eid}"}})
                 continue
-            value = _resolve_value(run_manager, eid)
+            value = _resolve_value(snap, eid)
             quality = run_quality(run_manager) if value is not None else "GoodNoData"
             timestamp = utc_now_iso()
-            results.append({"success": True, "elementId": eid, "result": {
+            result = {
                 "isComposition": obj["isComposition"],
                 **make_vqt(value, quality, timestamp),
-            }})
+            }
+            if obj["isComposition"] and max_depth != 1 and kg is not None:
+                components = {}
+                for edge in kg.edges:
+                    if edge["type"] == "HAS_PV" and edge["source"] == eid:
+                        child_id = edge["target"]
+                        child_value = _resolve_value(snap, child_id)
+                        child_quality = run_quality(run_manager) if child_value is not None else "GoodNoData"
+                        components[child_id] = make_vqt(child_value, child_quality, timestamp)
+                result["components"] = components
+            results.append({"success": True, "elementId": eid, "result": result})
         return jsonify({"success": all(r["success"] for r in results), "results": results})
 
     @i3x.post("/objects/history")
     def objects_history():
         graph = _current_graph(run_manager)
         by_id = {o["elementId"]: o for o in graph["objects"]}
+        kg = run_manager.knowledge_graph
         body = request.get_json(force=True, silent=True) or {}
+        max_depth = body.get("maxDepth", 1)
         results = []
         for eid in body.get("elementIds", []):
             obj = by_id.get(eid)
@@ -280,9 +305,14 @@ def create_i3x_blueprint(run_manager) -> Blueprint:
             # No in-process value history by design (see the SPC/Welford memory
             # note in CLAUDE.md) -- empty is the valid, spec-shaped answer, not
             # an error, unless a historian-influx backend is wired in later.
-            results.append({"success": True, "elementId": eid, "result": {
-                "isComposition": obj["isComposition"], "values": [],
-            }})
+            result = {"isComposition": obj["isComposition"], "values": []}
+            if obj["isComposition"] and max_depth != 1 and kg is not None:
+                components = {}
+                for edge in kg.edges:
+                    if edge["type"] == "HAS_PV" and edge["source"] == eid:
+                        components[edge["target"]] = {"values": []}
+                result["components"] = components
+            results.append({"success": True, "elementId": eid, "result": result})
         return jsonify({"success": all(r["success"] for r in results), "results": results})
 
     @i3x.post("/subscriptions")
@@ -303,10 +333,22 @@ def create_i3x_blueprint(run_manager) -> Blueprint:
         subscription_id = body.get("subscriptionId")
         if not subscription_id:
             return jsonify(error_response("subscriptionId is required", 400)), 400
+        max_depth = body.get("maxDepth", 1)
         graph = _current_graph(run_manager)
-        known_ids = {o["elementId"] for o in graph["objects"]}
+        by_id = {o["elementId"]: o for o in graph["objects"]}
+        known_ids = set(by_id)
+        kg = run_manager.knowledge_graph
+        requested_ids = list(body.get("elementIds", []))
+        element_ids = list(requested_ids)
+        if kg is not None and max_depth != 1:
+            for eid in requested_ids:
+                obj = by_id.get(eid)
+                if obj is not None and obj["isComposition"]:
+                    for edge in kg.edges:
+                        if edge["type"] == "HAS_PV" and edge["source"] == eid:
+                            element_ids.append(edge["target"])
         results = _subscriptions.register(client_id, subscription_id,
-                                          body.get("elementIds", []), known_ids)
+                                          element_ids, known_ids)
         if results is None:
             return jsonify(error_response("Subscription not found", 404)), 404
         return jsonify({"success": all(r["success"] for r in results), "results": results})

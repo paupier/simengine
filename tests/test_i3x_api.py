@@ -274,6 +274,171 @@ class TestObjectsHistory:
         assert result["values"] == []
 
 
+class TestObjectsValueMaxDepth:
+    """Fix 1: maxDepth on /objects/value must surface a composition's direct
+    HAS_PV children under a "components" key (CurrentValueResult.components
+    in the pinned OpenAPI spec), instead of being silently ignored.
+    demo_line's Press01 has process_values (RamForce, OilTemp, StrokePos),
+    so station:Press01 is isComposition=True with HAS_PV children pv:Press01.*.
+    """
+
+    def test_default_maxdepth_omits_components(self, client):
+        c, rm = client
+        _start_with_i3x(c, rm, scenario="demo_line")
+        resp = c.post("/i3x/v1/objects/value", json={"elementIds": ["station:Press01"]})
+        result = resp.get_json()["results"][0]["result"]
+        assert result["isComposition"] is True
+        assert "components" not in result
+
+    def test_explicit_maxdepth_1_omits_components(self, client):
+        c, rm = client
+        _start_with_i3x(c, rm, scenario="demo_line")
+        resp = c.post("/i3x/v1/objects/value",
+                      json={"elementIds": ["station:Press01"], "maxDepth": 1})
+        result = resp.get_json()["results"][0]["result"]
+        assert "components" not in result
+
+    def test_maxdepth_0_infinite_includes_pv_children(self, client):
+        c, rm = client
+        _start_with_i3x(c, rm, scenario="demo_line")
+        resp = c.post("/i3x/v1/objects/value",
+                      json={"elementIds": ["station:Press01"], "maxDepth": 0})
+        result = resp.get_json()["results"][0]["result"]
+        assert "components" in result
+        components = result["components"]
+        assert set(components) == {
+            "pv:Press01.RamForce", "pv:Press01.OilTemp", "pv:Press01.StrokePos",
+        }
+        for child in components.values():
+            assert set(child) == {"value", "quality", "timestamp"}
+            assert child["quality"] == "Good"
+
+    def test_maxdepth_greater_than_1_also_includes_children(self, client):
+        # There's no third level in this KG, so maxDepth=5 behaves exactly
+        # like maxDepth=0 -- both just mean "include the direct children".
+        c, rm = client
+        _start_with_i3x(c, rm, scenario="demo_line")
+        resp = c.post("/i3x/v1/objects/value",
+                      json={"elementIds": ["station:Press01"], "maxDepth": 5})
+        result = resp.get_json()["results"][0]["result"]
+        assert set(result["components"]) == {
+            "pv:Press01.RamForce", "pv:Press01.OilTemp", "pv:Press01.StrokePos",
+        }
+
+    def test_maxdepth_0_on_non_composition_still_omits_components(self, client):
+        c, rm = client
+        _start_with_i3x(c, rm, scenario="demo_line")
+        resp = c.post("/i3x/v1/objects/value",
+                      json={"elementIds": ["metric:Press01.State"], "maxDepth": 0})
+        result = resp.get_json()["results"][0]["result"]
+        assert result["isComposition"] is False
+        assert "components" not in result
+
+
+class TestObjectsHistoryMaxDepth:
+    def test_default_maxdepth_omits_components(self, client):
+        c, rm = client
+        _start_with_i3x(c, rm, scenario="demo_line")
+        resp = c.post("/i3x/v1/objects/history", json={
+            "elementIds": ["station:Press01"],
+            "startTime": "2026-01-01T00:00:00Z", "endTime": "2026-01-02T00:00:00Z",
+        })
+        result = resp.get_json()["results"][0]["result"]
+        assert "components" not in result
+
+    def test_maxdepth_0_includes_empty_child_histories(self, client):
+        c, rm = client
+        _start_with_i3x(c, rm, scenario="demo_line")
+        resp = c.post("/i3x/v1/objects/history", json={
+            "elementIds": ["station:Press01"], "maxDepth": 0,
+            "startTime": "2026-01-01T00:00:00Z", "endTime": "2026-01-02T00:00:00Z",
+        })
+        result = resp.get_json()["results"][0]["result"]
+        assert result["components"] == {
+            "pv:Press01.RamForce": {"values": []},
+            "pv:Press01.OilTemp": {"values": []},
+            "pv:Press01.StrokePos": {"values": []},
+        }
+
+
+class TestRegisterSubscriptionMaxDepth:
+    def test_default_maxdepth_registers_only_the_parent(self, client):
+        c, rm = client
+        _start_with_i3x(c, rm, scenario="demo_line")
+        sub_id = c.post("/i3x/v1/subscriptions", json={"clientId": "c1"}).get_json()["result"]["subscriptionId"]
+        c.post("/i3x/v1/subscriptions/register",
+              json={"clientId": "c1", "subscriptionId": sub_id, "elementIds": ["station:Press01"]})
+        listed = c.post("/i3x/v1/subscriptions/list",
+                        json={"clientId": "c1", "subscriptionIds": [sub_id]}).get_json()
+        monitored = {o["elementId"] for o in listed["results"][0]["result"]["monitoredObjects"]}
+        assert monitored == {"station:Press01"}
+
+    def test_maxdepth_0_also_registers_pv_children(self, client):
+        c, rm = client
+        _start_with_i3x(c, rm, scenario="demo_line")
+        sub_id = c.post("/i3x/v1/subscriptions", json={"clientId": "c1"}).get_json()["result"]["subscriptionId"]
+        reg = c.post("/i3x/v1/subscriptions/register", json={
+            "clientId": "c1", "subscriptionId": sub_id,
+            "elementIds": ["station:Press01"], "maxDepth": 0,
+        }).get_json()
+        assert all(r["success"] for r in reg["results"])
+        listed = c.post("/i3x/v1/subscriptions/list",
+                        json={"clientId": "c1", "subscriptionIds": [sub_id]}).get_json()
+        monitored = {o["elementId"] for o in listed["results"][0]["result"]["monitoredObjects"]}
+        assert monitored == {
+            "station:Press01", "pv:Press01.RamForce", "pv:Press01.OilTemp", "pv:Press01.StrokePos",
+        }
+
+
+class TestSnapshotConsistency:
+    """Fix 2: _resolve_value must consume an already-captured snapshot
+    instead of re-reading run_manager.latest_snapshot on every call, so a
+    bulk /objects/value request can't tear across an engine step boundary."""
+
+    def test_resolve_value_takes_a_snapshot_not_a_run_manager(self, client):
+        c, rm = client
+        _start_with_i3x(c, rm)
+        time.sleep(0.2)
+        snap = rm.latest_snapshot
+        assert snap is not None
+
+        from simengine.api.i3x import _resolve_value
+        # Passing the already-captured snapshot directly must work -- if
+        # _resolve_value still reaches back into run_manager.latest_snapshot
+        # internally, this raises AttributeError (a LineSnapshot has no
+        # .latest_snapshot attribute).
+        value = _resolve_value(snap, "metric:S1.State")
+        assert value in ("IDLE", "PROCESSING", "BLOCKED", "STARVED", "DEGRADED", "FAILED", "UNDER_REPAIR")
+
+    def test_objects_value_reads_latest_snapshot_once_per_bulk_request(self, client, monkeypatch):
+        c, rm = client
+        _start_with_i3x(c, rm, scenario="two_station_minimal")
+        time.sleep(0.3)
+        rm.stop()  # background thread fully joined -- no concurrent writer left
+
+        frozen_snap = rm.latest_snapshot
+        assert frozen_snap is not None
+
+        access_count = {"n": 0}
+
+        def _counting_get(self):
+            access_count["n"] += 1
+            return frozen_snap
+
+        monkeypatch.setattr(RunManager, "latest_snapshot", property(_counting_get), raising=False)
+
+        resp = c.post("/i3x/v1/objects/value",
+                      json={"elementIds": ["metric:S1.State", "metric:S2.State"]})
+        assert resp.status_code == 200
+
+        # 2 elementIds must not mean 2 reads of run_manager.latest_snapshot --
+        # a step landing between those reads is exactly the tearing bug.
+        assert access_count["n"] == 1, (
+            f"objects_value should capture run_manager.latest_snapshot once "
+            f"per request, got {access_count['n']} reads for 2 elementIds"
+        )
+
+
 class TestSubscriptionCrud:
     def test_create_then_register_then_list(self, client):
         c, rm = client
@@ -468,6 +633,20 @@ class TestStream:
         c.post("/i3x/v1/subscriptions/register",
               json={"clientId": "c1", "subscriptionId": sub_id, "elementIds": ["metric:S1.State"]})
         time.sleep(0.5)
+
+        # Pull via /subscriptions/sync FIRST so there's a batch already sitting
+        # in the registry's sub.batches before we ever open the stream. The
+        # stream generator's first loop iteration calls the same sync() with
+        # last_acked=None, which returns whatever's already in sub.batches
+        # without needing to wait on its 0.25s poll cadence -- so the next()
+        # call below is guaranteed to return immediately instead of blocking
+        # forever if the poll worker happened not to have staged anything yet
+        # (a hang is far worse than a red test in CI).
+        presync = c.post("/i3x/v1/subscriptions/sync",
+                         json={"clientId": "c1", "subscriptionId": sub_id, "lastSequenceNumber": None})
+        presync_body = presync.get_json()
+        assert presync_body["success"] is True
+        assert len(presync_body["result"]) >= 1, "expected a staged update before opening the SSE stream"
 
         resp = c.post("/i3x/v1/subscriptions/stream", json={"clientId": "c1", "subscriptionId": sub_id})
         assert resp.mimetype == "text/event-stream"

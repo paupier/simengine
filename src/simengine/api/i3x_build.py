@@ -104,7 +104,11 @@ def _build_relationshiptypes(kg) -> List[dict]:
             "displayName": t,
             "namespaceUri": I3X_NAMESPACE_URI,
             "relationshipId": f"simengine.{t}",
-            "reverseOf": f"rel:{_REVERSE_OF[t]}",
+            # .get() with a synthetic fallback rather than [t]: an unmapped
+            # future KG edge type should degrade to a made-up reverse name,
+            # not KeyError -> 500 every i3X route (they all call
+            # _current_graph, which calls this).
+            "reverseOf": f"rel:{_REVERSE_OF.get(t, f'{t}_REVERSE')}",
         }
         for t in edge_types
     ]

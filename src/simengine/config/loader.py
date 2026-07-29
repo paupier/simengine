@@ -304,7 +304,7 @@ def _validate_broker_url(url: str, context: str) -> None:
 
 def validate_comms(config: Dict[str, Any]) -> None:
     """
-    Validate the scenario-level comms block (§3): opcua, opcua_mqtt, sparkplugb.
+    Validate the scenario-level comms block (§3): opcua, opcua_mqtt, sparkplugb, i3x.
 
     Raises:
         ValueError: If the comms configuration is invalid.
