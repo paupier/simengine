@@ -57,6 +57,7 @@ Open `http://localhost:8080/` for the dashboard (material-flow strip, per-statio
 - **OPC UA:** point UaExpert / any OPC UA client at `opc.tcp://localhost:4840/simengine/` and browse `Objects → {Enterprise} → {Site} → {Area} → {Line}_Equipment`. Full node tree in [`docs/address_space.md`](docs/address_space.md).
 - **MQTT:** `mosquitto_sub -t 'opcua/#' -v` for Part 14 JSON, `mosquitto_sub -t 'spBv1.0/#' -v` for SparkplugB Protobuf — both enabled per scenario under `comms:` (see `config/scenarios.yaml`).
 - **MCP:** any MCP-capable host (Claude Desktop, Claude Code, ...) — `{"mcpServers": {"simengine": {"url": "http://localhost:8765/mcp"}}}`. See [`docs/ai_interface.md`](docs/ai_interface.md).
+- **i3X (test/reference interface):** `comms.i3x.enabled: true` (on by default for `demo_line`) mounts a CESMII i3X 1.0 read+subscriptions REST/SSE API at `http://localhost:8080/i3x/v1/` — no writes, no auth. Vendored spec in [`docs/specs/i3x/`](docs/specs/i3x/), surface docs in [`docs/ai_interface.md`](docs/ai_interface.md).
 
 ---
 

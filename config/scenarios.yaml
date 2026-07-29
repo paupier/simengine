@@ -88,6 +88,8 @@ demo_line:
                  publisher_id: "simengine-line1", flat_topics: true, publish_interval: 1}
     sparkplugb: {enabled: false, broker: "mqtt://mosquitto:1883",
                  group_id: "Area01", edge_node_id: "Line1"}
+    i3x:
+      enabled: true
   historians: []
 
 two_station_minimal:
