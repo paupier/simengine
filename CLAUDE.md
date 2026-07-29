@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**simengine** is a real-time station simulation engine for production lines — a PLC-replacement data source for SCADA/MES tools (FactoryTalk Optix, Ignition, UaExpert). A fixed-timestep native engine (no Simantha/DES dependency) simulates serial lines of stations with health degradation, cycle stops, quality rolls, and continuous process values, publishing over **OPC UA TCP**, **OPC UA PubSub over MQTT (Part 14 JSON)**, and **SparkplugB**, controlled through an embedded **REST API** with a 5-page HMI UI (Dashboard, Configure, Comms, Assistant, Diagnostics), an **MCP server**, and an optional BYO-key **Anthropic chat**.
+**simengine** is a real-time station simulation engine for production lines — a PLC-replacement data source for SCADA/MES tools (FactoryTalk Optix, Ignition, UaExpert). A fixed-timestep native engine (no Simantha/DES dependency) simulates serial lines of stations with health degradation, cycle stops, quality rolls, and continuous process values, publishing over **OPC UA TCP**, **OPC UA PubSub over MQTT (Part 14 JSON)**, and **SparkplugB**, controlled through an embedded **REST API** with a 5-page HMI UI (Dashboard, Configure, Comms, Assistant, Diagnostics), an **MCP server**, an optional BYO-key **Anthropic chat**, and an opt-in **i3X (CESMII) read+subscriptions interface**.
 
 Governing specs live in `docs/specs/` (`clone_build_plan.md` is execution-grade and overrides the others where they conflict). This repo was bootstrapped from the simantha-opcua parent with history preserved; parent-only code is recoverable from git history.
 
@@ -53,7 +53,8 @@ src/simengine/
                 chat.py, config_files.py, diagnostics.py (MQTT/REST connectivity
                 probe, no engine coupling), schema.py (OPC UA/MQTT/SparkplugB
                 wire-schema export + NodeSet2 XML, memoized per config),
-                ui/ (Jinja templates)
+                i3x.py + i3x_build.py + i3x_subscriptions.py (CESMII i3X
+                interface — see "i3X interface" below), ui/ (Jinja templates)
   plugins.py    historian registry with install-hint errors
 src/simengine_historian_{csv,influx,neo4j}/   optional backends (register() hook)
 config/scenarios.yaml   §3 schema
@@ -103,6 +104,7 @@ No frontend framework — plain Jinja templates + vanilla JS, with two establish
 
 - Parent Telegraf generator + Grafana dashboards (target the parent address space; events reach InfluxDB directly via the historian backend).
 - The `historian-csv` install-hint error path can't fire in this single-distribution repo (the package is always importable); hints apply to missing third-party deps (influx/neo4j).
+- i3X (`api/i3x.py` etc, see below) minor cleanup, none blocking: `i3x_build.bulk_response()` is defined but unused — 8 route handlers hand-roll the identical `{"success", "results"}` shape instead, worth collapsing into one helper; `_graph_cache`'s dict key is still named `"run_id"` after the collision fix switched it to storing `id(knowledge_graph)`; `/objects/history` doesn't validate the spec-required `startTime`/`endTime` (inert today since history is always `[]`, so nothing breaks, but a conformance client probing 400-on-missing gets 200); no test exercises the shipped `demo_line` scenario's actual `comms.i3x` block end-to-end (tests override `comms` via a fixture instead); `objects_related` does an unindexed O(edges) scan per requested elementId (fine at current KG sizes); `_METRIC_REST_FIELDS` in `i3x.py` is a hand-copied duplicate of `knowledge_graph.py`'s `rest_fields` map and could drift if that map changes; no test exercises the `unregister` subscription route directly.
 
 `ProcessMonitor` keeps Welford running aggregates (`_mean`/`_m2`), not raw
 samples — capability indices are O(1) in run length. Do not reintroduce an
@@ -131,17 +133,27 @@ MQTT/REST address bindings are exposed as i3X `namespaces` — a fifth
 projection over the same registry the AI interface uses. `api/i3x.py` is the
 Flask blueprint: `/info`, `/namespaces`, `/objecttypes`(+`/query`),
 `/relationshiptypes`(+`/query`), `/objects`(+`/list`), `/objects/related`,
-`/objects/value` (live VQT — Good while RUNNING, GoodNoData otherwise),
+`/objects/value` (live VQT — Good while RUNNING, GoodNoData otherwise;
+honors `maxDepth` — a Station is a one-level composition of its process
+values, so `maxDepth != 1` returns the Station's PVs too, via `components`),
 `/objects/history` (always `values: []` — core keeps no in-process value
 history by design, see the SPC/Welford note above; only meaningful once a
-`historian-influx` backend exists to back it). `api/i3x_subscriptions.py` is
+`historian-influx` backend exists to back it), `/objects/related` (honors
+the optional `relationshipType` filter). `api/i3x_subscriptions.py` is
 an in-memory `SubscriptionRegistry` (create/register/unregister/list/delete)
 fed by a background poller that stages a VQT for every monitored element id
 each time `run_manager.latest_snapshot` advances; clients drain it via
 sequence-numbered poll-with-ack (`/subscriptions/sync`) or SSE
-(`/subscriptions/stream`). Deliberately simpler than the pinned reference
-server: no subscription TTL auto-expiry, no queue-overflow tracking — not a
-concern for a single-operator deployment.
+(`/subscriptions/stream`). `SubscriptionRegistry`, the object-graph cache,
+and the poller are per-`create_i3x_blueprint()` closure state, not module
+globals — two `create_app()` calls get fully isolated i3X state — and the
+poller starts lazily on the first successful `/subscriptions/register` call
+(not unconditionally at blueprint-creation time), guarded so at most one
+starts per blueprint; its `threading.Event` stop mechanism is reachable at
+`app.blueprints["i3x"].poll_stop_event` but nothing calls it yet (no
+graceful-shutdown hook exists in this app today). Deliberately simpler than
+the pinned reference server: no subscription TTL auto-expiry, no
+queue-overflow tracking — not a concern for a single-operator deployment.
 
 Pinned against i3X tag `1.0.0` / commit `34b766442f6ef614d47fe905459a2ea8b91c6f8b`
 (github.com/cesmii/i3X) — field names and response-wrapper shapes are copied

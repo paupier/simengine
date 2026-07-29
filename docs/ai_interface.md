@@ -83,6 +83,11 @@ surface is mounted at `/i3x/v1/` on the same port as the REST API (`:8080`):
 `/objects/related`, `/objects/value`, `/objects/history`, and the
 `/subscriptions/*` family (create/register/unregister/list/delete, plus
 `/subscriptions/sync` poll-with-ack and `/subscriptions/stream` SSE).
+`/objects/value`, `/objects/history`, and `register` on `/subscriptions/*`
+all honor `maxDepth`: a Station is a composition of its process values (one
+level deep — this KG never nests further), so `maxDepth != 1` on any of
+those three returns/monitors the Station's process values alongside the
+Station itself, not just the Station's own metric.
 
 **No writes, no auth.** `/info` reports `update.current` and
 `update.history` as `false` — `PUT`-style value/history writes are not
