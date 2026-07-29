@@ -287,3 +287,68 @@ class TestSubscriptionCrud:
         assert resp.get_json()["results"][0]["success"] is True
         listed = c.post("/i3x/v1/subscriptions/list", json={"clientId": "c1", "subscriptionIds": [sub_id]}).get_json()
         assert listed["results"][0]["success"] is False
+
+
+class TestSubscriptionMissingFields:
+    def test_create_missing_clientId(self, client):
+        c, rm = client
+        _start_with_i3x(c, rm)
+        resp = c.post("/i3x/v1/subscriptions", json={})
+        assert resp.status_code == 400
+        body = resp.get_json()
+        assert body["success"] is False
+        assert "clientId" in body["responseDetail"]["detail"]
+
+    def test_register_missing_clientId(self, client):
+        c, rm = client
+        _start_with_i3x(c, rm)
+        resp = c.post("/i3x/v1/subscriptions/register", json={"subscriptionId": "sid"})
+        assert resp.status_code == 400
+        body = resp.get_json()
+        assert body["success"] is False
+        assert "clientId" in body["responseDetail"]["detail"]
+
+    def test_register_missing_subscriptionId(self, client):
+        c, rm = client
+        _start_with_i3x(c, rm)
+        resp = c.post("/i3x/v1/subscriptions/register", json={"clientId": "c1"})
+        assert resp.status_code == 400
+        body = resp.get_json()
+        assert body["success"] is False
+        assert "subscriptionId" in body["responseDetail"]["detail"]
+
+    def test_unregister_missing_clientId(self, client):
+        c, rm = client
+        _start_with_i3x(c, rm)
+        resp = c.post("/i3x/v1/subscriptions/unregister", json={"subscriptionId": "sid"})
+        assert resp.status_code == 400
+        body = resp.get_json()
+        assert body["success"] is False
+        assert "clientId" in body["responseDetail"]["detail"]
+
+    def test_unregister_missing_subscriptionId(self, client):
+        c, rm = client
+        _start_with_i3x(c, rm)
+        resp = c.post("/i3x/v1/subscriptions/unregister", json={"clientId": "c1"})
+        assert resp.status_code == 400
+        body = resp.get_json()
+        assert body["success"] is False
+        assert "subscriptionId" in body["responseDetail"]["detail"]
+
+    def test_delete_missing_clientId(self, client):
+        c, rm = client
+        _start_with_i3x(c, rm)
+        resp = c.post("/i3x/v1/subscriptions/delete", json={})
+        assert resp.status_code == 400
+        body = resp.get_json()
+        assert body["success"] is False
+        assert "clientId" in body["responseDetail"]["detail"]
+
+    def test_list_missing_clientId(self, client):
+        c, rm = client
+        _start_with_i3x(c, rm)
+        resp = c.post("/i3x/v1/subscriptions/list", json={})
+        assert resp.status_code == 400
+        body = resp.get_json()
+        assert body["success"] is False
+        assert "clientId" in body["responseDetail"]["detail"]

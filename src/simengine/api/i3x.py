@@ -249,15 +249,24 @@ def create_i3x_blueprint(run_manager) -> Blueprint:
     @i3x.post("/subscriptions")
     def create_subscription():
         body = request.get_json(force=True, silent=True) or {}
-        result = _subscriptions.create(body["clientId"], body.get("displayName"))
+        client_id = body.get("clientId")
+        if not client_id:
+            return jsonify(error_response("clientId is required", 400)), 400
+        result = _subscriptions.create(client_id, body.get("displayName"))
         return jsonify(success_response(result))
 
     @i3x.post("/subscriptions/register")
     def register_subscription():
         body = request.get_json(force=True, silent=True) or {}
+        client_id = body.get("clientId")
+        if not client_id:
+            return jsonify(error_response("clientId is required", 400)), 400
+        subscription_id = body.get("subscriptionId")
+        if not subscription_id:
+            return jsonify(error_response("subscriptionId is required", 400)), 400
         graph = _current_graph(run_manager)
         known_ids = {o["elementId"] for o in graph["objects"]}
-        results = _subscriptions.register(body["clientId"], body["subscriptionId"],
+        results = _subscriptions.register(client_id, subscription_id,
                                           body.get("elementIds", []), known_ids)
         if results is None:
             return jsonify(error_response("Subscription not found", 404)), 404
@@ -266,7 +275,13 @@ def create_i3x_blueprint(run_manager) -> Blueprint:
     @i3x.post("/subscriptions/unregister")
     def unregister_subscription():
         body = request.get_json(force=True, silent=True) or {}
-        results = _subscriptions.unregister(body["clientId"], body["subscriptionId"], body.get("elementIds", []))
+        client_id = body.get("clientId")
+        if not client_id:
+            return jsonify(error_response("clientId is required", 400)), 400
+        subscription_id = body.get("subscriptionId")
+        if not subscription_id:
+            return jsonify(error_response("subscriptionId is required", 400)), 400
+        results = _subscriptions.unregister(client_id, subscription_id, body.get("elementIds", []))
         if results is None:
             return jsonify(error_response("Subscription not found", 404)), 404
         return jsonify({"success": all(r["success"] for r in results), "results": results})
@@ -274,13 +289,19 @@ def create_i3x_blueprint(run_manager) -> Blueprint:
     @i3x.post("/subscriptions/delete")
     def delete_subscriptions():
         body = request.get_json(force=True, silent=True) or {}
-        results = _subscriptions.delete(body["clientId"], body.get("subscriptionIds", []))
+        client_id = body.get("clientId")
+        if not client_id:
+            return jsonify(error_response("clientId is required", 400)), 400
+        results = _subscriptions.delete(client_id, body.get("subscriptionIds", []))
         return jsonify({"success": all(r["success"] for r in results), "results": results})
 
     @i3x.post("/subscriptions/list")
     def list_subscriptions():
         body = request.get_json(force=True, silent=True) or {}
-        results = _subscriptions.list(body["clientId"], body.get("subscriptionIds", []))
+        client_id = body.get("clientId")
+        if not client_id:
+            return jsonify(error_response("clientId is required", 400)), 400
+        results = _subscriptions.list(client_id, body.get("subscriptionIds", []))
         return jsonify({"success": all(r["success"] for r in results), "results": results})
 
     return i3x
