@@ -88,7 +88,7 @@ Two further consequences bite anything that touches the address space: `asyncua.
 
 ### Environment variables
 
-`SIMENGINE_CONFIG_PATH` (scenario file), `SIMENGINE_HISTORIAN_DIR` (csv), `INFLUXDB_URL/TOKEN/ORG/BUCKET`, `NEO4J_URI/USER/PASSWORD`, `SIMENGINE_OPCUA_SHELF` (optional dir; caches asyncua's standard address space — see below). Tests route the loader at `tests/fixtures/line_models_test.yaml` via an autouse conftest fixture — tests that must see the shipped `config/scenarios.yaml` call `monkeypatch.delenv("SIMENGINE_CONFIG_PATH")`.
+`SIMENGINE_CONFIG_PATH` (scenario file), `SIMENGINE_HISTORIAN_DIR` (csv), `INFLUXDB_URL/TOKEN/ORG/BUCKET`, `INFLUXDB_SAMPLE_INTERVAL`, `NEO4J_URI/USER/PASSWORD`, `SIMENGINE_OPCUA_SHELF` (optional dir; caches asyncua's standard address space — see below). Tests route the loader at `tests/fixtures/line_models_test.yaml` via an autouse conftest fixture — tests that must see the shipped `config/scenarios.yaml` call `monkeypatch.delenv("SIMENGINE_CONFIG_PATH")`.
 
 ### AI interface
 
@@ -102,7 +102,7 @@ No frontend framework — plain Jinja templates + vanilla JS, with two establish
 
 ## Known deferred items
 
-- Parent Telegraf generator + Grafana dashboards (target the parent address space; events reach InfluxDB directly via the historian backend).
+- Parent Telegraf generator (targets the parent address space; not carried). Grafana dashboards are no longer deferred — 3 pre-provisioned dashboards ship under `docker/grafana/`, see `docs/superpowers/specs/2026-08-07-historian-grafana-dashboards-design.md`.
 - The `historian-csv` install-hint error path can't fire in this single-distribution repo (the package is always importable); hints apply to missing third-party deps (influx/neo4j).
 - i3X (`api/i3x.py` etc, see below) minor cleanup, none blocking: `i3x_build.bulk_response()` is defined but unused — 8 route handlers hand-roll the identical `{"success", "results"}` shape instead, worth collapsing into one helper; `_graph_cache`'s dict key is still named `"run_id"` after the collision fix switched it to storing `id(knowledge_graph)`; `/objects/history` doesn't validate the spec-required `startTime`/`endTime` (inert today since history is always `[]`, so nothing breaks, but a conformance client probing 400-on-missing gets 200); no test exercises the shipped `demo_line` scenario's actual `comms.i3x` block end-to-end (tests override `comms` via a fixture instead); `objects_related` does an unindexed O(edges) scan per requested elementId (fine at current KG sizes); `_METRIC_REST_FIELDS` in `i3x.py` is a hand-copied duplicate of `knowledge_graph.py`'s `rest_fields` map and could drift if that map changes; no test exercises the `unregister` subscription route directly.
 

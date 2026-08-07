@@ -21,6 +21,17 @@
         "current": {}
       },
       {
+        "name": "run_id",
+        "type": "query",
+        "datasource": {"type": "influxdb", "uid": "influxdb-simengine"},
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"manufacturing\", tag: \"run_id\", predicate: (r) => r._measurement == \"line_metrics\" and r.scenario == \"${scenario}\")",
+        "refresh": 2,
+        "sort": 2,
+        "includeAll": false,
+        "multi": false,
+        "current": {}
+      },
+      {
         "name": "station",
         "type": "query",
         "datasource": {"type": "influxdb", "uid": "influxdb-simengine"},
@@ -45,7 +56,7 @@
         {
           "refId": "A",
           "datasource": {"type": "influxdb", "uid": "influxdb-simengine"},
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"station_metrics\" and r.scenario == \"${scenario}\" and r.station == \"${station}\")\n  |> filter(fn: (r) => r._field == \"oee\" or r._field == \"availability\" or r._field == \"performance\" or r._field == \"quality\")"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"station_metrics\" and r.scenario == \"${scenario}\" and r.run_id == \"${run_id}\" and r.station == \"${station}\")\n  |> filter(fn: (r) => r._field == \"oee\" or r._field == \"availability\" or r._field == \"performance\" or r._field == \"quality\")"
         }
       ]
     },
@@ -59,7 +70,7 @@
         {
           "refId": "A",
           "datasource": {"type": "influxdb", "uid": "influxdb-simengine"},
-          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"station_metrics\" and r.scenario == \"${scenario}\" and r.station == \"${station}\")\n  |> filter(fn: (r) => r._field =~ /^pv_/)"
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"station_metrics\" and r.scenario == \"${scenario}\" and r.run_id == \"${run_id}\" and r.station == \"${station}\")\n  |> filter(fn: (r) => r._field =~ /^pv_/)"
         }
       ]
     }

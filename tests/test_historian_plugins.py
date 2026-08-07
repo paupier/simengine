@@ -196,7 +196,7 @@ class TestInfluxDBHistorian:
             state="PROCESSING", health=2, h_max=5, cycle_phase=0.5,
             parts_made=10, good=9, scrap=1, rework=0, defective=1,
             availability=0.95, performance=0.9, quality=0.9, oee=0.77,
-            time_in_state={"PROCESSING": 100.0, "IDLE": 20.0},
+            time_in_state={"PROCESSING": 100.0, "IDLE": 20.0, "MINOR_STOP": 15.0},
             alarms=[alarm], process_values=[pv],
         )
         buffer = SimpleNamespace(level=3)
@@ -248,6 +248,7 @@ class TestInfluxDBHistorian:
         field_names = [c[0][0] for c in mock_chain.field.call_args_list]
         assert "time_in_state_processing" in field_names
         assert "time_in_state_idle" in field_names
+        assert "time_in_state_minor_stop" in field_names  # populated, cycle-stopped time
         assert "time_in_state_under_repair" in field_names  # zero-filled, unvisited state
         assert "pv_RamForce" in field_names
         assert "active_reason_code" in field_names

@@ -2,11 +2,13 @@
 
 Carried from the parent event_historian.py; registered through
 simengine.plugins. Requires the historian-influx extra (influxdb-client).
-Config via env: INFLUXDB_URL, INFLUXDB_TOKEN, INFLUXDB_ORG, INFLUXDB_BUCKET.
+Config via env: INFLUXDB_URL, INFLUXDB_TOKEN, INFLUXDB_ORG, INFLUXDB_BUCKET,
+INFLUXDB_SAMPLE_INTERVAL.
 
-Note: the parent's Telegraf generator and Grafana assets are deliberately not
-carried yet — they target the parent address space. Events land in InfluxDB
-via this backend directly; dashboards are a later, separate port.
+Besides event recording, this plugin also writes periodic `station_metrics`/
+`line_metrics` samples (via `record_metrics`, throttled by
+INFLUXDB_SAMPLE_INTERVAL) for continuous trending. Pre-provisioned Grafana
+dashboards that read this data live under `docker/grafana/`.
 """
 import json
 import os
@@ -17,7 +19,7 @@ from simengine.publishers.metrics import top_reason_code
 
 
 _STATION_STATES = ("UNDER_REPAIR", "FAILED", "BLOCKED", "STARVED", "DEGRADED",
-                    "PROCESSING", "IDLE")
+                    "PROCESSING", "IDLE", "MINOR_STOP")
 
 
 class InfluxDBHistorian(EventHistorian):
