@@ -118,6 +118,28 @@ class TestCompositeHistorian:
         assert "CSVHistorian" in desc
         assert "InfluxDBHistorian" in desc
 
+    def test_record_metrics_fans_out(self):
+        h1 = MagicMock(spec=EventHistorian)
+        h2 = MagicMock(spec=EventHistorian)
+        composite = CompositeHistorian([h1, h2])
+
+        snapshot = object()
+        composite.record_metrics(snapshot)
+        h1.record_metrics.assert_called_once_with(snapshot)
+        h2.record_metrics.assert_called_once_with(snapshot)
+
+
+class TestRecordMetricsDefault:
+    def test_default_is_noop(self):
+        class DummyHistorian(EventHistorian):
+            def record_event(self, event): pass
+            def flush(self): pass
+            def close(self): pass
+            def get_event_count(self): return 0
+
+        hist = DummyHistorian()
+        hist.record_metrics(object())  # must not raise
+
 
 # ========== Factory Tests ==========
 

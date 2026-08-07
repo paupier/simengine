@@ -157,6 +157,11 @@ class TestCSVHistorian:
         assert "CSVHistorian" in hist.describe()
         hist.close()
 
+    def test_record_metrics_is_noop(self, tmp_path):
+        hist = CSVHistorian(str(tmp_path), "test_scenario")
+        hist.record_metrics(object())  # inherited no-op, must not raise
+        hist.close()
+
 
 # ========== InfluxDBHistorian Tests ==========
 
@@ -180,6 +185,16 @@ class TestInfluxDBHistorian:
         hist._bucket = "manufacturing"
         assert "InfluxDBHistorian" in hist.describe()
         assert "manufacturing" in hist.describe()
+
+
+# ========== Neo4jHistorian Tests ==========
+
+
+class TestNeo4jHistorian:
+    def test_record_metrics_is_noop(self):
+        from simengine_historian_neo4j.historian import Neo4jHistorian
+        hist = Neo4jHistorian.__new__(Neo4jHistorian)  # bypass __init__, no real driver needed
+        hist.record_metrics(object())  # must not raise
 
 
 # ========== CompositeHistorian Tests ==========

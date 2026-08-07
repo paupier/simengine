@@ -249,6 +249,9 @@ class Neo4jHistorian:
         if events:
             self._write_queue.put(list(events))
 
+    def record_metrics(self, snapshot) -> None:
+        """No-op — Neo4j is a graph/causal-analysis backend, not time-series."""
+
     def flush(self) -> None:
         """Block until all queued events are written to Neo4j (max 120 s)."""
         done = threading.Event()
