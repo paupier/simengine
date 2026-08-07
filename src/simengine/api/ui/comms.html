@@ -33,8 +33,9 @@
 {% endblock %}
 {% block content %}
   <h2 class="eyebrow">Protocol outputs — scenario <span class="mono" id="comms-scenario-label">—</span></h2>
-  <p class="muted">Changes apply at the next run start. All three outputs carry the
-    same snapshot; they differ only in transport and encoding.</p>
+  <p class="muted">Changes apply at the next run start. The three push outputs carry the
+    same snapshot; they differ only in transport and encoding. i3X exposes the same
+    data pull-style over REST/SSE.</p>
   <div class="proto-grid" style="margin-top:12px">
     <div class="card proto">
       <h3><input type="checkbox" id="p-opcua"> OPC UA (TCP)</h3>
@@ -66,6 +67,10 @@
           <input type="text" id="spb-edge" value="Line1"></div>
       </div>
       <div class="topic-root" id="spb-root">spBv1.0/Area01/±DATA/Line1/&lt;station&gt;</div>
+    </div>
+    <div class="card proto">
+      <h3><input type="checkbox" id="p-i3x"> i3X (CESMII)</h3>
+      <div class="topic-root" id="i3x-root">http://&lt;host&gt;:8080/i3x/v1/</div>
     </div>
   </div>
   <div style="margin-top:14px; display:flex; gap:10px; align-items:center;">
@@ -101,6 +106,7 @@
       ($("mqtt-flat").checked ? "  +  simengine/<line>/<station>/<metric>" : "");
     $("spb-root").textContent =
       `spBv1.0/${$("spb-group").value}/±DATA/${$("spb-edge").value}/<station>`;
+    $("i3x-root").textContent = `${location.protocol}//${location.host}/i3x/v1/`;
   }
   ["opcua-port","mqtt-pubid","mqtt-flat","spb-group","spb-edge"].forEach(id =>
     $(id).addEventListener("input", updateRoots));
@@ -111,7 +117,7 @@
     $("comms-scenario-label").textContent = scenario;
     try {
       const c = await jget("/api/v1/comms?scenario=" + scenario);
-      const o = c.opcua || {}, m = c.opcua_mqtt || {}, s = c.sparkplugb || {};
+      const o = c.opcua || {}, m = c.opcua_mqtt || {}, s = c.sparkplugb || {}, i = c.i3x || {};
       $("p-opcua").checked = o.enabled !== false;
       $("opcua-port").value = o.port || 4840;
       $("p-mqtt").checked = !!m.enabled;
@@ -122,6 +128,7 @@
       $("spb-broker").value = s.broker || "mqtt://mosquitto:1883";
       $("spb-group").value = s.group_id || "Area01";
       $("spb-edge").value = s.edge_node_id || "Line1";
+      $("p-i3x").checked = !!i.enabled;
       updateRoots();
     } catch (e) { /* scenario without comms block */ }
   }
@@ -137,6 +144,7 @@
       sparkplugb: {enabled: $("p-spb").checked,
         broker: $("spb-broker").value,
         group_id: $("spb-group").value, edge_node_id: $("spb-edge").value},
+      i3x: {enabled: $("p-i3x").checked},
     };
     const el = $("comms-msg");
     try {

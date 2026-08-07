@@ -244,3 +244,7 @@ class TestMisc:
             r = client.get(path)
             assert r.status_code == 200
             assert b"simengine" in r.data
+            # Regression guard: ensure i3X is present in comms tab
+            if path == "/comms":
+                assert b"p-i3x" in r.data
+                assert b"i3x: {enabled:" in r.data
