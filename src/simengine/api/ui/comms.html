@@ -33,8 +33,9 @@
 {% endblock %}
 {% block content %}
   <h2 class="eyebrow">Protocol outputs — scenario <span class="mono" id="comms-scenario-label">—</span></h2>
-  <p class="muted">Changes apply at the next run start. All three outputs carry the
-    same snapshot; they differ only in transport and encoding.</p>
+  <p class="muted">Changes apply at the next run start. The three push outputs carry the
+    same snapshot; they differ only in transport and encoding. i3X exposes the same
+    data pull-style over REST/SSE.</p>
   <div class="proto-grid" style="margin-top:12px">
     <div class="card proto">
       <h3><input type="checkbox" id="p-opcua"> OPC UA (TCP)</h3>

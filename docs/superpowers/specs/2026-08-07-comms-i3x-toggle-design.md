@@ -54,10 +54,11 @@ for the other three.
 
 ## Out of scope
 
-- Changing `PUT /api/v1/comms` from replace to merge semantics. No other
-  `comms.*` keys exist today outside what the UI already round-trips once
-  i3X is added, so the general case (an unknown future protocol block getting
-  dropped) isn't being fixed here.
+- Changing `PUT /api/v1/comms` from replace to merge semantics. `comms.opcua_mqtt.publish_interval`
+  is a pre-existing instance of this same class of bug (the save handler hardcodes
+  it to `1` rather than round-tripping the loaded value) — not fixed here; no
+  shipped scenario currently sets a non-default value, so there's no live impact
+  yet.
 - Any change to `configure.html`'s Raw JSON editor — it already round-trips
   `comms.i3x` correctly since it edits the full scenario object as JSON.
 - Backend/loader changes — `validate_comms` already validates `i3x` generically
