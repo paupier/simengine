@@ -186,6 +186,114 @@ class TestInfluxDBHistorian:
         assert "InfluxDBHistorian" in hist.describe()
         assert "manufacturing" in hist.describe()
 
+    def _make_snapshot(self):
+        from types import SimpleNamespace
+        pv = SimpleNamespace(name="RamForce", value=850.5)
+        alarm = SimpleNamespace(code="CS_JAM", severity="WARNING",
+                                source="Press01", text="Press01: cycle stop - CS_JAM",
+                                activated_at=10.0)
+        station = SimpleNamespace(
+            state="PROCESSING", health=2, h_max=5, cycle_phase=0.5,
+            parts_made=10, good=9, scrap=1, rework=0, defective=1,
+            availability=0.95, performance=0.9, quality=0.9, oee=0.77,
+            time_in_state={"PROCESSING": 100.0, "IDLE": 20.0},
+            alarms=[alarm], process_values=[pv],
+        )
+        buffer = SimpleNamespace(level=3)
+        return SimpleNamespace(
+            sim_time=120.0, line_state="RUNNING", speed_ratio=1.0,
+            throughput=0.5, total_wip=3, total_good=9, total_scrap=1,
+            oee=0.77, stations={"Press01": station}, buffers={"B1": buffer},
+        )
+
+    def test_record_metrics_writes_station_and_line_points(self):
+        hist = InfluxDBHistorian.__new__(InfluxDBHistorian)
+        hist._scenario = "demo_line"
+        hist._run_id = "run1"
+        hist._bucket = "manufacturing"
+        hist._org = "simengine"
+        hist._sample_interval = 5.0
+        hist._last_recorded_sim_time = None
+
+        mock_chain = MagicMock()
+        mock_point_cls = MagicMock(return_value=mock_chain)
+        mock_chain.tag.return_value = mock_chain
+        mock_chain.field.return_value = mock_chain
+        mock_write_api = MagicMock()
+        hist._write_api = mock_write_api
+
+        mock_influx = MagicMock()
+        mock_influx.Point = mock_point_cls
+        with patch.dict("sys.modules", {"influxdb_client": mock_influx}):
+            hist.record_metrics(self._make_snapshot())
+
+        assert hist._last_recorded_sim_time == 120.0
+        mock_write_api.write.assert_called_once()
+        _, kwargs = mock_write_api.write.call_args
+        assert kwargs["bucket"] == "manufacturing"
+        assert kwargs["org"] == "simengine"
+        points = kwargs["record"]
+        assert len(points) == 2  # 1 station + 1 line
+
+        # Point("station_metrics") called once, Point("line_metrics") once
+        measurement_calls = [c[0][0] for c in mock_point_cls.call_args_list]
+        assert measurement_calls == ["station_metrics", "line_metrics"]
+
+        # tags (both points chain off the same mock, so calls accumulate across both)
+        tag_calls = [c[0] for c in mock_chain.tag.call_args_list]
+        assert ("scenario", "demo_line") in tag_calls
+        assert ("station", "Press01") in tag_calls
+
+        # station fields include the flattened time_in_state and pv_ fields
+        field_names = [c[0][0] for c in mock_chain.field.call_args_list]
+        assert "time_in_state_processing" in field_names
+        assert "time_in_state_idle" in field_names
+        assert "time_in_state_under_repair" in field_names  # zero-filled, unvisited state
+        assert "pv_RamForce" in field_names
+        assert "active_reason_code" in field_names
+        assert "active_alarm_count" in field_names
+
+        # line fields
+        assert "buffer_B1_level" in field_names
+        assert "total_wip" in field_names
+
+    def test_record_metrics_throttled(self):
+        hist = InfluxDBHistorian.__new__(InfluxDBHistorian)
+        hist._scenario = "demo_line"
+        hist._run_id = "run1"
+        hist._bucket = "manufacturing"
+        hist._org = "simengine"
+        hist._sample_interval = 5.0
+        hist._last_recorded_sim_time = 118.0  # < 2s since last sample at sim_time=120.0
+
+        mock_write_api = MagicMock()
+        hist._write_api = mock_write_api
+        mock_influx = MagicMock()
+        with patch.dict("sys.modules", {"influxdb_client": mock_influx}):
+            hist.record_metrics(self._make_snapshot())
+
+        mock_write_api.write.assert_not_called()
+        assert hist._last_recorded_sim_time == 118.0  # unchanged
+
+    def test_create_reads_sample_interval_env(self, monkeypatch):
+        from simengine_historian_influx import create
+        monkeypatch.setenv("INFLUXDB_SAMPLE_INTERVAL", "10")
+        monkeypatch.setenv("INFLUXDB_TOKEN", "t")
+        # create() constructs a real InfluxDBHistorian; patch __init__ to capture kwargs
+        # instead of touching a real client.
+        captured = {}
+        original_init = InfluxDBHistorian.__init__
+
+        def fake_init(self, **kwargs):
+            captured.update(kwargs)
+
+        monkeypatch.setattr(InfluxDBHistorian, "__init__", fake_init)
+        try:
+            create("demo_line", "run1")
+        finally:
+            monkeypatch.setattr(InfluxDBHistorian, "__init__", original_init)
+        assert captured["sample_interval"] == 10.0
+
 
 # ========== Neo4jHistorian Tests ==========
 
