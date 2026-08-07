@@ -1,0 +1,95 @@
+{
+  "title": "simengine — Line Overview",
+  "uid": "simengine-line-overview",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "timezone": "browser",
+  "time": {"from": "now-1h", "to": "now"},
+  "refresh": "10s",
+  "templating": {
+    "list": [
+      {
+        "name": "scenario",
+        "type": "query",
+        "datasource": {"type": "influxdb", "uid": "influxdb-simengine"},
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"manufacturing\", tag: \"scenario\", predicate: (r) => r._measurement == \"line_metrics\")",
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": false,
+        "multi": false,
+        "current": {}
+      },
+      {
+        "name": "station",
+        "type": "query",
+        "datasource": {"type": "influxdb", "uid": "influxdb-simengine"},
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"manufacturing\", tag: \"station\", predicate: (r) => r._measurement == \"station_metrics\" and r.scenario == \"${scenario}\")",
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": true,
+        "multi": true,
+        "current": {}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Station States",
+      "type": "state-timeline",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 0},
+      "datasource": {"type": "influxdb", "uid": "influxdb-simengine"},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "influxdb", "uid": "influxdb-simengine"},
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"station_metrics\" and r.scenario == \"${scenario}\" and r._field == \"state\")\n  |> filter(fn: (r) => r.station =~ /${station:regex}/)"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Line OEE",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 8},
+      "datasource": {"type": "influxdb", "uid": "influxdb-simengine"},
+      "fieldConfig": {"defaults": {"unit": "percentunit", "max": 1, "min": 0}, "overrides": []},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "influxdb", "uid": "influxdb-simengine"},
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"line_metrics\" and r.scenario == \"${scenario}\" and r._field == \"oee\")"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Throughput",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 8},
+      "datasource": {"type": "influxdb", "uid": "influxdb-simengine"},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "influxdb", "uid": "influxdb-simengine"},
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"line_metrics\" and r.scenario == \"${scenario}\" and r._field == \"throughput\")"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "WIP / Good / Scrap",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 8},
+      "datasource": {"type": "influxdb", "uid": "influxdb-simengine"},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "influxdb", "uid": "influxdb-simengine"},
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"line_metrics\" and r.scenario == \"${scenario}\")\n  |> filter(fn: (r) => r._field == \"total_wip\" or r._field == \"total_good\" or r._field == \"total_scrap\")"
+        }
+      ]
+    }
+  ]
+}

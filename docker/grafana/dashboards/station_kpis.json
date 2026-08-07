@@ -1,0 +1,67 @@
+{
+  "title": "simengine — Station KPIs & PVs",
+  "uid": "simengine-station-kpis",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "timezone": "browser",
+  "time": {"from": "now-1h", "to": "now"},
+  "refresh": "10s",
+  "templating": {
+    "list": [
+      {
+        "name": "scenario",
+        "type": "query",
+        "datasource": {"type": "influxdb", "uid": "influxdb-simengine"},
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"manufacturing\", tag: \"scenario\", predicate: (r) => r._measurement == \"line_metrics\")",
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": false,
+        "multi": false,
+        "current": {}
+      },
+      {
+        "name": "station",
+        "type": "query",
+        "datasource": {"type": "influxdb", "uid": "influxdb-simengine"},
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"manufacturing\", tag: \"station\", predicate: (r) => r._measurement == \"station_metrics\" and r.scenario == \"${scenario}\")",
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": false,
+        "multi": false,
+        "current": {}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "OEE / Availability / Performance / Quality — $station",
+      "type": "timeseries",
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 0},
+      "datasource": {"type": "influxdb", "uid": "influxdb-simengine"},
+      "fieldConfig": {"defaults": {"unit": "percentunit", "max": 1, "min": 0}, "overrides": []},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "influxdb", "uid": "influxdb-simengine"},
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"station_metrics\" and r.scenario == \"${scenario}\" and r.station == \"${station}\")\n  |> filter(fn: (r) => r._field == \"oee\" or r._field == \"availability\" or r._field == \"performance\" or r._field == \"quality\")"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Process Values — $station",
+      "type": "timeseries",
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 10},
+      "datasource": {"type": "influxdb", "uid": "influxdb-simengine"},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "influxdb", "uid": "influxdb-simengine"},
+          "query": "from(bucket: \"manufacturing\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"station_metrics\" and r.scenario == \"${scenario}\" and r.station == \"${station}\")\n  |> filter(fn: (r) => r._field =~ /^pv_/)"
+        }
+      ]
+    }
+  ]
+}
