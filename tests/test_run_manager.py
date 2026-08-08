@@ -122,3 +122,36 @@ class TestConfigExposure:
         assert rm.config["stations"][0]["name"]  # real validated config, not a stub
         rm.stop()
         assert rm.config is not None  # survives stop, like self.scenario does
+
+
+class TestRecordMetricsWiring:
+    def test_record_metrics_called_each_step(self):
+        from unittest.mock import MagicMock
+        from simengine.events import EventHistorian
+        from simengine.events.collect import SnapshotEventCollector
+
+        config = two_station_config()
+        engine = LineEngine(config, "wiring_test", seed=1, run_id="run_w")
+        publishers = build_publishers(config)
+        historian = MagicMock(spec=EventHistorian)
+        collector = SnapshotEventCollector()
+
+        rm = RunManager()
+        rm.engine = engine
+        rm.run_segment(engine, publishers, speed_ratio=1e9,
+                        max_sim_time=3.0, historian=historian, collector=collector)
+
+        assert historian.record_metrics.call_count > 0
+        # called with the LineSnapshot, not the collected events
+        called_arg = historian.record_metrics.call_args_list[0][0][0]
+        assert hasattr(called_arg, "sim_time")
+
+    def test_record_metrics_not_called_without_historian(self):
+        config = two_station_config()
+        engine = LineEngine(config, "wiring_test2", seed=1, run_id="run_w2")
+        publishers = build_publishers(config)
+
+        rm = RunManager()
+        rm.engine = engine
+        # Must not raise even though historian/collector default to None.
+        rm.run_segment(engine, publishers, speed_ratio=1e9, max_sim_time=3.0)

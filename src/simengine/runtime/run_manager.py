@@ -146,10 +146,12 @@ class RunManager:
             self.latest_snapshot = snap
             publishers.publish(snap)
 
-            if historian is not None and collector is not None:
-                events = collector.collect(snap)
-                if events:
-                    historian.record_events(events)
+            if historian is not None:
+                historian.record_metrics(snap)
+                if collector is not None:
+                    events = collector.collect(snap)
+                    if events:
+                        historian.record_events(events)
 
             if target_quantity is not None and parts >= target_quantity:
                 stop_reason = "quantity_reached"

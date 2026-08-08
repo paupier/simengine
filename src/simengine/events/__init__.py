@@ -69,6 +69,10 @@ class EventHistorian(ABC):
         for event in events:
             self.record_event(event)
 
+    def record_metrics(self, snapshot) -> None:
+        """Record a periodic continuous-metrics sample. Default: no-op —
+        only backends that support time-series metrics override this."""
+
     @abstractmethod
     def flush(self) -> None:
         """Flush any buffered data to storage."""
@@ -113,6 +117,10 @@ class CompositeHistorian(EventHistorian):
     def record_events(self, events: List[SimEvent]) -> None:
         for h in self._historians:
             h.record_events(events)
+
+    def record_metrics(self, snapshot) -> None:
+        for h in self._historians:
+            h.record_metrics(snapshot)
 
     def flush(self) -> None:
         for h in self._historians:

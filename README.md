@@ -205,9 +205,11 @@ An unconfigured/uninstalled historian fails with an explicit `pip install simeng
 
 ```bash
 docker compose -f docker/docker-compose.yml up --build -d          # simengine + Mosquitto
-docker compose -f docker/docker-compose.yml --profile influx up -d # + InfluxDB
+docker compose -f docker/docker-compose.yml --profile influx up -d # + InfluxDB + Grafana
 docker compose -f docker/docker-compose.yml --profile graph up -d  # + Neo4j
 ```
+
+The `influx` profile brings up InfluxDB and Grafana (3 pre-provisioned dashboards at `localhost:3000`), but two extra steps are needed before they actually show data — see the `--profile influx` bullet in `docker/docker-compose.yml`'s header comment for the details (build with `SIMENGINE_EXTRAS=historian-influx`, and set `historians: ["influx"]` on the scenario being run).
 
 The Dockerfile is a multi-stage build (builder venv, slim runtime image); pass `EXTRAS` to bake in optional dependencies (`--build-arg EXTRAS=historian-influx,sparkplug`).
 
