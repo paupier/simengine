@@ -53,7 +53,7 @@ single `build-and-push` job into a `strategy.matrix` over two entries —
 trigger (push to `main`, `v*` tags, `workflow_dispatch`) and the same tag
 scheme (`latest` on default branch, `main-<shortsha>`, semver on tags) via
 per-entry `docker/metadata-action` invocations keyed off
-`ghcr.io/paupier/${{ matrix.image-name }}`. A push to `main` republishes
+`ghcr.io/paupier/${{ matrix.image }}`. A push to `main` republishes
 both images together, so they can never drift out of tag-sync with each
 other the way two independently-triggered workflows could.
 
