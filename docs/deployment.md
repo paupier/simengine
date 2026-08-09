@@ -5,7 +5,7 @@ Two compose files:
 | File | Use |
 |---|---|
 | `docker/docker-compose.yml` | Local dev — **builds** the image from source (`docker compose up --build`), bind-mounts the repo. |
-| `docker/docker-compose.portainer.yml` | **Portainer / any host** — pulls a pre-built image from GHCR, no build step, no host bind mounts. |
+| `docker/docker-compose.portainer.yml` | **Portainer / any host** — pulls pre-built images from GHCR, no build step, no host bind mounts. |
 
 ## How the GHCR flow works (new-to-you version)
 
