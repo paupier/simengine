@@ -1,10 +1,16 @@
 name: Publish image
 
-# Builds the simengine container and pushes it to GitHub Container Registry
-# (ghcr.io/paupier/simengine). Portainer then pulls this pre-built image
-# instead of building from the repo.
+# Builds the simengine container and its companion Grafana image, and pushes
+# both to GitHub Container Registry:
+#   ghcr.io/paupier/simengine           — the engine + REST/UI + OPC UA
+#   ghcr.io/paupier/simengine-grafana   — grafana/grafana with this repo's
+#                                          Influx datasource + 3 dashboards
+#                                          baked in (docker/grafana/)
+# Portainer then pulls these pre-built images instead of building from the
+# repo. Both images always publish together on the same trigger, so they
+# never drift out of tag-sync with each other.
 #
-# Tags produced:
+# Tags produced (for both images):
 #   - `latest`            on every push to main
 #   - `main-<shortsha>`   on every push to main (immutable, for pinning)
 #   - `vX.Y.Z` + `X.Y`    when you push a git tag like v0.2.0
@@ -18,7 +24,6 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}   # paupier/simengine
 
 jobs:
   build-and-push:
@@ -26,6 +31,22 @@ jobs:
     permissions:
       contents: read
       packages: write        # required to push to GHCR
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: simengine
+            context: .
+            file: docker/Dockerfile
+            # All optional extras baked in so the deployed image works
+            # whether the stack enables influx, graph, SparkplugB, or the
+            # assistant chat.
+            build-args: |
+              EXTRAS=historian-influx,historian-neo4j,sparkplug,chat
+          - image: simengine-grafana
+            context: docker/grafana
+            file: docker/grafana/Dockerfile
+            build-args: ""
 
     steps:
     - uses: actions/checkout@v5
@@ -48,7 +69,7 @@ jobs:
       id: meta
       uses: docker/metadata-action@v6
       with:
-        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image }}
         tags: |
           type=raw,value=latest,enable={{is_default_branch}}
           type=sha,prefix=main-,enable={{is_default_branch}}
@@ -58,14 +79,11 @@ jobs:
     - name: Build and push
       uses: docker/build-push-action@v7
       with:
-        context: .
-        file: docker/Dockerfile
+        context: ${{ matrix.context }}
+        file: ${{ matrix.file }}
         push: true
-        # All optional extras baked in so the deployed image works whether the
-        # stack enables influx, graph, SparkplugB, or the assistant chat.
-        build-args: |
-          EXTRAS=historian-influx,historian-neo4j,sparkplug,chat
+        build-args: ${{ matrix.build-args }}
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
+        cache-from: type=gha,scope=${{ matrix.image }}
+        cache-to: type=gha,mode=max,scope=${{ matrix.image }}
