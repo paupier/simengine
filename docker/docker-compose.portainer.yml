@@ -4,8 +4,8 @@
 #
 # Optional services are gated behind compose profiles. Portainer has no profile
 # toggle in the UI, so enable them by adding this stack environment variable:
-#   COMPOSE_PROFILES=influx        (adds InfluxDB)
-#   COMPOSE_PROFILES=influx,graph  (adds InfluxDB + Neo4j)
+#   COMPOSE_PROFILES=influx        (adds InfluxDB + Grafana)
+#   COMPOSE_PROFILES=influx,graph  (adds InfluxDB + Grafana + Neo4j)
 #
 # Override any default below via the stack's Environment variables in Portainer.
 
@@ -82,6 +82,22 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  grafana:
+    image: ghcr.io/paupier/simengine-grafana:latest
+    profiles: ["influx"]
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      INFLUXDB_TOKEN: ${INFLUXDB_TOKEN:-simengine-dev-token}
+      INFLUXDB_ORG: simengine
+      INFLUXDB_BUCKET: manufacturing
+    depends_on:
+      influxdb:
+        condition: service_healthy
 
   neo4j:
     image: neo4j:5
