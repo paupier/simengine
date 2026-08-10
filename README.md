@@ -213,14 +213,14 @@ The `influx` profile brings up InfluxDB and Grafana (3 pre-provisioned dashboard
 
 The Dockerfile is a multi-stage build (builder venv, slim runtime image); pass `EXTRAS` to bake in optional dependencies (`--build-arg EXTRAS=historian-influx,sparkplug`).
 
-**Portainer / any host** (pulls a pre-built image from GHCR — no build step, no host bind mounts): use `docker/docker-compose.portainer.yml`, published by `.github/workflows/publish-image.yml`. See [`docs/deployment.md`](docs/deployment.md) for the full walk-through.
+**Portainer / any host** (pulls pre-built images from GHCR — no build step, no host bind mounts): use `docker/docker-compose.portainer.yml`, published by `.github/workflows/publish-image.yml`. See [`docs/deployment.md`](docs/deployment.md) for the full walk-through.
 
 ---
 
 ## Testing
 
 ```bash
-pytest tests/ -v                                    # 517 tests, all local, no external services
+pytest tests/ -v                                    # 519 tests, all local, no external services
 flake8 src/ tests/ --count --select=E9,F63,F7,F82    # error-only lint pass
 ```
 
