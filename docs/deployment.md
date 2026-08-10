@@ -49,9 +49,9 @@ Optional services are behind compose profiles (Portainer has no profile toggle),
 | + InfluxDB + Grafana | `COMPOSE_PROFILES=influx` |
 | + InfluxDB + Grafana + Neo4j | `COMPOSE_PROFILES=influx,graph` |
 
-Any other default (passwords, tokens) can be overridden with stack environment variables — see the `${VAR:-default}` entries in the compose file. **Change `INFLUXDB_TOKEN` / `NEO4J_PASSWORD` off the dev defaults for anything exposed.** Grafana has no login (anonymous Viewer access, by design — matches every other interface in this stack) and its datasource holds the same `INFLUXDB_TOKEN`, which is InfluxDB's *admin* token, not read-only — don't expose port **3000** beyond your LAN.
+Any other default (passwords, tokens) can be overridden with stack environment variables — see the `${VAR:-default}` entries in the compose file. **Change `INFLUXDB_TOKEN` / `NEO4J_PASSWORD` off the dev defaults for anything exposed.** Grafana has no login (anonymous Viewer access, by design — matches every other interface in this stack) and its datasource holds the same `INFLUXDB_TOKEN`, which is InfluxDB's *admin* token, not read-only — don't expose port **3001** beyond your LAN.
 
-Deploy. Ports: **8080** web UI + REST, **4840** OPC UA, **8765** MCP, **1883/9001** MQTT (+ **8086** InfluxDB / **3000** Grafana / **7474** Neo4j when those profiles are on).
+Deploy. Ports: **8080** web UI + REST, **4840** OPC UA, **8765** MCP, **1883/9001** MQTT (+ **8086** InfluxDB / **3001** Grafana / **7474** Neo4j when those profiles are on).
 
 ## Updating to a new build
 

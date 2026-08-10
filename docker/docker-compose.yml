@@ -6,7 +6,7 @@
 #
 # Optional profiles:
 #   --profile influx  -> influxdb + grafana (event historian target + 3
-#                        pre-provisioned dashboards at localhost:3000).
+#                        pre-provisioned dashboards at localhost:3001).
 #                        To actually see data: build with
 #                        SIMENGINE_EXTRAS=historian-influx and set
 #                        historians: ["influx"] on the scenario being run
@@ -72,7 +72,7 @@ services:
     container_name: simengine-grafana
     profiles: ["influx"]
     ports:
-      - "3000:3000"
+      - "3001:3000"
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
