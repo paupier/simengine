@@ -106,13 +106,24 @@ class RunManager:
         except Exception:
             logger.exception("run %s crashed", run_id)
         finally:
+            # self._finish() must run no matter what -- it's what returns
+            # RunManager to IDLE and unblocks the next start(). Each cleanup
+            # step below is independently guarded so a failure in one (e.g.
+            # a historian backend's close() hitting a filesystem/network
+            # error) can't skip _finish() or the other step.
             if historian is not None:
-                end_event = collector.run_end_event(self.latest_snapshot)
-                if end_event is not None:
-                    historian.record_event(end_event)
-                historian.close()
+                try:
+                    end_event = collector.run_end_event(self.latest_snapshot)
+                    if end_event is not None:
+                        historian.record_event(end_event)
+                    historian.close()
+                except Exception:
+                    logger.exception("run %s: historian cleanup failed", run_id)
             if publishers is not None:
-                publishers.close()
+                try:
+                    publishers.close()
+                except Exception:
+                    logger.exception("run %s: publisher cleanup failed", run_id)
             self._finish()
 
     def run_segment(self, engine: LineEngine, publishers, speed_ratio: float,
