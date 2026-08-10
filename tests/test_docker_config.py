@@ -28,3 +28,46 @@ class TestGrafanaVersionPin:
             "dev service (local docker-compose.yml path) should run the same "
             "Grafana version. Bump whichever one is behind."
         )
+
+
+# Matches ${VARNAME:-default}. `default` may be empty (e.g. ${SIMENGINE_EXTRAS:-}).
+_VAR_DEFAULT_RE = re.compile(r"\$\{([A-Z0-9_]+):-([^}]*)\}")
+
+
+def _var_defaults(text: str) -> dict:
+    """varname -> set of distinct default values used for it in this file."""
+    defaults: dict = {}
+    for name, default in _VAR_DEFAULT_RE.findall(text):
+        defaults.setdefault(name, set()).add(default)
+    return defaults
+
+
+class TestComposeEnvDefaultsAreSelfConsistent:
+    """Two services in the same compose file referencing the same env var
+    (e.g. simengine's NEO4J_PASSWORD used to connect, neo4j's own
+    NEO4J_PASSWORD used to set its own auth) must fall back to the same
+    default when the var is unset -- docker compose resolves each
+    ${VAR:-default} independently, so mismatched defaults silently produce
+    two different containers that can't authenticate to each other. This
+    caught a real bug: docker-compose.yml's simengine service defaulted
+    NEO4J_PASSWORD to empty while the neo4j service itself defaulted to
+    "simengine-dev"."""
+
+    def _assert_self_consistent(self, path: Path) -> None:
+        defaults = _var_defaults(path.read_text())
+        conflicts = {name: sorted(vals) for name, vals in defaults.items()
+                     if len(vals) > 1}
+        assert not conflicts, (
+            f"{path.name} uses different ${{VAR:-default}} fallbacks for the "
+            f"same variable(s) in different places: {conflicts} -- when the "
+            "variable is unset, each occurrence resolves independently, so "
+            "services relying on the same credential/value can silently "
+            "diverge. Make every occurrence of each variable use the same "
+            "default."
+        )
+
+    def test_docker_compose_yml(self):
+        self._assert_self_consistent(DOCKER_DIR / "docker-compose.yml")
+
+    def test_docker_compose_portainer_yml(self):
+        self._assert_self_consistent(DOCKER_DIR / "docker-compose.portainer.yml")
