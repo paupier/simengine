@@ -10,7 +10,7 @@ knowledge of "shifts" at all.
 """
 from simengine.engine.line import LineEngine
 from simengine.publishers import build_publishers
-from simengine.runtime.run_manager import RunManager
+from simengine.runtime.run_manager import IDLE, RunManager
 from simengine.runtime.shift_manager import create_shift_manager_from_config
 
 NO_COMMS = {"opcua": {"enabled": False}}  # avoid spinning up a real OPC UA server
@@ -155,3 +155,54 @@ class TestRecordMetricsWiring:
         rm.engine = engine
         # Must not raise even though historian/collector default to None.
         rm.run_segment(engine, publishers, speed_ratio=1e9, max_sim_time=3.0)
+
+
+class TestRunScenarioCrashRecovery:
+    """A misconfigured historian/publisher must not wedge RunManager forever.
+
+    build_publishers()/build_historians() used to run before the try/finally
+    in _run_scenario, so an exception there (e.g. a historian named in the
+    scenario config whose backend package isn't installed) escaped the
+    background thread uncaught: self._finish() never ran, self.state stayed
+    RUNNING permanently, and every later start() raised RunConflictError
+    until the process was restarted.
+    """
+
+    def test_build_historians_failure_returns_to_idle_and_stays_usable(self, monkeypatch):
+        import time
+        from simengine.runtime import run_manager as run_manager_module
+
+        def boom(config, scenario, run_id):
+            raise RuntimeError("historian 'influx' configured but not installed")
+
+        monkeypatch.setattr(run_manager_module, "build_historians", boom)
+
+        rm = RunManager()
+        rm.start(scenario="balanced_line", seed=1)
+
+        deadline = time.time() + 5.0
+        while rm.state != IDLE and time.time() < deadline:
+            time.sleep(0.02)
+        assert rm.state == IDLE, "RunManager wedged in RUNNING after a crashed start"
+
+        # Must be able to start again immediately, not stuck behind a 409.
+        run_id = rm.start(scenario="balanced_line", seed=2)
+        assert run_id
+        rm.stop()
+
+    def test_build_publishers_failure_returns_to_idle(self, monkeypatch):
+        import time
+        from simengine.runtime import run_manager as run_manager_module
+
+        def boom(config):
+            raise RuntimeError("publisher misconfigured")
+
+        monkeypatch.setattr(run_manager_module, "build_publishers", boom)
+
+        rm = RunManager()
+        rm.start(scenario="balanced_line", seed=1)
+
+        deadline = time.time() + 5.0
+        while rm.state != IDLE and time.time() < deadline:
+            time.sleep(0.02)
+        assert rm.state == IDLE, "RunManager wedged in RUNNING after a crashed start"

@@ -220,7 +220,7 @@ The Dockerfile is a multi-stage build (builder venv, slim runtime image); pass `
 ## Testing
 
 ```bash
-pytest tests/ -v                                    # 408 tests, all local, no external services
+pytest tests/ -v                                    # 515 tests, all local, no external services
 flake8 src/ tests/ --count --select=E9,F63,F7,F82    # error-only lint pass
 ```
 

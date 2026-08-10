@@ -84,10 +84,13 @@ class RunManager:
     # ----- run loops -----
 
     def _run_scenario(self, config, scenario, seed, speed_ratio, run_id):
-        publishers = build_publishers(config)
-        historian = build_historians(config, scenario, run_id)
-        collector = SnapshotEventCollector() if historian else None
+        publishers = None
+        historian = None
+        collector = None
         try:
+            publishers = build_publishers(config)
+            historian = build_historians(config, scenario, run_id)
+            collector = SnapshotEventCollector() if historian else None
             engine = LineEngine(config, scenario, seed=seed, run_id=run_id,
                                 speed_ratio=speed_ratio)
             self.engine = engine
@@ -108,7 +111,8 @@ class RunManager:
                 if end_event is not None:
                     historian.record_event(end_event)
                 historian.close()
-            publishers.close()
+            if publishers is not None:
+                publishers.close()
             self._finish()
 
     def run_segment(self, engine: LineEngine, publishers, speed_ratio: float,
