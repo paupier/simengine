@@ -1,0 +1,39 @@
+name: Grafana image
+
+# Validates docker/grafana/Dockerfile builds and contains the expected
+# provisioning/dashboard files -- no push, no registry. Catches a broken
+# Dockerfile or a docker/grafana/{provisioning,dashboards} rename before it
+# reaches main. publish-image.yml only builds this image on push to main
+# with fail-fast: false, so without this gate a break there would surface
+# only as a silent half-published pair (simengine updates, simengine-grafana
+# doesn't).
+
+on:
+  push:
+    branches: [ main ]
+    paths: [ "docker/grafana/**" ]
+  pull_request:
+    paths: [ "docker/grafana/**" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v5
+
+    - name: Build
+      run: docker build -f docker/grafana/Dockerfile -t simengine-grafana-ci docker/grafana
+
+    # The base image's ENTRYPOINT (/run.sh) ignores a plain `docker run <img> <cmd>`
+    # and boots Grafana instead, so this must override the entrypoint to actually
+    # run the check rather than hang until the step times out.
+    - name: Verify provisioning + dashboard files are present
+      run: |
+        docker run --rm --entrypoint sh simengine-grafana-ci -c "
+          set -e
+          ls /etc/grafana/provisioning/datasources/influxdb.yml
+          ls /etc/grafana/provisioning/dashboards/dashboards.yml
+          ls /var/lib/grafana/dashboards/line_overview.json
+          ls /var/lib/grafana/dashboards/station_kpis.json
+          ls /var/lib/grafana/dashboards/root_cause.json
+        "
