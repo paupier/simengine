@@ -206,3 +206,55 @@ class TestRunScenarioCrashRecovery:
         while rm.state != IDLE and time.time() < deadline:
             time.sleep(0.02)
         assert rm.state == IDLE, "RunManager wedged in RUNNING after a crashed start"
+
+    def test_historian_close_failure_does_not_prevent_finish(self, monkeypatch):
+        """Unlike the two tests above (crash before run_segment ever starts),
+        this exercises a historian that constructs fine but blows up in
+        close() -- the finally block's own cleanup step must not skip
+        self._finish() either."""
+        import time
+        from unittest.mock import MagicMock
+        from simengine.events import EventHistorian
+        from simengine.runtime import run_manager as run_manager_module
+
+        bad_historian = MagicMock(spec=EventHistorian)
+        bad_historian.close.side_effect = RuntimeError("influx close failed")
+
+        monkeypatch.setattr(run_manager_module, "build_historians",
+                            lambda config, scenario, run_id: bad_historian)
+
+        rm = RunManager()
+        rm.start(scenario="balanced_line", seed=1, speed_ratio=1e6)
+        time.sleep(0.1)  # let the thread reach run_segment's loop
+        rm.stop()  # blocks until _run_scenario's finally has run
+
+        assert rm.state == IDLE, "RunManager wedged after historian.close() raised"
+        bad_historian.close.assert_called_once()
+
+        run_id = rm.start(scenario="balanced_line", seed=2)
+        assert run_id
+        rm.stop()
+
+    def test_publishers_close_failure_does_not_prevent_finish(self, monkeypatch):
+        import time
+        from unittest.mock import MagicMock
+        from simengine.publishers import StatePublisher
+        from simengine.runtime import run_manager as run_manager_module
+
+        bad_publishers = MagicMock(spec=StatePublisher)
+        bad_publishers.close.side_effect = RuntimeError("publisher close failed")
+
+        monkeypatch.setattr(run_manager_module, "build_publishers",
+                            lambda config: bad_publishers)
+
+        rm = RunManager()
+        rm.start(scenario="balanced_line", seed=1, speed_ratio=1e6)
+        time.sleep(0.1)
+        rm.stop()
+
+        assert rm.state == IDLE, "RunManager wedged after publishers.close() raised"
+        bad_publishers.close.assert_called_once()
+
+        run_id = rm.start(scenario="balanced_line", seed=2)
+        assert run_id
+        rm.stop()
