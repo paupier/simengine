@@ -68,3 +68,26 @@ To pin instead of tracking `latest`, change the stack's image tag(s) to a specif
 - The `simengine-grafana` image bakes in `docker/grafana/{provisioning,dashboards}/` at build time (no bind mounts, matching this file's pattern) — the same files `docker/docker-compose.yml`'s local-dev Grafana service bind-mounts directly. If you edit a dashboard JSON, it takes effect immediately for local dev but only reaches Portainer after the next push to `main` republishes the image.
 - `simengine-config` and `simengine-results` are named volumes. On first run they seed from the image (default scenarios); after that, scenario edits made through the UI and any CSV historian output persist across redeploys. To reset to the shipped defaults, remove those volumes.
 - The build defaults to `linux/amd64`. For an arm64 host (e.g. a Pi), add `platforms: linux/amd64,linux/arm64` to the `build-and-push` step in the workflow (needs a QEMU setup step; slower builds).
+
+## Troubleshooting
+
+### Grafana dashboards show "unauthorized" on every panel, `$scenario`/`$run_id` dropdowns don't populate
+
+**Symptom:** every panel on all 3 dashboards shows an error, and the `$scenario`/`$run_id` template-variable dropdowns at the top never populate. Confirm it's this and not something else by checking Grafana's datasource health directly:
+
+```
+GET http://<host>:3001/api/datasources/uid/influxdb-simengine/health
+```
+
+If the body is `{"message":"unauthorized: unauthorized access error reading buckets","status":"ERROR"}`, this is it.
+
+**Cause:** InfluxDB only sets its admin token *once* — the first time its data volume initializes (`DOCKER_INFLUXDB_INIT_MODE: setup`). That volume is a **named** volume (`simengine_influxdb-data`), so it survives every redeploy untouched, still holding whatever token was baked in the very first time the `influx` profile was ever deployed on that host. If `INFLUXDB_TOKEN`'s default value changed since then (it has, across a few PRs that normalized it), `simengine`/`grafana` now send the *current* default, which the volume's already-initialized InfluxDB no longer recognizes. Re-pulling images doesn't fix this — the images are fine, it's the persisted volume that's stale. This only affects a deployment whose InfluxDB volume predates the token-default fixes; a fresh deployment from here on won't hit it.
+
+**Fix** (in Portainer):
+
+1. Stop the `simengine` stack.
+2. **Containers** → find the (now stopped) `influxdb` container → **Remove** it. Stopping alone isn't enough — a stopped-but-still-present container still holds a reference to its volume, so Docker refuses to delete the volume until the container itself is gone (`Unable to remove volume: ... volume is in use`).
+3. **Volumes** → remove **`simengine_influxdb-data`** specifically. Don't touch `simengine_simengine-config`, `simengine_simengine-results`, or `simengine_mosquitto-data` — those hold your actual scenario edits and MQTT/historian state, not InfluxDB credentials. (You may also see a second, anonymously-named volume mounted at `/etc/influxdb2` — that's just the `influx` CLI's own connection-profile config, not the server's credential store; it's not the cause and doesn't need cleaning up.)
+4. Redeploy the stack. InfluxDB re-initializes fresh on the empty volume using the current `INFLUXDB_TOKEN` default, matching what `simengine`/`grafana` already send.
+
+This deletes historical InfluxDB/Grafana dashboard data (not your scenario configs, MQTT state, or CSV historian output — those are separate volumes). For a sense-check tool, that's normally fine.
